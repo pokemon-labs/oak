@@ -1,16 +1,14 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import sys
 import os
-
-import oak
-
 import struct
 import hashlib
 from typing import Dict, List
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+import oak
 
 
 class EncodedBattleFrames:

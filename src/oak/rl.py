@@ -87,6 +87,12 @@ generate_parser.add_argument(
     help="P-norm exponent applied just before clipping and sampling",
 )
 generate_parser.add_argument(
+    "--fast-policy-temp",
+    type=float,
+    help="See policy-temp",
+    default=1,
+)
+generate_parser.add_argument(
     "--policy-min",
     type=float,
     default=0,
@@ -229,6 +235,7 @@ def main():
         f"--policy-mode={args.policy_mode}",
         f"--fast-policy-mode={args.fast_policy_mode}",
         f"--policy-temp={args.policy_temp}",
+        f"--fast-policy-temp={args.fast_policy_temp}",
         f"--policy-min={args.policy_min}",
         f"--dir={data_dir}",
         f"--threads={args.generate_threads}",
