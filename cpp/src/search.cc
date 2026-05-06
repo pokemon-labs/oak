@@ -130,7 +130,7 @@ void Agent::initialize_network(const pkmn_gen1_battle &b) {
   using NN::Activation;
   const auto activation = static_cast<Activation>(header.bytes[0] + 1);
   if (activation == Activation::clamp) {
-    auto network = std::make_unique<NN::Battle::Network>();
+    auto network = std::make_unique<NN::Battle::NetworkClamped>();
     read_parameters_and_maybe_quantize(network);
     return;
   }
