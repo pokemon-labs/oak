@@ -13,6 +13,7 @@ enum class Activation {
   none = 0,
   relu = 1,
   clamp = 2,
+  relu_scaled = 3,
 };
 
 template <int Order = Eigen::RowMajor> class Affine {

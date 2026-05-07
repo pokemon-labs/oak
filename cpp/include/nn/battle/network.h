@@ -184,6 +184,10 @@ using QNetwork =
     NetworkImpl<Quantized::MainNet<In, Hidden, ValueHidden, PolicyHidden>,
                 Activation::clamp>;
 
+#define Q32
+#define Q64
+#define Q128
+
 namespace Impl {
 inline auto invalid(const std::string &msg) -> std::unique_ptr<NetworkBase> {
   throw std::runtime_error{"Invalid layer size for quantized net " + msg +
@@ -214,12 +218,18 @@ template <int In, int Hidden, int ValueHidden>
 auto visit_network_3(int policy_hidden, const auto &F,
                      std::unique_ptr<NetworkBase> network) {
   switch (policy_hidden) {
+#ifdef Q32
   case 32:
     return visit_network_4<In, Hidden, ValueHidden, 32>(F, std::move(network));
+#endif
+#ifdef Q64
   case 64:
     return visit_network_4<In, Hidden, ValueHidden, 64>(F, std::move(network));
+#endif
+#ifdef Q128
   case 128:
     return visit_network_4<In, Hidden, ValueHidden, 128>(F, std::move(network));
+#endif
   default:
     return Impl::invalid("Policy hidden: " + std::to_string(policy_hidden));
   }
@@ -229,15 +239,21 @@ template <int In, int Hidden>
 auto visit_network_2(int value_hidden, int policy_hidden, const auto &F,
                      std::unique_ptr<NetworkBase> network) {
   switch (value_hidden) {
+#ifdef Q32
   case 32:
     return visit_network_3<In, Hidden, 32>(policy_hidden, F,
                                            std::move(network));
+#endif
+#ifdef Q64
   case 64:
     return visit_network_3<In, Hidden, 64>(policy_hidden, F,
                                            std::move(network));
+#endif
+#ifdef Q128
   case 128:
     return visit_network_3<In, Hidden, 128>(policy_hidden, F,
                                             std::move(network));
+#endif
   default:
     return Impl::invalid("Value hidden: " + std::to_string(value_hidden));
   }
@@ -247,15 +263,21 @@ template <int In>
 auto visit_network_1(int hidden, int value_hidden, int policy_hidden,
                      const auto &F, std::unique_ptr<NetworkBase> network) {
   switch (hidden) {
+#ifdef Q32
   case 32:
     return visit_network_2<In, 32>(value_hidden, policy_hidden, F,
                                    std::move(network));
+#endif
+#ifdef Q64
   case 64:
     return visit_network_2<In, 64>(value_hidden, policy_hidden, F,
                                    std::move(network));
+#endif
+#ifdef Q128
   case 128:
     return visit_network_2<In, 128>(value_hidden, policy_hidden, F,
                                     std::move(network));
+#endif
   default:
     return Impl::invalid("Hidden: " + std::to_string(hidden));
   }
