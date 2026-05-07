@@ -80,8 +80,17 @@ public:
       return;
     } else if constexpr (activation == relu) {
       output = output.cwiseMax(0.0f);
-    } else {
+    } else if constexpr (activation == clamp) {
       output = output.cwiseMax(0.0f).cwiseMin(1.0f);
+    } else if constexpr (activation == relu_scaled) {
+      output = output.cwiseMax(0.0f);
+      const int chunks = out_dim / 32;
+      for (int i = 0; i < chunks; ++i) {
+        auto chunk = output.segment(i * 32, 32);
+        float chunk_max = chunk.maxCoeff();
+        if (chunk_max > 1.0f)
+          chunk /= chunk_max;
+      }
     }
   }
 
@@ -98,8 +107,17 @@ public:
       return;
     } else if constexpr (activation == relu) {
       output = output.cwiseMax(0.0f);
-    } else {
+    } else if constexpr (activation == clamp) {
       output = output.cwiseMax(0.0f).cwiseMin(1.0f);
+    } else if constexpr (activation == relu_scaled) {
+      output = output.cwiseMax(0.0f);
+      const int chunks = out_dim / 32;
+      for (int i = 0; i < chunks; ++i) {
+        auto chunk = output.segment(i * 32, 32);
+        float chunk_max = chunk.maxCoeff();
+        if (chunk_max > 1.0f)
+          chunk /= chunk_max;
+      }
     }
   }
 

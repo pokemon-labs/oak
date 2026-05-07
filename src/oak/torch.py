@@ -102,6 +102,7 @@ class Activation:
     none: int = 0
     relu: int = 1
     clamp: int = 2
+    relu_scaled: int = 3
 
 
 class Affine(nn.Module):
@@ -146,6 +147,13 @@ class Affine(nn.Module):
             return torch.nn.functional.relu(x)
         elif self.activation == Activation.clamp:
             return torch.clamp(x, 0, 1)
+        elif self.activation == Activation.relu_scaled:
+            x = torch.relu(x)
+            x = x.view(*x.shape[:-1], -1, 32)
+            chunk_max = x.amax(dim=-1, keepdim=True).clamp(min=1)
+            x = x / chunk_max
+            x = x.view(*x.shape[:-2], -1)
+            return x
         else:
             assert False, "Affine: Bad activation"
 
@@ -350,15 +358,15 @@ class BattleNetwork(torch.nn.Module):
             self.pokemon_in_dim,
             self.pokemon_hidden_dim,
             self.pokemon_out_dim,
-            activation,
-            activation,
+            Activation.relu,
+            Activation.relu,
         )
         self.active_net = EmbeddingNet(
             self.active_in_dim,
             self.active_hidden_dim,
             self.active_out_dim,
-            activation,
-            activation,
+            Activation.relu,
+            Activation.relu,
         )
         self.main_net = MainNet(
             2 * self.side_out_dim,
@@ -371,8 +379,8 @@ class BattleNetwork(torch.nn.Module):
 
     def set_activation(self, act):
         self.activation = act
-        self.pokemon_net.set_activation(act)
-        self.active_net.set_activation(act)
+        # self.pokemon_net.set_activation(act)
+        # self.active_net.set_activation(act)
         self.main_net.set_activation(act)
 
     def read_parameters(self, f):

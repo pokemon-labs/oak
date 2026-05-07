@@ -142,6 +142,10 @@ void Agent::initialize_network(const pkmn_gen1_battle &b) {
     auto network = std::make_unique<NN::Battle::Network>();
     read_parameters_and_maybe_quantize(network);
     return;
+  } else if (activation == Activation::relu_scaled) {
+    auto network = std::make_unique<NN::Battle::NetworkScaled>();
+    read_parameters_and_maybe_quantize(network);
+    return;
   } else {
     throw std::runtime_error{"Agent: could not parse header at: " + eval};
   }
@@ -169,8 +173,10 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
       } else if (auto network = dynamic_cast<NN::Battle::NetworkClamped *>(
                      agent.network_ptr.get())) {
         return s.run(device, dur, params, heap, *network, input, output);
-      }
-      {
+      } else if (auto network = dynamic_cast<NN::Battle::NetworkScaled *>(
+                     agent.network_ptr.get())) {
+        return s.run(device, dur, params, heap, *network, input, output);
+      } else {
         const auto [id, hd, vd, pd] = agent.network_ptr->shape();
         auto q_network_ptr = NN::Battle::visit_quantized_network(
             id, hd, vd, pd,

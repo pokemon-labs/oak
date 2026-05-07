@@ -23,7 +23,8 @@ template <typename Main, Activation activation>
 class NetworkImpl : public NetworkBase {
 public:
   static_assert(activation == Activation::relu ||
-                activation == Activation::clamp);
+                activation == Activation::clamp ||
+                activation == Activation::relu_scaled);
   using T = typename Main::T;
 
   EmbeddingNet pokemon_net;
@@ -46,7 +47,8 @@ public:
   }
 
   void fill_cache(const pkmn_gen1_battle &battle) noexcept {
-    battle_cache.template fill<activation>(pokemon_net, PKMN::view(battle));
+    battle_cache.template fill<Activation::relu>(pokemon_net,
+                                                 PKMN::view(battle));
   }
 
   bool read_parameters(std::istream &stream) {
@@ -145,9 +147,9 @@ private:
       } else {
         const auto percent = (float)stored.hp / stored.stats.hp;
         side_embedding[0] = std::is_integral_v<T> ? percent * 127 : percent;
-        const T *embedding =
-            battle_cache.active[s][side.order[0] - 1].template get<activation>(
-                active_net, side.active, stored, duration);
+        const T *embedding = battle_cache.active[s][side.order[0] - 1]
+                                 .template get<Activation::relu>(
+                                     active_net, side.active, stored, duration);
         std::copy_n(embedding, active_out_dim, side_embedding + 1);
       }
 
@@ -179,6 +181,7 @@ template <Activation activation>
 using FNetwork = NetworkImpl<MainNet, activation>;
 using Network = FNetwork<Activation::relu>;
 using NetworkClamped = FNetwork<Activation::clamp>;
+using NetworkScaled = FNetwork<Activation::relu_scaled>;
 template <int In, int Hidden, int ValueHidden, int PolicyHidden>
 using QNetwork =
     NetworkImpl<Quantized::MainNet<In, Hidden, ValueHidden, PolicyHidden>,
