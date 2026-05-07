@@ -5,6 +5,7 @@
 #include <nn/build/network.h>
 #include <teams/ou-sample-teams.h>
 #include <train/build/trajectory.h>
+#include <util/file-lock.h>
 #include <util/parse.h>
 
 #include <unistd.h>
@@ -220,19 +221,9 @@ struct Provider {
     } else {
       // loading each time allows the network params to be updated at runtime
       NN::Build::Network build_network{};
-      constexpr auto tries = 3;
-      // sometimes reads fail because python is writing to that file. just retry
-      for (auto i = 0; i < tries; ++i) {
-        std::ifstream file{network_path};
-        if (build_network.read_parameters(file)) {
-          break;
-        } else {
-          if (i == (tries - 1)) {
-            throw std::runtime_error{"cant read build net params"};
-          }
-          sleep(1);
-        }
-      }
+      auto [file, fd] = FileLock::try_open_file(network_path);
+      FileLock::FdGuard guard{fd};
+
       const auto trajectory =
           TeamBuilding::rollout_build_network(device, build_network, team);
       assert(trajectory.updates.size() > 0);
