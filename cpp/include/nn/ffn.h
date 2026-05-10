@@ -77,4 +77,7 @@ using EmbeddingNet = FeedForwardNetwork<Affine<Eigen::ColMajor>, Affine<>>;
 using TeamBuildingNet =
     FeedForwardNetwork<Affine<Eigen::ColMajor>, Affine<>, Affine<>>;
 
+using MLP2 = FeedForwardNetwork<Affine<>, Affine<>>;
+using MLP3 = FeedForwardNetwork<Affine<>, Affine<>, Affine<>>;
+
 } // namespace NN
