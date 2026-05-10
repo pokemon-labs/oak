@@ -37,7 +37,7 @@ struct TeamBuildingArgs : public argparse::Args {
         kwarg(B "eval", "Eval mc/fp/<network-path>");                          \
                                                                                \
     bool &A##use_discrete =                                                    \
-        flag(B "use-discrete", "Enable Quantized discrete main subnet");       \
+        flag(B "use-discrete", "Use quantized main subnet");                   \
                                                                                \
     bool &A##use_table =                                                       \
         flag(B "use-table", "Use a transposition table instead of a tree");    \
@@ -54,6 +54,25 @@ struct TeamBuildingArgs : public argparse::Args {
         kwarg(B "policy-min", "Probs below this will be zerod")                \
             .set_default(0);                                                   \
   };
+
+#define MAKE_AGENT_ADJUDICATE_ARGS(NAME, BASE, WRAPPER, A, B)                  \
+  struct NAME : public BASE {                                                  \
+    WRAPPER<std::string> &A##forfeit_value =                                   \
+        kwarg(B "forfeit-value",                                               \
+              "Forfeit when value lies outside this range for n-many turns")   \
+            .set_default("0.0");                                               \
+    WRAPPER<std::string> &A##draw_value =                                      \
+        kwarg(                                                                 \
+            B "draw-value",                                                    \
+            "Offer draw when value lies outside this range for n-many turns")  \
+            .set_default("0.0");                                               \
+    WRAPPER<size_t> &A##forfeit_n =                                            \
+        kwarg(B "forfeit-n", "Min consectutive turns to forfeit")              \
+            .set_default(1);                                                   \
+    WRAPPER<size_t> &A##draw_n =                                               \
+        kwarg(B "draw-n", "Min consectutive turns to offer draw")              \
+            .set_default(1);                                                   \
+  }; // namespace Argparse
 
 MAKE_AGENT_ARGS(AgentArgs, TeamBuildingArgs, Identity, , "")
 MAKE_AGENT_ARGS(AgentArgsOptional, TeamBuildingArgs, std::optional, , "")

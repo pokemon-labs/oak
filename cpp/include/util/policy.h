@@ -105,4 +105,59 @@ inline int process_and_sample(auto &device, const auto &side,
   return index;
 }
 
+class AdjuticateParams {
+  double is = 0;
+
+public:
+  size_t consecutive = 1;
+
+  void set_from_odds(const std::string &odds) {
+    odds_split = Parse::split(odds, ':');
+    try {
+      double x = std::stod(odds_split[0]);
+      double y = std::stod(odds_split[1]);
+      is = std::abs(inverse_sigmoid(x / y));
+    } catch (...) {
+      is = 0;
+      throw std::runtime_error{
+          "ForfeitParams: Invalid format for odds. Requires 'x:y'"};
+    }
+  }
+
+  void set_from_bound(const std::string &value) {
+    try {
+      is = std::abs(inverse_sigmoid(value));
+    } catch (...) {
+      is = 0;
+      throw std::runtime_error{"ForfeitParams: Could not parse bounds (0, 1)"};
+    }
+  }
+
+  static double inverse_sigmoid(const double x) {
+    return std::log(x) - std::log(1 - x);
+  }
+};
+
+struct Adjuticate : public AdjuticateParams {
+  size_t record;
+};
+
+struct PlayerAdjudicate {
+  Adjuticate forfeit;
+  Adjuticate draw;
+
+  void set_from_args(const auto &args) {
+    *this = {};
+    if (args.)
+  }
+};
+
+PKMN::Result check_adjudication(PlayerAdjudicate &p1,
+                                const MCTS::Output &p1_output,
+                                PlayerAdjudicate &p2,
+                                const MCTS::Output &p2_output) {
+  // TODO
+  return {};
+}
+
 } // namespace RuntimePolicy
