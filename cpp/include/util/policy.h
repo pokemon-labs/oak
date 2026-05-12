@@ -1,7 +1,7 @@
 #pragma once
 
-#include <search/mcts.h>
 #include <libpkmn/pkmn.h>
+#include <search/mcts.h>
 #include <util/strings.h>
 
 namespace RuntimePolicy {
@@ -189,21 +189,6 @@ struct JointValueMemory {
 
   std::vector<std::pair<double, double>> data;
 
-  void print() const {
-    for (const auto& x : data) {
-      std::cout << x.first << '/' << x.second << ' ';
-    }
-    std::cout << std::endl;
-  }
-
-  static void print_(const auto& d) {
-    for (const auto& x : d) {
-      std::cout << x << ' ';
-    }
-    std::cout << std::endl;
-  }
-
-
   void update(const MCTS::Output &p1_output, const Options &p1_options,
               const MCTS::Output &p2_output, const Options &p2_options) {
 
@@ -232,12 +217,8 @@ struct JointValueMemory {
     if (std::all_of(witnesses.begin(), witnesses.end(),
                     [](auto w) { return w > 0; })) {
       if (data[data.size() - 1].first > .5) {
-        // print();
-        // print_(witnesses);
         return PKMN::Result::Win;
       } else {
-        // print();
-        // print_(witnesses);
         return PKMN::Result::Lose;
       }
     }

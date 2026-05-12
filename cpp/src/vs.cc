@@ -217,7 +217,7 @@ void thread_fn(const ProgramArgs *args_ptr) {
     auto p1_battle_frames = Train::Battle::CompressedFrames{battle};
     auto p2_battle_frames = Train::Battle::CompressedFrames{battle};
 
-    RuntimePolicy::JointValueMemory adjudicator{};
+    auto adjudicator = RuntimePolicy::JointValueMemory{};
     bool adjudicated = false;
     auto adj_result = PKMN::Result::None;
 
@@ -280,9 +280,6 @@ void thread_fn(const ProgramArgs *args_ptr) {
         p2_index = process_and_sample(device, p2_output.p2, p2_policy_options);
       }
 
-      adjudicator.update(p1_output, p1_policy_options, p2_output,
-                         p2_policy_options);
-
       RuntimeData::battle_outputs[id] = {p1_output, p2_output};
 
       if (updates == 0) {
@@ -290,8 +287,10 @@ void thread_fn(const ProgramArgs *args_ptr) {
         p2_build_traj.value = 1 - p2_output.empirical_value;
       }
 
-      adj_result = adjudicator.check_for_consensus(
-          args.forfeit_n.value(), args.forfeit_value.value());
+      adjudicator.update(p1_output, p1_policy_options, p2_output,
+                         p2_policy_options);
+      adj_result = adjudicator.check_for_consensus(args.forfeit_n.value(),
+                                                   args.forfeit_value.value());
       if (adj_result != PKMN::Result::None) {
         adjudicated = true;
         break;

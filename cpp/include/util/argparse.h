@@ -59,10 +59,13 @@ struct TeamBuildingArgs : public argparse::Args {
   struct NAME : public BASE {                                                  \
     WRAPPER<double> &A##forfeit_value =                                        \
         kwarg(B "forfeit-value",                                               \
-              "Forfeit when value lies outside this range for n-many turns")   \
-            .set_default("0.0");                                               \
+              "Adjuticate the battle when the magnitude of the inverse "       \
+              "sigmoid of the value estimate is larger than this number for "  \
+              "--n-forfeit "                                                   \
+              "of the latest searches.")                                       \
+            .set_default(0);                                                   \
     WRAPPER<size_t> &A##forfeit_n =                                            \
-        kwarg(B "forfeit-n", "Min consectutive turns to forfeit")              \
+        kwarg(B "forfeit-n", "Min consectutive turns to adjudicate")           \
             .set_default(1);                                                   \
   }; // namespace Argparse
 
@@ -80,7 +83,8 @@ MAKE_AGENT_POLICY_ARGS(FastAgentPolicyArgs, AgentPolicyArgs, std::optional,
 MAKE_AGENT_ARGS(FastAgentArgs, FastAgentPolicyArgs, std::optional, fast_,
                 "fast-")
 MAKE_AGENT_ARGS(T1AgentArgs, FastAgentArgs, std::optional, t1_, "t1-")
-using GenerateArgs = T1AgentArgs;
+MAKE_AGENT_ADJUDICATE_ARGS(GenerateArgs, T1AgentArgs, std::optional, , "")
+// using GenerateArgs = T1AgentArgs;
 
 MAKE_AGENT_POLICY_ARGS(AgentOptionalPolicyArgs, AgentArgsOptional,
                        std::optional, , "")

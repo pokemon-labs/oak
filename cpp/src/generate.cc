@@ -262,8 +262,9 @@ void generate(const ProgramArgs *args_ptr) {
         RuntimePolicy::Options{.mode = args.policy_mode,
                                .temp = args.policy_temp.value(),
                                .min = args.policy_min.value()};
-    const auto rollout_policy_options = RuntimePolicy::Options{
-        .mode = "e", .temp = 1.0, .min = args.policy_min.value()};
+    auto adjudicator = RuntimePolicy::JointValueMemory{};
+    bool adjudicated = false;
+    auto adj_result = PKMN::Result::None;
 
     battle_length = 0;
     try {
@@ -308,6 +309,14 @@ void generate(const ProgramArgs *args_ptr) {
           }
         }
 
+        adjudicator.update(output, policy_options, output, policy_options);
+        adj_result = adjudicator.check_for_consensus(
+            args.forfeit_n.value(), args.forfeit_value.value());
+        if (adj_result != PKMN::Result::None) {
+          adjudicated = true;
+          break;
+        }
+
         const auto p1_index = RuntimePolicy::process_and_sample(
             device, output.p1, policy_options);
         const auto p2_index = RuntimePolicy::process_and_sample(
@@ -339,6 +348,10 @@ void generate(const ProgramArgs *args_ptr) {
     } catch (const std::exception &e) {
       std::cerr << e.what() << std::endl;
       continue;
+    }
+
+    if (adjudicated) {
+      battle_data.result = PKMN::result(adj_result);
     }
 
     if (!skip_battle) {
@@ -390,6 +403,7 @@ void generate(const ProgramArgs *args_ptr) {
 void print_thread_fn(const ProgramArgs *args_ptr) {
   const auto &args = *args_ptr;
   size_t frames_done = 0;
+  size_t battles_done = 0;
   size_t traj_done = 0;
   while (true) {
     while (RuntimeData::suspended) {
@@ -402,9 +416,12 @@ void print_thread_fn(const ProgramArgs *args_ptr) {
       std::this_thread::sleep_for(std::chrono::seconds{1});
     }
     const auto frames_more = RuntimeData::frame_counter.load();
+    const auto battles_more = RuntimeData::battle_counter.load();
     const auto traj_more = RuntimeData::traj_counter.load();
     std::cout << (frames_more - frames_done) / (float)args.print_interval
-              << " battle frames/sec." << std::endl;
+              << " frames/sec." << std::endl;
+    std::cout << (battles_more - battles_done) / (float)args.print_interval
+              << " battles/sec." << std::endl;
     if (RuntimeData::provider.team_modify_prob > 0) {
       std::cout << (traj_more - traj_done) / (float)args.print_interval
                 << " build traj./sec." << std::endl;
@@ -421,9 +438,10 @@ void print_thread_fn(const ProgramArgs *args_ptr) {
     }
 
     frames_done = frames_more;
+    battles_done = battles_more;
     traj_done = traj_more;
 
-    std::cout << "Game Lengths: ";
+    std::cout << "Battle Lengths: ";
     for (const auto len : RuntimeData::battle_lengths) {
       std::cout << len << ' ';
     }
