@@ -57,20 +57,12 @@ struct TeamBuildingArgs : public argparse::Args {
 
 #define MAKE_AGENT_ADJUDICATE_ARGS(NAME, BASE, WRAPPER, A, B)                  \
   struct NAME : public BASE {                                                  \
-    WRAPPER<std::string> &A##forfeit_value =                                   \
+    WRAPPER<double> &A##forfeit_value =                                        \
         kwarg(B "forfeit-value",                                               \
               "Forfeit when value lies outside this range for n-many turns")   \
             .set_default("0.0");                                               \
-    WRAPPER<std::string> &A##draw_value =                                      \
-        kwarg(                                                                 \
-            B "draw-value",                                                    \
-            "Offer draw when value lies outside this range for n-many turns")  \
-            .set_default("0.0");                                               \
     WRAPPER<size_t> &A##forfeit_n =                                            \
         kwarg(B "forfeit-n", "Min consectutive turns to forfeit")              \
-            .set_default(1);                                                   \
-    WRAPPER<size_t> &A##draw_n =                                               \
-        kwarg(B "draw-n", "Min consectutive turns to offer draw")              \
             .set_default(1);                                                   \
   }; // namespace Argparse
 
@@ -97,7 +89,8 @@ MAKE_AGENT_POLICY_ARGS(P1PolicyArgs, AgentOptionalPolicyArgs, std::optional,
 MAKE_AGENT_POLICY_ARGS(P2PolicyArgs, P1PolicyArgs, std::optional, p2_, "p2-")
 MAKE_AGENT_ARGS(P1AgentArgs, P2PolicyArgs, std::optional, p1_, "p1-")
 MAKE_AGENT_ARGS(P2AgentArgs, P1AgentArgs, std::optional, p2_, "p2-")
-using VsArgs = P2AgentArgs;
+MAKE_AGENT_ADJUDICATE_ARGS(VsArgs, P2AgentArgs, std::optional, , "")
+// using VsArgs = P2AgentArgs;
 
 } // namespace Argparse
 

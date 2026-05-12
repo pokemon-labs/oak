@@ -32,10 +32,6 @@ struct ProgramArgs : public VsArgs {
       kwarg("teams", "Path to teams file").set_default("");
   bool &mirror_match = flag("mirror-match", "Use the same teams for p1, p2");
   std::optional<std::string> &working_dir = kwarg("dir", "Save directory");
-  double &early_stop =
-      kwarg("early-stop", "Forfeit when inverse sigmoid of score exceeds "
-                          "this value for both players")
-          .set_default(10.0);
   double &print_prob =
       kwarg("print-prob", "Probabilty to print any given battle state")
           .set_default(0);
@@ -221,9 +217,10 @@ void thread_fn(const ProgramArgs *args_ptr) {
     auto p1_battle_frames = Train::Battle::CompressedFrames{battle};
     auto p2_battle_frames = Train::Battle::CompressedFrames{battle};
 
-    int p1_early_stop{}, p2_early_stop{};
+    RuntimePolicy::JointValueMemory adjudicator{};
+    bool adjudicated = false;
+    auto adj_result = PKMN::Result::None;
 
-    bool early_stop = false;
     size_t updates = 0;
 
     // playout game
@@ -253,15 +250,11 @@ void thread_fn(const ProgramArgs *args_ptr) {
 
       MCTS::Output p1_output{}, p2_output{};
       int p1_index{}, p2_index{};
-      p1_early_stop = 0;
-      p2_early_stop = 0;
       if (p1_choices.size() > 1) {
         RuntimeSearch::Heap heap{};
         p1_output = RuntimeSearch::run(device, input, heap, p1_agent);
         p1_output =
             RuntimeSearch::run(device, input, heap, p1_agent_after, p1_output);
-        p1_early_stop =
-            inverse_sigmoid(p1_output.empirical_value) / args.early_stop;
         p1_index = process_and_sample(device, p1_output.p1, p1_policy_options);
         if (print_search_outputs) {
           print("P1:");
@@ -284,10 +277,11 @@ void thread_fn(const ProgramArgs *args_ptr) {
                                              p2_labels);
           }
         }
-        p2_early_stop =
-            inverse_sigmoid(p2_output.empirical_value) / args.early_stop;
         p2_index = process_and_sample(device, p2_output.p2, p2_policy_options);
       }
+
+      adjudicator.update(p1_output, p1_policy_options, p2_output,
+                         p2_policy_options);
 
       RuntimeData::battle_outputs[id] = {p1_output, p2_output};
 
@@ -296,9 +290,10 @@ void thread_fn(const ProgramArgs *args_ptr) {
         p2_build_traj.value = 1 - p2_output.empirical_value;
       }
 
-      // only if they have same sign and are both non zero
-      if ((p1_early_stop * p2_early_stop) > 0) {
-        early_stop = true;
+      adj_result = adjudicator.check_for_consensus(
+          args.forfeit_n.value(), args.forfeit_value.value());
+      if (adj_result != PKMN::Result::None) {
+        adjudicated = true;
         break;
       }
 
@@ -318,12 +313,8 @@ void thread_fn(const ProgramArgs *args_ptr) {
       ++updates;
     }
 
-    if (early_stop) {
-      if (p1_early_stop > 0) {
-        input.result = PKMN::result(PKMN::Result::Win);
-      } else {
-        input.result = PKMN::result(PKMN::Result::Lose);
-      }
+    if (adjudicated) {
+      input.result = PKMN::result(adj_result);
     }
 
     p1_battle_frames.result = input.result;

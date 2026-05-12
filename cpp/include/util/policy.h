@@ -1,6 +1,7 @@
 #pragma once
 
-#include <search/mcts.h> // TODO remove
+#include <search/mcts.h>
+#include <libpkmn/pkmn.h>
 #include <util/strings.h>
 
 namespace RuntimePolicy {
@@ -37,6 +38,7 @@ inline std::array<double, 9> get_policy(const auto &side, const auto &options) {
     case Mode::prior: {
       std::transform(prior.begin(), prior.end(), policy.begin(), policy.begin(),
                      [w](double q, double p) { return p + w * q; });
+      break;
     }
     case Mode::empirical: {
       std::transform(empirical.begin(), empirical.end(), policy.begin(),
@@ -105,59 +107,142 @@ inline int process_and_sample(auto &device, const auto &side,
   return index;
 }
 
-class AdjuticateParams {
-  double is = 0;
+template <PKMN::Player player>
+inline double get_value(const auto &output, const auto &options) {
 
-public:
-  size_t consecutive = 1;
+  const auto get = [](auto x) {
+    return x;
+    // if constexpr (player == Player::P1) {
+    //   return x;
+    // } else {
+    //   return 1 - x;
+    // }
+  };
 
-  void set_from_odds(const std::string &odds) {
-    odds_split = Parse::split(odds, ':');
-    try {
-      double x = std::stod(odds_split[0]);
-      double y = std::stod(odds_split[1]);
-      is = std::abs(inverse_sigmoid(x / y));
-    } catch (...) {
-      is = 0;
-      throw std::runtime_error{
-          "ForfeitParams: Invalid format for odds. Requires 'x:y'"};
+  double value = 0;
+
+  const auto mode_split = Parse::split(options.mode, '-');
+
+  for (std::string_view word : mode_split) {
+    const double w =
+        (word.size() > 1) ? std::stod(std::string(word.substr(1))) : 1.0;
+
+    switch (static_cast<Mode>(word[0])) {
+    case Mode::prior: {
+      value += w * get(output.initial_value);
+      break;
+    }
+    case Mode::empirical: {
+      value += w * get(output.empirical_value);
+      break;
+    }
+    case Mode::nash: {
+      value += w * get(output.nash_value);
+      break;
+    }
+    case Mode::argmax: {
+      std::array<std::pair<double, size_t>, 9> data{};
+      for (auto i = 0; i < 9; ++i) {
+        for (auto j = 0; j < 9; ++j) {
+          if constexpr (player == PKMN::Player::P1) {
+            data[i].first += output.value_matrix[i][j];
+            data[i].second += output.visit_matrix[i][j];
+          } else {
+            data[i].first += output.value_matrix[j][i];
+            data[i].second += output.visit_matrix[j][i];
+          }
+        }
+      }
+      size_t max_visits = 0;
+      auto argmax = 0;
+      for (auto i = 0; i < 9; ++i) {
+        if (data[i].second > max_visits) {
+          max_visits = data[i].second;
+          argmax = i;
+        }
+      }
+      if (max_visits == 0) {
+        throw std::runtime_error{"RuntimePolicy::get_score : empty visit "
+                                 "matrix (Probably null MCTS::output.)"};
+      }
+      value += w * get(data[argmax].first / data[argmax].second);
+      break;
+    }
+    case Mode::beta: {
+      throw std::runtime_error{"RuntimePolicy: (b)eta mode disabled for now."};
+      break;
+    }
+    default: {
+      throw std::runtime_error{"RuntimePolicy: invalid mode char: " + word[0]};
+    }
     }
   }
 
-  void set_from_bound(const std::string &value) {
-    try {
-      is = std::abs(inverse_sigmoid(value));
-    } catch (...) {
-      is = 0;
-      throw std::runtime_error{"ForfeitParams: Could not parse bounds (0, 1)"};
-    }
-  }
-
-  static double inverse_sigmoid(const double x) {
-    return std::log(x) - std::log(1 - x);
-  }
-};
-
-struct Adjuticate : public AdjuticateParams {
-  size_t record;
-};
-
-struct PlayerAdjudicate {
-  Adjuticate forfeit;
-  Adjuticate draw;
-
-  void set_from_args(const auto &args) {
-    *this = {};
-    if (args.)
-  }
-};
-
-PKMN::Result check_adjudication(PlayerAdjudicate &p1,
-                                const MCTS::Output &p1_output,
-                                PlayerAdjudicate &p2,
-                                const MCTS::Output &p2_output) {
-  // TODO
-  return {};
+  return value;
 }
+
+inline double inverse_sigmoid(const double x) {
+  return std::log(x) - std::log(1.0 - x);
+}
+
+struct JointValueMemory {
+
+  std::vector<std::pair<double, double>> data;
+
+  void print() const {
+    for (const auto& x : data) {
+      std::cout << x.first << '/' << x.second << ' ';
+    }
+    std::cout << std::endl;
+  }
+
+  static void print_(const auto& d) {
+    for (const auto& x : d) {
+      std::cout << x << ' ';
+    }
+    std::cout << std::endl;
+  }
+
+
+  void update(const MCTS::Output &p1_output, const Options &p1_options,
+              const MCTS::Output &p2_output, const Options &p2_options) {
+
+    if (p1_output.iterations == 0 || p2_output.iterations == 0) {
+      return;
+    }
+    data.emplace_back(get_value<PKMN::Player::P1>(p1_output, p1_options),
+                      get_value<PKMN::Player::P2>(p2_output, p2_options));
+  }
+
+  PKMN::Result check_for_consensus(size_t n, double ff) const {
+    if (ff == 0) {
+      return PKMN::Result::None;
+    }
+    if (data.size() < n) {
+      return PKMN::Result::None;
+    }
+    // positive iff both outputs agree the score is outside ff threshold
+    std::vector<int> witnesses{};
+    std::transform(data.end() - n, data.end(), std::back_inserter(witnesses),
+                   [ff](const auto &x) {
+                     int a = inverse_sigmoid(x.first) / ff;
+                     int b = inverse_sigmoid(x.second) / ff;
+                     return a * b;
+                   });
+    if (std::all_of(witnesses.begin(), witnesses.end(),
+                    [](auto w) { return w > 0; })) {
+      if (data[data.size() - 1].first > .5) {
+        // print();
+        // print_(witnesses);
+        return PKMN::Result::Win;
+      } else {
+        // print();
+        // print_(witnesses);
+        return PKMN::Result::Lose;
+      }
+    }
+    return PKMN::Result::None;
+  }
+};
 
 } // namespace RuntimePolicy

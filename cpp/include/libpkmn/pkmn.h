@@ -225,6 +225,11 @@ enum class Choice : std::underlying_type_t<std::byte> {
   Switch = 2,
 };
 
+enum class Player : std::underlying_type_t<std::byte> {
+  P1 = 1,
+  P2 = 2,
+};
+
 constexpr pkmn_result result(Result result = Result::None,
                              Choice p1 = Choice::Move,
                              Choice p2 = Choice::Move) {
