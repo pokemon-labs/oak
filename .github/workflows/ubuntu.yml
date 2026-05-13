@@ -55,13 +55,10 @@ jobs:
 
       - name: Build Oak (CMake + install Python binaries)
         run: |
-          mkdir -p cpp/build/Release
-          cmake cpp \
-            -B cpp/build/Release \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=../../../src/oak/_native/Release \
-            -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=../../../src/oak/_bin/Release
-          make -C cpp/build/Release
+          chmod +x dev/release
+          ./dev/release
+          chmod +x dev/debug
+          ./dev/debug
 
       - name: Build, repair, install, and test wheel
         run: |
