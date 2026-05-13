@@ -398,15 +398,15 @@ class BattleNetwork(torch.nn.Module):
             self.pokemon_in_dim,
             self.pokemon_hidden_dim,
             self.pokemon_out_dim,
-            Activation.relu,
-            Activation.relu,
+            activation,
+            activation,
         )
         self.active_net = EmbeddingNet(
             self.active_in_dim,
             self.active_hidden_dim,
             self.active_out_dim,
-            Activation.relu,
-            Activation.relu,
+            activation,
+            activation,
         )
         self.main_net = MainNet(
             2 * self.side_out_dim,
@@ -419,8 +419,8 @@ class BattleNetwork(torch.nn.Module):
 
     def set_activation(self, act):
         self.activation = act
-        # self.pokemon_net.set_activation(act)
-        # self.active_net.set_activation(act)
+        self.pokemon_net.set_activation(act)
+        self.active_net.set_activation(act)
         self.main_net.set_activation(act)
 
     def read_parameters(self, f):
