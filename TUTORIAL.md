@@ -520,6 +520,12 @@ The above is an example of a fast run with no team-building. The latter only tak
 
 `--sleep` sets a mandatory wait period (in seconds) between each step of the `battle` learner. This is because RL is almost always bottle-necked by the speed of data generation. We slow the learner down so it isn't seeing the same data all the time.
 
+```bash
+(.venv) $ rl --budget=1024 --fast-budget=256 --fast-search-prob=.75 --bandit=pexp3-1.0-0.1 --policy-mode=n --fast-policy-mode=x --batch-size=8192 --lr=.001 --lr-decay=.99 --lr-decay-interval=100 --build-batch-size=2048 --build-lr=.01 --build-trajectories-per-step=2048 --build-keep-prob=.5 --sleep=2 --max-pokemon=1 --team-modify-prob=1 --pokemon-delete-prob=1 --sleep=4
+```
+
+Proof of concept `rl` run with team-building but only for 1v1.
+
 ### Args
 
 The arguments for `rl` contain the arguments for both `battle` and `build`, where the latter's arguments are prefixed with "build-" for disambiguation. For example

@@ -81,6 +81,16 @@ generate_parser.add_argument(
     default="x",
 )
 generate_parser.add_argument(
+    "--forfeit-value",
+    type=float,
+    default=0.0,
+)
+generate_parser.add_argument(
+    "--forfeit-n",
+    type=int,
+    default=1,
+)
+generate_parser.add_argument(
     "--policy-temp",
     type=float,
     default=1,
@@ -250,6 +260,8 @@ def main():
         f"--move-delete-prob={args.move_delete_prob}",
         f"--battle-skip-prob={args.battle_skip_prob}",
         f"--build-network-path={build_network_path}",
+        f"--forfeit-value={args.forfeit_value}",
+        f"--forfeit-n={args.forfeit_n}",
     ]
 
     def get_common_cmd(args, prefix):
