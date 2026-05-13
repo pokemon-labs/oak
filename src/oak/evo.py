@@ -77,7 +77,7 @@ class Options:
     legal_bandits = bandits + contextual_bandits
 
     @staticmethod
-    def new_bandit(base : str) -> str:
+    def new_bandit(base: str) -> str:
         if bandit in ["exp3", "pexp3"]:
             gamma = random.uniform(args.exp3_gamma_min, args.exp3_gamma_max)
             alpha = random.uniform(args.exp3_alpha_min, args.exp3_alpha_max)
@@ -88,8 +88,8 @@ class Options:
         assert False, "bad bandit name"
 
     @staticmethod
-    def perturb_bandit(base : str) -> str:
-        if base in ["exp3", "pexp3"];
+    def perturb_bandit(base: str) -> str:
+        if base in ["exp3", "pexp3"]:
             pass
         if base in ["ucb", "pucb"]:
             pass
