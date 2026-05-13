@@ -55,7 +55,6 @@ args = parser.parse_args()
 
 
 class Options:
-    PRECISION = 5
     network_table: Dict[int, str] = {}
     bandits = [
         name
@@ -77,28 +76,9 @@ class Options:
     legal_bandits = bandits + contextual_bandits
 
     @staticmethod
-    def new_bandit(base: str) -> str:
-        if bandit in ["exp3", "pexp3"]:
-            gamma = random.uniform(args.exp3_gamma_min, args.exp3_gamma_max)
-            alpha = random.uniform(args.exp3_alpha_min, args.exp3_alpha_max)
-            return bandit + "-" + str(gamma)[:PRECISION] + "-" + str(alpha)[:PRECISION]
-        if bandit in ["ucb", "pucb", "ucb1"]:
-            c = random.uniform(args.ucb_c_min, args.ucb_c_max)
-            return bandit + "-" + str(c)[:PRECISION]
-        assert False, "bad bandit name"
-
-    @staticmethod
-    def perturb_bandit(base: str) -> str:
-        if base in ["exp3", "pexp3"]:
-            pass
-        if base in ["ucb", "pucb"]:
-            pass
-        assert False, "Bad bandit in Options.new_bandit"
-
-    @staticmethod
     def fill_network_table(path):
         net_files = oak.util.find_data_files(path, ext=".battle.net")
-        # Options.network_table[0] = "fp"
+        Options.network_table[0] = "fp"
         for file in net_files:
             network = oak.torch.BattleNetwork()
             with open(file, "rb") as f:
@@ -380,7 +360,16 @@ def new_agent():
     PRECISION = 5
     net_hash, network_path = random.choice(list(Options.network_table.items()))
 
-    bandit = Options.new_bandit(random.choice(Options.legal_bandits))
+    bandit = random.choice(Options.legal_bandits)
+    if bandit in ["exp3", "pexp3"]:
+        gamma = random.uniform(args.exp3_gamma_min, args.exp3_gamma_max)
+        alpha = random.uniform(args.exp3_alpha_min, args.exp3_alpha_max)
+        bandit = bandit + "-" + str(gamma)[:PRECISION] + "-" + str(alpha)[:PRECISION]
+    elif bandit in ["ucb", "pucb", "ucb1"]:
+        c = random.uniform(args.ucb_c_min, args.ucb_c_max)
+        bandit = bandit + "-" + str(c)[:PRECISION]
+    else:
+        assert False, "bad bandit name"
 
     selection_modes = ["n", "e", "x"]
     selection_mode = random.choice(selection_modes)
@@ -459,9 +448,8 @@ def setup():
         args.dir = dir
 
         Options.fill_network_table(args.network_dir)
-        for h in Options.network_table:
-            # agent = new_agent()
-            agent = ID(h, "ucb-0.25", "x", args.budget_ms, False)
+        for _ in range(args.min_agents):
+            agent = new_agent()
             ProgramData.elo.table[agent] = Elo.default_rating
             ProgramData.ucb.table[agent] = [0, 0]
     else:
