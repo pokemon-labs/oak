@@ -143,7 +143,7 @@ def add_local_args(parser, prefix: str = "", rl: bool = False):
     parser.add_argument(
         prefix + "print-window",
         type=int,
-        default=5,
+        default=15,
         help="Number of samples to print for debug output",
     )
 

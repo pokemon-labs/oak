@@ -134,19 +134,10 @@ def main():
         threshold: float,
         threshold_center: torch.Tensor,
     ) -> torch.Tensor:
-        """Apply the force with below a given threshold."""
         can_decrease = decision_outputs - threshold_center > -threshold
         can_increase = decision_outputs - threshold_center < threshold
         force_negative = torch.clamp(force, max=0.0)
         force_positive = torch.clamp(force, min=0.0)
-
-        # print("force")
-        # print(decision_outputs.shape)
-        # print(force.shape)
-
-        # print(can_decrease.shape)
-        # print(force_positive.shape)
-
         clipped_force = can_decrease * force_negative + can_increase * force_positive
         return decision_outputs * clipped_force.detach()
 
