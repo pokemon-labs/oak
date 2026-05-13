@@ -204,6 +204,46 @@ class EmbeddingNet(nn.Module):
         return h
 
 
+class TeamBuildingNet(nn.Module):
+    def __init__(
+        self,
+        in_dim,
+        hidden_dim_0,
+        hidden_dim_1,
+        out_dim,
+        activation0=Activation.relu,
+        activation1=Activation.relu,
+        activation2=Activation.relu,
+    ):
+        super().__init__()
+        self.fc0 = Affine(in_dim, hidden_dim_0, activation=activation0)
+        self.fc1 = Affine(hidden_dim_0, hidden_dim_1, activation=activation1)
+        self.fc2 = Affine(hidden_dim_1, out_dim, activation=activation2)
+
+    def set_activation(self, act):
+        self.fc0.activation = act
+        self.fc1.activation = act
+
+    def read_parameters(self, f):
+        self.fc0.read_parameters(f)
+        self.fc1.read_parameters(f)
+        self.fc2.read_parameters(f)
+
+    def write_parameters(self, f):
+        self.fc0.write_parameters(f)
+        self.fc1.write_parameters(f)
+        self.fc2.write_parameters(f)
+
+    def forward(self, x):
+        return self.fc2(self.fc1(self.fc0(x)))
+
+    def hash(self) -> int:
+        h = self.fc0.hash()
+        h = combine_hash(h, self.fc1.hash())
+        h = combine_hash(h, self.fc2.hash())
+        return h
+
+
 class MainNet(nn.Module):
     def __init__(
         self,
@@ -458,15 +498,23 @@ class BuildNetwork(nn.Module):
         value_hidden_dim=oak.build_value_hidden_dim,
     ):
         super().__init__()
-        self.policy_net = EmbeddingNet(
+        self.policy_net = TeamBuildingNet(
             len(oak.species_move_list),
+            policy_hidden_dim,
             policy_hidden_dim,
             len(oak.species_move_list),
             Activation.relu,
+            Activation.relu,
             Activation.none,
         )
-        self.value_net = EmbeddingNet(
-            len(oak.species_move_list), value_hidden_dim, 1, True, False
+        self.value_net = TeamBuildingNet(
+            len(oak.species_move_list),
+            value_hidden_dim,
+            value_hidden_dim,
+            1,
+            Activation.relu,
+            Activation.relu,
+            Activation.none,
         )
 
     def read_parameters(self, f):
