@@ -26,7 +26,7 @@ struct BattleFrameBuffer {
     const std::filesystem::path full_path = dir / filename;
     std::ofstream out(full_path, std::ios::binary | std::ios::trunc);
     if (!out) {
-      std::cerr << "Failed to write buffer to " << full_path << '\n';
+      std::cout << "Failed to write buffer to " << full_path << '\n';
       return;
     }
     out.write(reinterpret_cast<const char *>(buffer.data()),

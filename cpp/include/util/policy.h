@@ -200,7 +200,7 @@ struct JointValueMemory {
   }
 
   PKMN::Result check_for_consensus(size_t n, double ff) const {
-    if (ff == 0) {
+    if (ff == 0.0) {
       return PKMN::Result::None;
     }
     if (data.size() < n) {
@@ -216,7 +216,7 @@ struct JointValueMemory {
                    });
     if (std::all_of(witnesses.begin(), witnesses.end(),
                     [](auto w) { return w > 0; })) {
-      if (data[data.size() - 1].first > .5) {
+      if (data.back().first > .5) {
         return PKMN::Result::Win;
       } else {
         return PKMN::Result::Lose;

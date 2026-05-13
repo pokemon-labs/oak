@@ -211,7 +211,8 @@ struct Provider {
     auto team = teams[team_index];
     bool changed = omitter.shuffle_and_truncate(device, team);
     if (device.uniform() < team_modify_prob) {
-      changed = changed || omitter.delete_info(device, team);
+      const bool deleted = omitter.delete_info(device, team);
+      changed = changed || deleted;
     }
 
     if (!changed) {

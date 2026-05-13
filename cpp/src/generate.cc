@@ -346,7 +346,7 @@ void generate(const ProgramArgs *args_ptr) {
         debug_print("update: " + std::to_string(battle_length));
       }
     } catch (const std::exception &e) {
-      std::cerr << e.what() << std::endl;
+      std::cout << e.what() << std::endl;
       continue;
     }
 
@@ -363,8 +363,9 @@ void generate(const ProgramArgs *args_ptr) {
       frame_buffer_write_index += n_bytes_frames;
       // data
       RuntimeData::frame_counter.fetch_add(training_frames.updates.size());
+      RuntimeData::battle_counter.fetch_add(1);
       if ((args.max_battles > 0) &&
-          (1 + RuntimeData::battle_counter.fetch_add(1)) >= args.max_battles) {
+          RuntimeData::battle_counter.load() >= args.max_battles) {
         RuntimeData::terminated = true;
       }
       if (frame_buffer_write_index >= training_frames_target_size) {
