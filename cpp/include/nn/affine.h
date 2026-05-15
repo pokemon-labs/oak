@@ -70,12 +70,7 @@ public:
     return true;
   }
 
-  template <Activation act = none, Activation pre = none>
-  void propagate(const float *input_data, float *output_data) const {
-    constexpr auto activation = (act == same) ? pre : act;
-    const auto input = Eigen::Map<const Vector>(input_data, in_dim);
-    Eigen::Map<Vector> output(output_data, out_dim);
-    output.noalias() = weights * input + biases;
+  template <Activation act> void apply(auto &output) const noexcept {
     if constexpr (activation == none) {
       return;
     } else if constexpr (activation == relu) {
@@ -88,10 +83,23 @@ public:
       for (int i = 0; i < chunks; ++i) {
         auto chunk = output.segment(i * 32, 32);
         float chunk_max = chunk.maxCoeff();
-        if (chunk_max > 1.0f)
+        // TODO don't we always scale?
+        if (chunk_max > 1.0f) {
           chunk /= chunk_max;
+        }
       }
+    } else {
+      static_assert(act != act);
     }
+  }
+
+  template <Activation act = none, Activation pre = none>
+  void propagate(const float *input_data, float *output_data) const {
+    constexpr auto activation = (act == same) ? pre : act;
+    const auto input = Eigen::Map<const Vector>(input_data, in_dim);
+    Eigen::Map<Vector> output(output_data, out_dim);
+    output.noalias() = weights * input + biases;
+    apply<activation>(output);
   }
 
   template <Activation act = none, Activation pre = none>
@@ -103,22 +111,7 @@ public:
     for (auto k = 0; k < n; ++k) {
       output.noalias() += weights.col(index_data[k]) * input_data[k];
     }
-    if constexpr (activation == none) {
-      return;
-    } else if constexpr (activation == relu) {
-      output = output.cwiseMax(0.0f);
-    } else if constexpr (activation == clamp) {
-      output = output.cwiseMax(0.0f).cwiseMin(1.0f);
-    } else if constexpr (activation == relu_scaled) {
-      output = output.cwiseMax(0.0f);
-      const int chunks = out_dim / 32;
-      for (int i = 0; i < chunks; ++i) {
-        auto chunk = output.segment(i * 32, 32);
-        float chunk_max = chunk.maxCoeff();
-        if (chunk_max > 1.0f)
-          chunk /= chunk_max;
-      }
-    }
+    apply<activation>(output);
   }
 
   void initialize(auto &device) {
