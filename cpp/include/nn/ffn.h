@@ -84,25 +84,23 @@ using TeamBuildingNet =
 template <Activation last = Activation::same>
 struct MLP2 : public FeedForwardNetwork<Affine<>, Affine<>> {
   template <Activation act> void propagate(const float *input, float *output) {
-    propagate<act, std::is_same_v<last, Activation::same> ? act : last>(input,
-                                                                        output);
+    propagate<act, last == Activation::same ? act : last>(input, output);
   }
   template <Activation act>
   void propagate(const float *input, const auto *index, float *output, auto n) {
-    propagate<act, std::is_same_v<last, Activation::same> ? act : last>(
-        input, index, output, n);
+    propagate<act, last == Activation::same ? act : last>(input, index, output,
+                                                          n);
   }
 };
 template <Activation last = Activation::same>
 struct MLP3 : public FeedForwardNetwork<Affine<>, Affine<>, Affine<>> {
   template <Activation act> void propagate(const float *input, float *output) {
-    propagate<act, act, std::is_same_v<last, Activation::same> ? act : last>(
-        input, output);
+    propagate<act, act, last == Activation::same ? act : last>(input, output);
   }
   template <Activation act>
   void propagate(const float *input, const auto *index, float *output, auto n) {
-    propagate<act, act, std::is_same_v<last, Activation::same> ? act : last>(
-        input, index, output, n);
+    propagate<act, act, last == Activation::same ? act : last>(input, index,
+                                                               output, n);
   }
 };
 

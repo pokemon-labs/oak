@@ -70,7 +70,7 @@ public:
     return true;
   }
 
-  template <Activation act> void apply(auto &output) const noexcept {
+  template <Activation activation> void apply(auto &output) const noexcept {
     if constexpr (activation == none) {
       return;
     } else if constexpr (activation == relu) {
@@ -89,7 +89,7 @@ public:
         }
       }
     } else {
-      static_assert(act != act);
+      static_assert(activation != activation);
     }
   }
 
