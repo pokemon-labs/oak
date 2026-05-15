@@ -73,11 +73,41 @@ template <typename... Layers> struct FeedForwardNetwork {
 };
 
 using EmbeddingNet = FeedForwardNetwork<Affine<Eigen::ColMajor>, Affine<>>;
+using EmbeddingNet3 =
+    FeedForwardNetwork<Affine<Eigen::ColMajor>, Affine<>, Affine<>>;
 
 using TeamBuildingNet =
     FeedForwardNetwork<Affine<Eigen::ColMajor>, Affine<>, Affine<>>;
 
-using MLP2 = FeedForwardNetwork<Affine<>, Affine<>>;
-using MLP3 = FeedForwardNetwork<Affine<>, Affine<>, Affine<>>;
+// gives the FFNs the 'module' interface of the Battle::Network refactor
+// i.e. only one activation param
+template <Activation last = Activation::same>
+struct MLP2 : public FeedForwardNetwork<Affine<>, Affine<>> {
+  template <Activation act> void propagate(const float *input, float *output) {
+    propagate<act, std::is_same_v<last, Activation::same> ? act : last>(input,
+                                                                        output);
+  }
+  template <Activation act>
+  void propagate(const float *input, const auto *index, float *output, auto n) {
+    propagate<act, std::is_same_v<last, Activation::same> ? act : last>(
+        input, index, output, n);
+  }
+};
+template <Activation last = Activation::same>
+struct MLP3 : public FeedForwardNetwork<Affine<>, Affine<>, Affine<>> {
+  template <Activation act> void propagate(const float *input, float *output) {
+    propagate<act, act, std::is_same_v<last, Activation::same> ? act : last>(
+        input, output);
+  }
+  template <Activation act>
+  void propagate(const float *input, const auto *index, float *output, auto n) {
+    propagate<act, act, std::is_same_v<last, Activation::same> ? act : last>(
+        input, index, output, n);
+  }
+};
+
+// i.e.
+using Trunk2 = MLP2<>;
+using Head2 = MLP2<Activation::none>;
 
 } // namespace NN
