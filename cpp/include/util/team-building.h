@@ -6,7 +6,7 @@
 #include <teams/ou-sample-teams.h>
 #include <train/build/trajectory.h>
 #include <util/file-lock.h>
-#include <util/parse.h>
+#include <util/load-teams.h>
 
 #include <unistd.h>
 
@@ -146,37 +146,7 @@ struct Provider {
 
   void load_teams(const std::string &path) {
     if (!path.empty()) {
-
-      // read teams file
-      const auto side_to_team = [](const PKMN::Side &side) {
-        std::vector<PKMN::Set> team{};
-        for (const auto &pokemon : side.pokemon) {
-          if (pokemon.species != PKMN::Data::Species::None) {
-            PKMN::Set set{};
-            set.species = pokemon.species;
-            std::transform(pokemon.moves.begin(), pokemon.moves.end(),
-                           set.moves.begin(),
-                           [](const auto ms) { return ms.id; });
-            team.emplace_back(set);
-          }
-        }
-        return team;
-      };
-
-      std::ifstream file{path};
-      while (true) {
-        std::string line{};
-        std::getline(file, line);
-        if (line.empty()) {
-          break;
-        }
-        const auto [side, _] = Parse::parse_side(line);
-        teams.push_back(side_to_team(side));
-      }
-      if (teams.size() == 0) {
-        throw std::runtime_error{
-            "Team Provider: Did not read any teams from path: " + path};
-      }
+      teams = _load_teams(path);
     } else {
       // use sample teams
       std::transform(Teams::ou_sample_teams.begin(),

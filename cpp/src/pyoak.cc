@@ -15,6 +15,7 @@
 #include <py/battle/output.h>
 #include <py/build/trajectories.h>
 #include <train/battle/compressed-frame.h>
+#include <util/load-teams.h>
 #include <util/parse.h>
 #include <util/search.h>
 
@@ -857,22 +858,34 @@ struct BattleView {
   std::string to_string() const { return PKMN::to_string(raw); }
 };
 
+struct PokemonSet {
+  uint8_t species;
+  uint8_t level;
+  std::array<uint8_t, 4> moves;
+  PokemonSet() = default;
+  PokemonSet(const PKMN::Set &s) {
+    species = static_cast<uint8_t>(s.species);
+    level = static_cast<uint8_t>(s.level);
+    std::transform(s.moves.begin(), s.moves.end(), moves.begin(),
+                   [](const auto move) { return static_cast<uint8_t>(move); });
+  }
+};
+
 // ============================================================================
 // Module definition
 // ============================================================================
 
-PYBIND11_MODULE(oak, m) {
-  m.doc() =
-      "oak — low-level structured view of pkmn_gen1_battle bytes.\n\n"
-      "  b    = oak.Battle(raw_bytes)   # 384 bytes\n"
-      "  d    = oak.Durations(dur_bytes) # 8 bytes (or Durations() for "
-      "zeroed)\n"
-      "  side = b.side(0)                   # P1\n"
-      "  pkmn = side.pokemon(0)             # storage index 0\n"
-      "  lead = side.slot(1)                # battle slot 1 (respects "
-      "order[])\n"
-      "  act  = side.active\n"
-      "  new_bytes = b.bytes()";
+PYBIND11_MODULE(pyoak, m) {
+  m.doc() = "oak — low-level structured view of pkmn_gen1_battle bytes.\n\n"
+            "  b    = oak.Battle(raw_bytes)   # 384 bytes\n"
+            "  d    = oak.Durations(dur_bytes) # 8 bytes (or Durations() for "
+            "zeroed)\n"
+            "  side = b.side(0)                   # P1\n"
+            "  pkmn = side.pokemon(0)             # storage index 0\n"
+            "  lead = side.slot(1)                # battle slot 1 (respects "
+            "order[])\n"
+            "  act  = side.active\n"
+            "  new_bytes = b.bytes()";
 
   // Module-level constants
   m.attr("BATTLE_SIZE") = static_cast<int>(PKMN_GEN1_BATTLE_SIZE);
@@ -1095,7 +1108,6 @@ PYBIND11_MODULE(oak, m) {
                     "Raw uint32 of all packed duration bits.")
       .def("__repr__", [](const DurationProxy &) { return "<Duration>"; });
 
-  // ---- Durations -----------------------------------------------------------
   py::class_<DurationsView>(m, "Durations",
                             "8-byte chance durations for both sides.\n\n"
                             "  d = oak.Durations(dur_bytes)  # from bytes\n"
@@ -1112,12 +1124,12 @@ PYBIND11_MODULE(oak, m) {
            "Return current (possibly mutated) 8-byte representation.")
       .def("__repr__", [](const DurationsView &) { return "<Durations>"; });
 
-  // ---- Battle --------------------------------------------------------------
   py::class_<BattleView>(m, "Battle",
                          "Structured view of a 384-byte pkmn_gen1_battle.\n\n"
                          "  b = oak.Battle(raw_bytes)\n"
                          "  b.side(0).slot(1).hp = 200\n"
                          "  new_bytes = b.bytes()")
+      .def(py::init<>(), "Construct zeroed Battle.")
       .def(py::init<py::bytes>(), py::arg("data"),
            "Construct from 384 raw bytes.")
       .def("side", &BattleView::side, py::arg("index"),
@@ -1135,6 +1147,12 @@ PYBIND11_MODULE(oak, m) {
       .def("__repr__", [](const BattleView &b) {
         return "<Battle turn=" + std::to_string(b.get_turn()) + ">";
       });
+
+  py::class_<PokemonSet>(m, "Set")
+      .def(py::init<>(), "Construct zeroed Set.")
+      .def_readwrite("species", &PokemonSet::species)
+      .def_readwrite("level", &PokemonSet::level)
+      .def_readwrite("moves", &PokemonSet::moves);
 
   // Search
 
@@ -1379,6 +1397,19 @@ PYBIND11_MODULE(oak, m) {
       py::arg("input"), py::arg("heap"), py::arg("agent"),
       py::arg("output") = MCTS::Output{});
 
+  m.def("load_teams", [](const std::string &path) {
+    std::vector<std::vector<PokemonSet>> res{};
+    const auto out = _load_teams(path);
+    for (const auto &t : out) {
+      std::vector<PokemonSet> team{};
+      for (const auto &s : t) {
+        team.emplace_back(s);
+      }
+      res.emplace_back(team);
+    }
+    return res;
+  });
+
   // Battle net hyperparams
   m.attr("pokemon_in_dim") = Encode::Battle::Pokemon::n_dim;
   m.attr("active_in_dim") = Encode::Battle::ActivePokemon::n_dim;
@@ -1427,11 +1458,9 @@ PYBIND11_MODULE(oak, m) {
         dim_labels_to_vec(Encode::Battle::Pokemon::dim_labels);
     m.attr("active_pokemon_dim_labels") =
         dim_labels_to_vec(Encode::Battle::ActivePokemon::dim_labels);
-    {
-      auto v = dim_labels_to_vec(Encode::Battle::Policy::dim_labels);
-      v.push_back(""); // preserve extra empty string
-      m.attr("policy_dim_labels") = v;
-    }
+    auto v = dim_labels_to_vec(Encode::Battle::Policy::dim_labels);
+    v.push_back(""); // preserve extra empty string
+    m.attr("policy_dim_labels") = v;
   }
 }
 
