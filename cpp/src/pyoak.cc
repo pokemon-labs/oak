@@ -861,11 +861,11 @@ struct BattleView {
 // Module definition
 // ============================================================================
 
-PYBIND11_MODULE(inspect, m) {
+PYBIND11_MODULE(oak, m) {
   m.doc() =
-      "oak.inspect — low-level structured view of pkmn_gen1_battle bytes.\n\n"
-      "  b    = inspect.Battle(raw_bytes)   # 384 bytes\n"
-      "  d    = inspect.Durations(dur_bytes) # 8 bytes (or Durations() for "
+      "oak — low-level structured view of pkmn_gen1_battle bytes.\n\n"
+      "  b    = oak.Battle(raw_bytes)   # 384 bytes\n"
+      "  d    = oak.Durations(dur_bytes) # 8 bytes (or Durations() for "
       "zeroed)\n"
       "  side = b.side(0)                   # P1\n"
       "  pkmn = side.pokemon(0)             # storage index 0\n"
@@ -1098,8 +1098,8 @@ PYBIND11_MODULE(inspect, m) {
   // ---- Durations -----------------------------------------------------------
   py::class_<DurationsView>(m, "Durations",
                             "8-byte chance durations for both sides.\n\n"
-                            "  d = inspect.Durations(dur_bytes)  # from bytes\n"
-                            "  d = inspect.Durations()           # zeroed\n"
+                            "  d = oak.Durations(dur_bytes)  # from bytes\n"
+                            "  d = oak.Durations()           # zeroed\n"
                             "  d.get(0).confusion = 3\n"
                             "  dur_bytes = d.bytes()")
       .def(py::init<>(), "Construct zeroed Durations.")
@@ -1115,7 +1115,7 @@ PYBIND11_MODULE(inspect, m) {
   // ---- Battle --------------------------------------------------------------
   py::class_<BattleView>(m, "Battle",
                          "Structured view of a 384-byte pkmn_gen1_battle.\n\n"
-                         "  b = inspect.Battle(raw_bytes)\n"
+                         "  b = oak.Battle(raw_bytes)\n"
                          "  b.side(0).slot(1).hp = 200\n"
                          "  new_bytes = b.bytes()")
       .def(py::init<py::bytes>(), py::arg("data"),
