@@ -1332,7 +1332,27 @@ PYBIND11_MODULE(pyoak, m) {
 
   m.def("read_battle_data", &read_battle_data, py::arg("path"));
   m.def("read_build_trajectories", &read_build_trajectories);
+
   // Methods
+
+  m.def(
+      "species_id", [](const int x) { return PKMN::species_string(x); },
+      py::arg("number"));
+  m.def(
+      "move_id", [](const int x) { return PKMN::move_string(x); },
+      py::arg("number"));
+  m.def(
+      "id_to_species",
+      [](const std::string &str) {
+        return static_cast<uint8_t>(PKMN::string_to_species(str));
+      },
+      py::arg("species_id"));
+  m.def(
+      "id_to_move",
+      [](const std::string &str) {
+        return static_cast<uint8_t>(PKMN::string_to_move(str));
+      },
+      py::arg("move_id"));
 
   m.def(
       "sample",
