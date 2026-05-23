@@ -1,6 +1,13 @@
 #include <encode/battle/battle.h>
 #include <encode/battle/policy.h>
 #include <encode/build/compressed-trajectory.h>
+#include <libpkmn/data.h>
+#include <libpkmn/data/moves.h>
+#include <libpkmn/data/species.h>
+#include <libpkmn/data/status.h>
+#include <libpkmn/data/strings.h>
+#include <libpkmn/layout.h>
+#include <libpkmn/strings.h>
 #include <nn/battle/network.h>
 #include <nn/default-hyperparameters.h>
 #include <py/battle/encoded-frames.h>
@@ -11,11 +18,15 @@
 #include <util/parse.h>
 #include <util/search.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -23,7 +34,13 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <pkmn.h>
+
 namespace {
+
+namespace py = pybind11;
+using namespace PKMN;
+using namespace PKMN::Data;
 
 template <std::size_t N, std::size_t M>
 std::vector<std::string>
@@ -35,8 +52,6 @@ dim_labels_to_vec(const std::array<std::array<char, M>, N> &data) {
   }
   return result;
 }
-
-namespace py = pybind11;
 
 using Py::Battle::Output;
 
@@ -425,18 +440,703 @@ const auto solve_matrix(py::array_t<float> p1_payoffs,
   return py::make_tuple(p1, p2, solve_output.value);
 }
 
-PYBIND11_MODULE(pyoak, m) {
-  m.doc() = "Python bindings for Oak";
-  m.def(
-      "sample",
-      [](Py::Battle::EncodedFrames &encoded_frames,
-         const SampleIndexer &indexer, size_t threads, size_t max_battle_length,
-         size_t min_iterations) {
-        return sample(encoded_frames, indexer, threads, max_battle_length,
-                      min_iterations);
-      },
-      py::arg("encoded_frames"), py::arg("indexer"), py::arg("threads"),
-      py::arg("max_battle_length"), py::arg("min_iterations"));
+// ============================================================================
+// Helpers
+// ============================================================================
+
+static inline std::string_view bytes_sv(const py::bytes &b) {
+  return {PyBytes_AS_STRING(b.ptr()),
+          static_cast<size_t>(PyBytes_GET_SIZE(b.ptr()))};
+}
+
+// Pack/unpack helpers for bit fields that PKMN::Volatiles doesn't provide a
+// setter for. All operate directly on the bits field.
+
+// Read an arbitrary N-bit unsigned field from `bits` starting at `shift`.
+template <int N> static constexpr uint64_t bf_get(uint64_t bits, int shift) {
+  return (bits >> shift) & ((1ULL << N) - 1);
+}
+
+// Write an arbitrary N-bit unsigned field into `bits` at `shift`.
+template <int N>
+static constexpr uint64_t bf_set(uint64_t bits, int shift, uint64_t val) {
+  const uint64_t mask = ((1ULL << N) - 1) << shift;
+  return (bits & ~mask) | ((val & ((1ULL << N) - 1)) << shift);
+}
+
+// ============================================================================
+// Proxy structs
+// (Each is a thin wrapper around a pointer into the owned Battle buffer.)
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// StatsProxy
+// ----------------------------------------------------------------------------
+struct StatsProxy {
+  Stats *p;
+
+  uint16_t get_hp() const { return p->hp; }
+  uint16_t get_atk() const { return p->atk; }
+  uint16_t get_def() const { return p->def; }
+  uint16_t get_spe() const { return p->spe; }
+  uint16_t get_spc() const { return p->spc; }
+
+  void set_hp(uint16_t v) { p->hp = v; }
+  void set_atk(uint16_t v) { p->atk = v; }
+  void set_def(uint16_t v) { p->def = v; }
+  void set_spe(uint16_t v) { p->spe = v; }
+  void set_spc(uint16_t v) { p->spc = v; }
+};
+
+// ----------------------------------------------------------------------------
+// MoveSlotProxy
+// ----------------------------------------------------------------------------
+struct MoveSlotProxy {
+  MoveSlot *p;
+
+  uint8_t get_id() const { return static_cast<uint8_t>(p->id); }
+  uint8_t get_pp() const { return p->pp; }
+  void set_id(uint8_t v) { p->id = static_cast<Move>(v); }
+  void set_pp(uint8_t v) { p->pp = v; }
+
+  std::string name() const { return std::string(PKMN::move_char_array(p->id)); }
+};
+
+// ----------------------------------------------------------------------------
+// BoostsProxy
+//
+// Raw access:  boosts.bytes  -> list[int] of the 4 underlying bytes.
+//              boosts.raw    -> uint32_t of the whole thing.
+// Named fields use the existing encode_i4 / decode_i4 logic in the C++ type.
+// ----------------------------------------------------------------------------
+struct BoostsProxy {
+  Boosts *p;
+
+  // Getters — named
+  int8_t get_atk() const { return p->atk(); }
+  int8_t get_def() const { return p->def(); }
+  int8_t get_spe() const { return p->spe(); }
+  int8_t get_spc() const { return p->spc(); }
+  int8_t get_acc() const { return p->acc(); }
+  int8_t get_eva() const { return p->eva(); }
+
+  // Setters — named
+  void set_atk(int8_t v) { p->set_atk(v); }
+  void set_def(int8_t v) { p->set_def(v); }
+  void set_spe(int8_t v) { p->set_spe(v); }
+  void set_spc(int8_t v) { p->set_spc(v); }
+  void set_acc(int8_t v) { p->set_acc(v); }
+  void set_eva(int8_t v) { p->set_eva(v); }
+
+  // Raw access — uint32 of the 4 bytes
+  uint32_t get_raw() const {
+    uint32_t out;
+    std::memcpy(&out, p->bytes, 4);
+    return out;
+  }
+  void set_raw(uint32_t v) { std::memcpy(p->bytes, &v, 4); }
+};
+
+// ----------------------------------------------------------------------------
+// VolatilesProxy
+//
+// Named flag setters delegate to the C++ helpers that already exist.
+// For the bit-packed counter fields where no setter exists in the C++ type
+// (state, substitute_hp, transform_species, toxic_counter, disable_move) we
+// do the bit math directly using the bf_set helper above.
+// `bits` is also exposed raw for any operation not covered by the above.
+//
+// Bit layout (from data.h / Layout::Volatiles):
+//   [0]      bide
+//   [1]      thrashing
+//   [2]      multi_hit
+//   [3]      flinch
+//   [4]      charging
+//   [5]      binding
+//   [6]      invulnerable
+//   [7]      confusion (flag)
+//   [8]      mist
+//   [9]      focus_energy
+//   [10]     substitute (flag)
+//   [11]     recharging
+//   [12]     rage
+//   [13]     leech_seed
+//   [14]     toxic (flag)
+//   [15]     light_screen
+//   [16]     reflect
+//   [17]     transform (flag)
+//   [20:18]  confusion_left (3 bits)
+//   [23:21]  attacks       (3 bits)
+//   [39:24]  state         (16 bits)
+//   [47:40]  substitute_hp (8 bits)
+//   [51:48]  transform_species (4 bits)
+//   [55:52]  disable_left  (4 bits)
+//   [58:56]  disable_move  (3 bits)
+//   [63:59]  toxic_counter (5 bits)
+// ----------------------------------------------------------------------------
+struct VolatilesProxy {
+  Volatiles *p;
+
+  // --- boolean flags (setters exist in C++) ---
+  bool get_bide() const { return p->bide(); }
+  bool get_thrashing() const { return p->thrashing(); }
+  bool get_multi_hit() const { return p->multi_hit(); }
+  bool get_flinch() const { return p->flinch(); }
+  bool get_charging() const { return p->charging(); }
+  bool get_binding() const { return p->binding(); }
+  bool get_invulnerable() const { return p->invulnerable(); }
+  bool get_confusion() const { return p->confusion(); }
+  bool get_mist() const { return p->mist(); }
+  bool get_focus_energy() const { return p->focus_energy(); }
+  bool get_substitute() const { return p->substitute(); }
+  bool get_recharging() const { return p->recharging(); }
+  bool get_rage() const { return p->rage(); }
+  bool get_leech_seed() const { return p->leech_seed(); }
+  bool get_toxic() const { return p->toxic(); }
+  bool get_light_screen() const { return p->light_screen(); }
+  bool get_reflect() const { return p->reflect(); }
+  bool get_transform() const { return p->transform(); }
+
+  void set_bide(bool v) { p->set_bide(v); }
+  void set_thrashing(bool v) { p->set_thrashing(v); }
+  void set_multi_hit(bool v) { p->set_multi_hit(v); }
+  void set_flinch(bool v) { p->set_flinch(v); }
+  void set_charging(bool v) { p->set_charging(v); }
+  void set_binding(bool v) { p->set_binding(v); }
+  void set_invulnerable(bool v) { p->set_invulnerable(v); }
+  void set_confusion(bool v) { p->set_confusion(v); }
+  void set_mist(bool v) { p->set_mist(v); }
+  void set_focus_energy(bool v) { p->set_focus_energy(v); }
+  void set_substitute(bool v) { p->set_substitute(v); }
+  void set_recharging(bool v) { p->set_recharging(v); }
+  void set_rage(bool v) { p->set_rage(v); }
+  void set_leech_seed(bool v) { p->set_leech_seed(v); }
+  void set_toxic(bool v) { p->set_toxic(v); }
+  void set_light_screen(bool v) { p->set_light_screen(v); }
+  void set_reflect(bool v) { p->set_reflect(v); }
+  void set_transform(bool v) { p->set_transform(v); }
+
+  // --- counters with existing C++ setters ---
+  uint8_t get_confusion_left() const { return p->confusion_left(); }
+  uint8_t get_attacks() const { return p->attacks(); }
+  uint8_t get_disable_left() const { return p->disable_left(); }
+
+  void set_confusion_left(uint8_t v) { p->set_confusion_left(v); }
+  void set_attacks(uint8_t v) { p->set_attacks(v); }
+  void set_disable_left(uint8_t v) { p->set_disable_left(v); }
+
+  // --- bit-packed fields without C++ setters — manual bit math ---
+  uint16_t get_state() const { return p->state(); }
+  uint8_t get_substitute_hp() const { return p->substitute_hp(); }
+  uint8_t get_transform_species() const { return p->transform_species(); }
+  uint8_t get_disable_move() const { return p->disable_move(); }
+  uint8_t get_toxic_counter() const { return p->toxic_counter(); }
+
+  void set_state(uint16_t v) {
+    p->bits = bf_set<16>(p->bits, 24, static_cast<uint64_t>(v));
+  }
+  void set_substitute_hp(uint8_t v) {
+    p->bits = bf_set<8>(p->bits, 40, static_cast<uint64_t>(v));
+  }
+  void set_transform_species(uint8_t v) {
+    p->bits = bf_set<4>(p->bits, 48, static_cast<uint64_t>(v));
+  }
+  void set_disable_move(uint8_t v) {
+    p->bits = bf_set<3>(p->bits, 56, static_cast<uint64_t>(v));
+  }
+  void set_toxic_counter(uint8_t v) {
+    p->bits = bf_set<5>(p->bits, 59, static_cast<uint64_t>(v));
+  }
+
+  // --- raw 64-bit access ---
+  uint64_t get_bits() const { return p->bits; }
+  void set_bits(uint64_t v) { p->bits = v; }
+
+  std::string to_string() const { return volatiles_to_string(*p); }
+};
+
+// ----------------------------------------------------------------------------
+// PokemonProxy
+// ----------------------------------------------------------------------------
+struct PokemonProxy {
+  Pokemon *p;
+
+  StatsProxy stats() { return {&p->stats}; }
+  MoveSlotProxy move(int i) {
+    if (i < 0 || i > 3)
+      throw std::out_of_range("move index must be 0-3");
+    return {&p->moves[static_cast<size_t>(i)]};
+  }
+
+  uint16_t get_hp() const { return p->hp; }
+  uint8_t get_status() const { return static_cast<uint8_t>(p->status); }
+  uint8_t get_species() const { return static_cast<uint8_t>(p->species); }
+  uint8_t get_types() const { return p->types; }
+  uint8_t get_level() const { return p->level; }
+
+  void set_hp(uint16_t v) { p->hp = v; }
+  void set_status(uint8_t v) { p->status = static_cast<Status>(v); }
+  void set_species(uint8_t v) { p->species = static_cast<Species>(v); }
+  void set_types(uint8_t v) { p->types = v; }
+  void set_level(uint8_t v) { p->level = v; }
+
+  int percent() const { return p->percent(); }
+
+  std::string species_name() const {
+    return std::string(PKMN::species_char_array(p->species));
+  }
+  std::string status_name() const { return status_string(p->status); }
+  std::string to_string() const {
+    return pokemon_to_string(reinterpret_cast<const uint8_t *>(p));
+  }
+};
+
+// ----------------------------------------------------------------------------
+// ActivePokemonProxy
+// ----------------------------------------------------------------------------
+struct ActivePokemonProxy {
+  ActivePokemon *p;
+
+  StatsProxy stats() { return {&p->stats}; }
+  BoostsProxy boosts() { return {&p->boosts}; }
+  VolatilesProxy volatiles() { return {&p->volatiles}; }
+  MoveSlotProxy move(int i) {
+    if (i < 0 || i > 3)
+      throw std::out_of_range("move index must be 0-3");
+    return {&p->moves[static_cast<size_t>(i)]};
+  }
+
+  uint8_t get_species() const { return static_cast<uint8_t>(p->species); }
+  uint8_t get_types() const { return p->types; }
+  void set_species(uint8_t v) { p->species = static_cast<Species>(v); }
+  void set_types(uint8_t v) { p->types = v; }
+
+  std::string species_name() const {
+    return std::string(PKMN::species_char_array(p->species));
+  }
+};
+
+// ----------------------------------------------------------------------------
+// SideProxy
+// ----------------------------------------------------------------------------
+struct SideProxy {
+  Side *p;
+
+  PokemonProxy pokemon(int i) {
+    if (i < 0 || i > 5)
+      throw std::out_of_range("pokemon index must be 0-5");
+    return {&p->pokemon[static_cast<size_t>(i)]};
+  }
+  // slot is 1-indexed, uses order[] just like the C++ Side::get()
+  PokemonProxy slot(int s) {
+    if (s < 1 || s > 6)
+      throw std::out_of_range("slot must be 1-6");
+    return {&p->get(s)};
+  }
+  ActivePokemonProxy active() { return {&p->active}; }
+  PokemonProxy stored() { return {&p->stored()}; }
+
+  std::array<uint8_t, 6> get_order() const { return p->order; }
+  void set_order(std::array<uint8_t, 6> v) { p->order = v; }
+
+  uint8_t get_last_selected_move() const {
+    return static_cast<uint8_t>(p->last_selected_move);
+  }
+  uint8_t get_last_used_move() const {
+    return static_cast<uint8_t>(p->last_used_move);
+  }
+  void set_last_selected_move(uint8_t v) {
+    p->last_selected_move = static_cast<Move>(v);
+  }
+  void set_last_used_move(uint8_t v) {
+    p->last_used_move = static_cast<Move>(v);
+  }
+};
+
+// ----------------------------------------------------------------------------
+// DurationProxy / DurationsView
+// ----------------------------------------------------------------------------
+struct DurationProxy {
+  Duration *p;
+
+  uint8_t sleep(int slot) const {
+    if (slot < 0 || slot > 5)
+      throw std::out_of_range("slot must be 0-5");
+    return p->sleep(slot);
+  }
+  void set_sleep(int slot, uint8_t v) {
+    if (slot < 0 || slot > 5)
+      throw std::out_of_range("slot must be 0-5");
+    p->set_sleep(slot, v);
+  }
+
+  uint8_t get_confusion() const { return p->confusion(); }
+  uint8_t get_disable() const { return p->disable(); }
+  uint8_t get_attacking() const { return p->attacking(); }
+  uint8_t get_binding() const { return p->binding(); }
+
+  void set_confusion(uint8_t v) { p->set_confusion(v); }
+  void set_disable(uint8_t v) { p->set_disable(v); }
+  void set_attacking(uint8_t v) { p->set_attacking(v); }
+  void set_binding(uint8_t v) { p->set_binding(v); }
+
+  // raw 32-bit access
+  uint32_t get_raw() const { return p->data; }
+  void set_raw(uint32_t v) { p->data = v; }
+};
+
+struct DurationsView {
+  pkmn_gen1_chance_durations raw{};
+
+  explicit DurationsView() = default;
+  explicit DurationsView(pkmn_gen1_chance_durations &durations)
+      : raw{durations} {}
+  explicit DurationsView(py::bytes b) {
+    auto sv = bytes_sv(b);
+    if (sv.size() != PKMN_GEN1_CHANCE_DURATIONS_SIZE)
+      throw std::runtime_error("Durations: expected " +
+                               std::to_string(PKMN_GEN1_CHANCE_DURATIONS_SIZE) +
+                               " bytes, got " + std::to_string(sv.size()));
+    std::memcpy(&raw, sv.data(), PKMN_GEN1_CHANCE_DURATIONS_SIZE);
+  }
+
+  Durations &durations() { return view(raw); }
+  const Durations &durations() const { return view(raw); }
+
+  DurationProxy get(int i) {
+    if (i < 0 || i > 1)
+      throw std::out_of_range("index must be 0 or 1");
+    return {&durations().get(i)};
+  }
+
+  py::bytes bytes() const {
+    return py::bytes(reinterpret_cast<const char *>(&raw),
+                     PKMN_GEN1_CHANCE_DURATIONS_SIZE);
+  }
+};
+
+// ----------------------------------------------------------------------------
+// BattleView — owns the 384 bytes
+// ----------------------------------------------------------------------------
+struct BattleView {
+  pkmn_gen1_battle raw{};
+
+  explicit BattleView() = default;
+  explicit BattleView(pkmn_gen1_battle battle) : raw{battle} {}
+  explicit BattleView(py::bytes b) {
+    auto sv = bytes_sv(b);
+    if (sv.size() != PKMN_GEN1_BATTLE_SIZE)
+      throw std::runtime_error("Battle: expected " +
+                               std::to_string(PKMN_GEN1_BATTLE_SIZE) +
+                               " bytes, got " + std::to_string(sv.size()));
+    std::memcpy(&raw, sv.data(), PKMN_GEN1_BATTLE_SIZE);
+  }
+
+  Battle &battle() { return view(raw); }
+  const Battle &battle() const { return view(raw); }
+
+  SideProxy side(int i) {
+    if (i < 0 || i > 1)
+      throw std::out_of_range("side index must be 0 or 1");
+    return {&battle().sides[static_cast<size_t>(i)]};
+  }
+
+  uint16_t get_turn() const { return battle().turn; }
+  uint16_t get_last_damage() const { return battle().last_damage; }
+  uint64_t get_rng() const { return battle().rng; }
+
+  void set_turn(uint16_t v) { battle().turn = v; }
+  void set_last_damage(uint16_t v) { battle().last_damage = v; }
+  void set_rng(uint64_t v) { battle().rng = v; }
+
+  py::bytes bytes() const {
+    return py::bytes(reinterpret_cast<const char *>(&raw),
+                     PKMN_GEN1_BATTLE_SIZE);
+  }
+
+  std::string to_string() const { return PKMN::to_string(raw); }
+};
+
+// ============================================================================
+// Module definition
+// ============================================================================
+
+PYBIND11_MODULE(inspect, m) {
+  m.doc() =
+      "oak.inspect — low-level structured view of pkmn_gen1_battle bytes.\n\n"
+      "  b    = inspect.Battle(raw_bytes)   # 384 bytes\n"
+      "  d    = inspect.Durations(dur_bytes) # 8 bytes (or Durations() for "
+      "zeroed)\n"
+      "  side = b.side(0)                   # P1\n"
+      "  pkmn = side.pokemon(0)             # storage index 0\n"
+      "  lead = side.slot(1)                # battle slot 1 (respects "
+      "order[])\n"
+      "  act  = side.active\n"
+      "  new_bytes = b.bytes()";
+
+  // Module-level constants
+  m.attr("BATTLE_SIZE") = static_cast<int>(PKMN_GEN1_BATTLE_SIZE);
+  m.attr("DURATIONS_SIZE") = static_cast<int>(PKMN_GEN1_CHANCE_DURATIONS_SIZE);
+
+  // ---- Stats ---------------------------------------------------------------
+  py::class_<StatsProxy>(
+      m, "Stats", "Base/active stats: hp, atk, def_, spe, spc (all uint16).")
+      .def_property("hp", &StatsProxy::get_hp, &StatsProxy::set_hp)
+      .def_property("atk", &StatsProxy::get_atk, &StatsProxy::set_atk)
+      .def_property("def_", &StatsProxy::get_def, &StatsProxy::set_def)
+      .def_property("spe", &StatsProxy::get_spe, &StatsProxy::set_spe)
+      .def_property("spc", &StatsProxy::get_spc, &StatsProxy::set_spc)
+      .def("__repr__", [](const StatsProxy &s) {
+        return "<Stats hp=" + std::to_string(s.get_hp()) +
+               " atk=" + std::to_string(s.get_atk()) +
+               " def=" + std::to_string(s.get_def()) +
+               " spe=" + std::to_string(s.get_spe()) +
+               " spc=" + std::to_string(s.get_spc()) + ">";
+      });
+
+  // ---- MoveSlot ------------------------------------------------------------
+  py::class_<MoveSlotProxy>(m, "MoveSlot", "id (uint8) + pp (uint8).")
+      .def_property("id", &MoveSlotProxy::get_id, &MoveSlotProxy::set_id,
+                    "Move enum value as uint8.")
+      .def_property("pp", &MoveSlotProxy::get_pp, &MoveSlotProxy::set_pp)
+      .def("name", &MoveSlotProxy::name, "Move name string.")
+      .def("__repr__", [](const MoveSlotProxy &ms) {
+        return "<MoveSlot " + ms.name() + " pp=" + std::to_string(ms.get_pp()) +
+               ">";
+      });
+
+  // ---- Boosts --------------------------------------------------------------
+  py::class_<BoostsProxy>(
+      m, "Boosts",
+      "Stat boosts (int8, range -6..+6). raw exposes the underlying uint32.")
+      .def_property("atk", &BoostsProxy::get_atk, &BoostsProxy::set_atk)
+      .def_property("def_", &BoostsProxy::get_def, &BoostsProxy::set_def)
+      .def_property("spe", &BoostsProxy::get_spe, &BoostsProxy::set_spe)
+      .def_property("spc", &BoostsProxy::get_spc, &BoostsProxy::set_spc)
+      .def_property("acc", &BoostsProxy::get_acc, &BoostsProxy::set_acc)
+      .def_property("eva", &BoostsProxy::get_eva, &BoostsProxy::set_eva)
+      .def_property("raw", &BoostsProxy::get_raw, &BoostsProxy::set_raw,
+                    "Raw uint32 of the 4 packed boost bytes.")
+      .def("__repr__", [](const BoostsProxy &b) {
+        return "<Boosts atk=" + std::to_string(b.get_atk()) +
+               " def=" + std::to_string(b.get_def()) +
+               " spe=" + std::to_string(b.get_spe()) +
+               " spc=" + std::to_string(b.get_spc()) +
+               " acc=" + std::to_string(b.get_acc()) +
+               " eva=" + std::to_string(b.get_eva()) + ">";
+      });
+
+  // ---- Volatiles -----------------------------------------------------------
+  py::class_<VolatilesProxy>(
+      m, "Volatiles",
+      "Active-pokemon volatile flags and counters backed by a single uint64.\n"
+      "All 18 boolean flags, counters with C++ setters, and the remaining\n"
+      "bit-packed fields (state, substitute_hp, transform_species,\n"
+      "disable_move, toxic_counter) are individually writable.\n"
+      "`bits` exposes the raw uint64 directly.")
+      // boolean flags
+      .def_property("bide", &VolatilesProxy::get_bide,
+                    &VolatilesProxy::set_bide)
+      .def_property("thrashing", &VolatilesProxy::get_thrashing,
+                    &VolatilesProxy::set_thrashing)
+      .def_property("multi_hit", &VolatilesProxy::get_multi_hit,
+                    &VolatilesProxy::set_multi_hit)
+      .def_property("flinch", &VolatilesProxy::get_flinch,
+                    &VolatilesProxy::set_flinch)
+      .def_property("charging", &VolatilesProxy::get_charging,
+                    &VolatilesProxy::set_charging)
+      .def_property("binding", &VolatilesProxy::get_binding,
+                    &VolatilesProxy::set_binding)
+      .def_property("invulnerable", &VolatilesProxy::get_invulnerable,
+                    &VolatilesProxy::set_invulnerable)
+      .def_property("confusion", &VolatilesProxy::get_confusion,
+                    &VolatilesProxy::set_confusion)
+      .def_property("mist", &VolatilesProxy::get_mist,
+                    &VolatilesProxy::set_mist)
+      .def_property("focus_energy", &VolatilesProxy::get_focus_energy,
+                    &VolatilesProxy::set_focus_energy)
+      .def_property("substitute", &VolatilesProxy::get_substitute,
+                    &VolatilesProxy::set_substitute)
+      .def_property("recharging", &VolatilesProxy::get_recharging,
+                    &VolatilesProxy::set_recharging)
+      .def_property("rage", &VolatilesProxy::get_rage,
+                    &VolatilesProxy::set_rage)
+      .def_property("leech_seed", &VolatilesProxy::get_leech_seed,
+                    &VolatilesProxy::set_leech_seed)
+      .def_property("toxic", &VolatilesProxy::get_toxic,
+                    &VolatilesProxy::set_toxic)
+      .def_property("light_screen", &VolatilesProxy::get_light_screen,
+                    &VolatilesProxy::set_light_screen)
+      .def_property("reflect", &VolatilesProxy::get_reflect,
+                    &VolatilesProxy::set_reflect)
+      .def_property("transform", &VolatilesProxy::get_transform,
+                    &VolatilesProxy::set_transform)
+      // counters (C++ setters exist)
+      .def_property("confusion_left", &VolatilesProxy::get_confusion_left,
+                    &VolatilesProxy::set_confusion_left)
+      .def_property("attacks", &VolatilesProxy::get_attacks,
+                    &VolatilesProxy::set_attacks)
+      .def_property("disable_left", &VolatilesProxy::get_disable_left,
+                    &VolatilesProxy::set_disable_left)
+      // bit-packed fields (manual setters via bf_set)
+      .def_property("state", &VolatilesProxy::get_state,
+                    &VolatilesProxy::set_state,
+                    "16-bit Bide/Rage/binding damage accumulator (bits 39:24).")
+      .def_property("substitute_hp", &VolatilesProxy::get_substitute_hp,
+                    &VolatilesProxy::set_substitute_hp,
+                    "Substitute HP (bits 47:40).")
+      .def_property("transform_species", &VolatilesProxy::get_transform_species,
+                    &VolatilesProxy::set_transform_species,
+                    "Transformed-into species index (bits 51:48).")
+      .def_property("disable_move", &VolatilesProxy::get_disable_move,
+                    &VolatilesProxy::set_disable_move,
+                    "Disabled move slot index 0-3 (bits 58:56).")
+      .def_property("toxic_counter", &VolatilesProxy::get_toxic_counter,
+                    &VolatilesProxy::set_toxic_counter,
+                    "Toxic damage counter N (bits 63:59).")
+      // raw
+      .def_property("bits", &VolatilesProxy::get_bits,
+                    &VolatilesProxy::set_bits,
+                    "Raw uint64 — all 64 bits at once.")
+      .def("__str__", &VolatilesProxy::to_string)
+      .def("__repr__", [](const VolatilesProxy &v) {
+        return "<Volatiles 0x" + [&] {
+          char buf[17];
+          std::snprintf(buf, sizeof(buf), "%016llx",
+                        (unsigned long long)v.get_bits());
+          return std::string(buf);
+        }() + ">";
+      });
+
+  // ---- Pokemon -------------------------------------------------------------
+  py::class_<PokemonProxy>(m, "Pokemon")
+      .def("stats", &PokemonProxy::stats,
+           py::return_value_policy::reference_internal)
+      .def("move", &PokemonProxy::move, py::arg("index"), "Move slot 0-3.",
+           py::return_value_policy::reference_internal)
+      .def_property("hp", &PokemonProxy::get_hp, &PokemonProxy::set_hp)
+      .def_property("status", &PokemonProxy::get_status,
+                    &PokemonProxy::set_status,
+                    "Status byte (see Data::Status enum values).")
+      .def_property("species", &PokemonProxy::get_species,
+                    &PokemonProxy::set_species, "Species enum value as uint8.")
+      .def_property("types", &PokemonProxy::get_types, &PokemonProxy::set_types,
+                    "Packed type byte.")
+      .def_property("level", &PokemonProxy::get_level, &PokemonProxy::set_level)
+      .def("percent", &PokemonProxy::percent, "Current HP as a percentage.")
+      .def("species_name", &PokemonProxy::species_name, "Species name string.")
+      .def("status_name", &PokemonProxy::status_name,
+           "Status abbreviation string.")
+      .def("__str__", &PokemonProxy::to_string)
+      .def("__repr__", [](const PokemonProxy &p) {
+        return "<Pokemon " + p.species_name() +
+               " hp=" + std::to_string(p.get_hp()) + ">";
+      });
+
+  // ---- ActivePokemon -------------------------------------------------------
+  py::class_<ActivePokemonProxy>(
+      m, "ActivePokemon",
+      "The in-battle Pokemon for a side: has stats, boosts, volatiles, moves.")
+      .def("stats", &ActivePokemonProxy::stats,
+           py::return_value_policy::reference_internal)
+      .def("boosts", &ActivePokemonProxy::boosts,
+           py::return_value_policy::reference_internal)
+      .def("volatiles", &ActivePokemonProxy::volatiles,
+           py::return_value_policy::reference_internal)
+      .def("move", &ActivePokemonProxy::move, py::arg("index"),
+           "Move slot 0-3.", py::return_value_policy::reference_internal)
+      .def_property("species", &ActivePokemonProxy::get_species,
+                    &ActivePokemonProxy::set_species)
+      .def_property("types", &ActivePokemonProxy::get_types,
+                    &ActivePokemonProxy::set_types)
+      .def("species_name", &ActivePokemonProxy::species_name)
+      .def("__repr__", [](const ActivePokemonProxy &a) {
+        return "<ActivePokemon " + a.species_name() + ">";
+      });
+
+  // ---- Side ----------------------------------------------------------------
+  py::class_<SideProxy>(m, "Side")
+      .def("pokemon", &SideProxy::pokemon, py::arg("index"),
+           "Pokemon at storage index 0-5 (independent of battle order).",
+           py::return_value_policy::reference_internal)
+      .def("slot", &SideProxy::slot, py::arg("slot"),
+           "Pokemon in battle slot 1-6, respecting order[].",
+           py::return_value_policy::reference_internal)
+      .def_property_readonly("active", &SideProxy::active,
+                             py::return_value_policy::reference_internal)
+      .def("stored", &SideProxy::stored,
+           "Shorthand for slot(1) — the currently active (stored) Pokemon.",
+           py::return_value_policy::reference_internal)
+      .def_property(
+          "order", &SideProxy::get_order, &SideProxy::set_order,
+          "Six-element array mapping slot (1-indexed) to storage index.")
+      .def_property("last_selected_move", &SideProxy::get_last_selected_move,
+                    &SideProxy::set_last_selected_move)
+      .def_property("last_used_move", &SideProxy::get_last_used_move,
+                    &SideProxy::set_last_used_move)
+      .def("__repr__", [](const SideProxy &) { return "<Side>"; });
+
+  // ---- Duration ------------------------------------------------------------
+  py::class_<DurationProxy>(m, "Duration",
+                            "Per-side duration counters for one player.")
+      .def("sleep", &DurationProxy::sleep, py::arg("slot"),
+           "Sleep counter for Pokemon at order slot 0-5.")
+      .def("set_sleep", &DurationProxy::set_sleep, py::arg("slot"),
+           py::arg("value"))
+      .def_property("confusion", &DurationProxy::get_confusion,
+                    &DurationProxy::set_confusion)
+      .def_property("disable", &DurationProxy::get_disable,
+                    &DurationProxy::set_disable)
+      .def_property("attacking", &DurationProxy::get_attacking,
+                    &DurationProxy::set_attacking)
+      .def_property("binding", &DurationProxy::get_binding,
+                    &DurationProxy::set_binding)
+      .def_property("raw", &DurationProxy::get_raw, &DurationProxy::set_raw,
+                    "Raw uint32 of all packed duration bits.")
+      .def("__repr__", [](const DurationProxy &) { return "<Duration>"; });
+
+  // ---- Durations -----------------------------------------------------------
+  py::class_<DurationsView>(m, "Durations",
+                            "8-byte chance durations for both sides.\n\n"
+                            "  d = inspect.Durations(dur_bytes)  # from bytes\n"
+                            "  d = inspect.Durations()           # zeroed\n"
+                            "  d.get(0).confusion = 3\n"
+                            "  dur_bytes = d.bytes()")
+      .def(py::init<>(), "Construct zeroed Durations.")
+      .def(py::init<py::bytes>(), py::arg("data"),
+           "Construct from 8 raw bytes.")
+      .def("get", &DurationsView::get, py::arg("side"),
+           "Duration for side 0 or 1.",
+           py::return_value_policy::reference_internal)
+      .def("bytes", &DurationsView::bytes,
+           "Return current (possibly mutated) 8-byte representation.")
+      .def("__repr__", [](const DurationsView &) { return "<Durations>"; });
+
+  // ---- Battle --------------------------------------------------------------
+  py::class_<BattleView>(m, "Battle",
+                         "Structured view of a 384-byte pkmn_gen1_battle.\n\n"
+                         "  b = inspect.Battle(raw_bytes)\n"
+                         "  b.side(0).slot(1).hp = 200\n"
+                         "  new_bytes = b.bytes()")
+      .def(py::init<py::bytes>(), py::arg("data"),
+           "Construct from 384 raw bytes.")
+      .def("side", &BattleView::side, py::arg("index"),
+           "Side 0 (P1) or Side 1 (P2).",
+           py::return_value_policy::reference_internal)
+      .def_property("turn", &BattleView::get_turn, &BattleView::set_turn)
+      .def_property("last_damage", &BattleView::get_last_damage,
+                    &BattleView::set_last_damage)
+      .def_property("rng", &BattleView::get_rng, &BattleView::set_rng,
+                    "RNG seed as uint64.")
+      .def("bytes", &BattleView::bytes,
+           "Return the current (possibly mutated) 384-byte battle "
+           "representation.")
+      .def("__str__", &BattleView::to_string)
+      .def("__repr__", [](const BattleView &b) {
+        return "<Battle turn=" + std::to_string(b.get_turn()) + ">";
+      });
+
+  // Search
 
   py::class_<RuntimeSearch::Heap>(m, "Heap")
       .def(py::init<>())
@@ -451,45 +1151,6 @@ PYBIND11_MODULE(pyoak, m) {
       .def_readwrite("matrix_ucb", &RuntimeSearch::Agent::matrix_ucb)
       .def_readwrite("discrete", &RuntimeSearch::Agent::discrete)
       .def_readwrite("table", &RuntimeSearch::Agent::table);
-  py::class_<MCTS::Input>(m, "Input").def(py::init<>());
-
-  m.def(
-      "parse_battle",
-      [](const std::string &battle_string, uint64_t seed = 0x123456) {
-        auto [battle, durations] = Parse::parse_battle(battle_string, seed);
-        MCTS::Input input{};
-        input.battle = battle;
-        input.durations = durations;
-        input.result = PKMN::result(battle);
-        return input;
-      },
-      py::arg("battle_string"), py::arg("seed") = 0x123456);
-
-  m.def(
-      "update",
-      [](MCTS::Input &input, uint8_t c1, uint8_t c2) {
-        auto options = PKMN::options();
-        pkmn_gen1_chance_options chance_options{};
-        chance_options.durations = input.durations;
-        PKMN::set(options, chance_options);
-        input.result = PKMN::update(input.battle, c1, c2, options);
-        input.durations = PKMN::durations(options);
-      },
-      py::arg("input"), py::arg("c1"), py::arg("c2"));
-
-  m.def(
-      "battle_string",
-      [](const MCTS::Input &input) {
-        return PKMN::battle_data_to_string(input.battle, input.durations);
-      },
-      py::arg("input"));
-
-  m.def(
-      "format",
-      [](const MCTS::Input &input, const MCTS::Output &output) {
-        return MCTS::output_string(output, input);
-      },
-      py::arg("input"), py::arg("output"));
 
   py::class_<MCTS::Output>(m, "Output")
       .def(py::init<>())
@@ -572,68 +1233,8 @@ PYBIND11_MODULE(pyoak, m) {
           r(i) = o.p2.nash[i];
         return arr;
       });
-  m.def(
-      "search",
-      [](const MCTS::Input &input, RuntimeSearch::Heap &heap,
-         RuntimeSearch::Agent &agent, MCTS::Output output = {}) {
-        mt19937 device{std::random_device{}()};
-        return RuntimeSearch::run(device, input, heap, agent, output);
-      },
-      py::arg("input"), py::arg("heap"), py::arg("agent"),
-      py::arg("output") = MCTS::Output{});
 
-  // Battle net hyperparams
-  m.attr("pokemon_in_dim") = Encode::Battle::Pokemon::n_dim;
-  m.attr("active_in_dim") = Encode::Battle::ActivePokemon::n_dim;
-  m.attr("pokemon_hidden_dim") = NN::Battle::Default::pokemon_hidden_dim;
-  m.attr("pokemon_out_dim") = NN::Battle::Default::pokemon_out_dim;
-  m.attr("active_hidden_dim") = NN::Battle::Default::active_hidden_dim;
-  m.attr("active_out_dim") = NN::Battle::Default::active_out_dim;
-  m.attr("side_out_dim") = NN::Battle::Default::side_out_dim;
-  m.attr("hidden_dim") = NN::Battle::Default::hidden_dim;
-  m.attr("value_hidden_dim") = NN::Battle::Default::value_hidden_dim;
-  m.attr("policy_hidden_dim") = NN::Battle::Default::policy_hidden_dim;
-  m.attr("policy_out_dim") = Encode::Battle::Policy::n_dim;
-
-  // Build net hyperparams
-  m.attr("build_policy_hidden_dim") = NN::Build::Default::policy_hidden_dim;
-  m.attr("build_value_hidden_dim") = NN::Build::Default::value_hidden_dim;
-  m.attr("build_max_actions") = Py::Build::Tensorizer<>::max_actions;
-  {
-    std::vector<std::pair<int, int>> species_move_list;
-    species_move_list.reserve(Py::Build::Tensorizer<>::species_move_list_size);
-    for (int i = 0; i < Py::Build::Tensorizer<>::species_move_list_size; ++i) {
-      auto p = Py::Build::Tensorizer<>::species_move_list(i);
-      species_move_list.emplace_back(static_cast<int>(p.first),
-                                     static_cast<int>(p.second));
-    }
-    m.attr("species_move_list") = std::move(species_move_list);
-  }
-  {
-    const auto &src = Py::Build::Tensorizer<>::SPECIES_MOVE_TABLE;
-    std::vector<std::vector<int>> species_move_table;
-    species_move_table.reserve(src.size());
-    std::transform(src.begin(), src.end(),
-                   std::back_inserter(species_move_table), [](const auto &row) {
-                     return std::vector<int>(row.begin(), row.end());
-                   });
-    m.attr("species_move_table") = std::move(species_move_table);
-  }
-
-  // Strings
-  m.attr("move_names") = dim_labels_to_vec(PKMN::Data::MOVE_CHAR_ARRAY);
-  m.attr("species_names") = dim_labels_to_vec(PKMN::Data::SPECIES_CHAR_ARRAY);
-  m.attr("active_dim_labels") =
-      dim_labels_to_vec(Encode::Battle::Active::dim_labels);
-  m.attr("pokemon_dim_labels") =
-      dim_labels_to_vec(Encode::Battle::Pokemon::dim_labels);
-  m.attr("active_pokemon_dim_labels") =
-      dim_labels_to_vec(Encode::Battle::ActivePokemon::dim_labels);
-  {
-    auto v = dim_labels_to_vec(Encode::Battle::Policy::dim_labels);
-    v.push_back(""); // preserve extra empty string
-    m.attr("policy_dim_labels") = v;
-  }
+  // Network
 
   py::class_<Py::Battle::Frames>(m, "BattleFrames")
       .def(py::init<size_t>())
@@ -713,6 +1314,125 @@ PYBIND11_MODULE(pyoak, m) {
 
   m.def("read_battle_data", &read_battle_data, py::arg("path"));
   m.def("read_build_trajectories", &read_build_trajectories);
+  // Methods
+
+  m.def(
+      "sample",
+      [](Py::Battle::EncodedFrames &encoded_frames,
+         const SampleIndexer &indexer, size_t threads, size_t max_battle_length,
+         size_t min_iterations) {
+        return sample(encoded_frames, indexer, threads, max_battle_length,
+                      min_iterations);
+      },
+      py::arg("encoded_frames"), py::arg("indexer"), py::arg("threads"),
+      py::arg("max_battle_length"), py::arg("min_iterations"));
+
+  m.def(
+      "parse_battle",
+      [](const std::string &battle_string, uint64_t seed = 0x123456) {
+        auto [battle, durations] = Parse::parse_battle(battle_string, seed);
+        MCTS::Input input{};
+        input.battle = battle;
+        input.durations = durations;
+        input.result = PKMN::result(battle);
+        return py::make_tuple(BattleView{battle}, DurationsView{durations},
+                              input.result);
+      },
+      py::arg("battle_string"), py::arg("seed") = 0x123456);
+
+  m.def(
+      "update",
+      [](BattleView &battle, DurationsView &durations, uint8_t c1, uint8_t c2) {
+        auto options = PKMN::options();
+        pkmn_gen1_chance_options chance_options{};
+        chance_options.durations = durations.raw;
+        PKMN::set(options, chance_options);
+        auto result = PKMN::update(battle.raw, c1, c2, options);
+        durations.raw = PKMN::durations(options);
+        return result;
+      },
+      py::arg("battle"), py::arg("durations"), py::arg("c1"), py::arg("c2"));
+
+  m.def(
+      "battle_string",
+      [](const BattleView &battle, const DurationsView &durations) {
+        return PKMN::battle_data_to_string(battle.raw, durations.raw);
+      },
+      py::arg("battle"), py::arg("durations"));
+
+  m.def(
+      "format",
+      [](const BattleView &battle, const DurationsView &durations,
+         const MCTS::Output &output) {
+        return MCTS::output_string(output,
+                                   MCTS::Input{battle.raw, durations.raw});
+      },
+      py::arg("battle"), py::arg("durations"), py::arg("output"));
+
+  m.def(
+      "search",
+      [](const MCTS::Input &input, RuntimeSearch::Heap &heap,
+         RuntimeSearch::Agent &agent, MCTS::Output output = {}) {
+        mt19937 device{std::random_device{}()};
+        return RuntimeSearch::run(device, input, heap, agent, output);
+      },
+      py::arg("input"), py::arg("heap"), py::arg("agent"),
+      py::arg("output") = MCTS::Output{});
+
+  // Battle net hyperparams
+  m.attr("pokemon_in_dim") = Encode::Battle::Pokemon::n_dim;
+  m.attr("active_in_dim") = Encode::Battle::ActivePokemon::n_dim;
+  m.attr("pokemon_hidden_dim") = NN::Battle::Default::pokemon_hidden_dim;
+  m.attr("pokemon_out_dim") = NN::Battle::Default::pokemon_out_dim;
+  m.attr("active_hidden_dim") = NN::Battle::Default::active_hidden_dim;
+  m.attr("active_out_dim") = NN::Battle::Default::active_out_dim;
+  m.attr("side_out_dim") = NN::Battle::Default::side_out_dim;
+  m.attr("hidden_dim") = NN::Battle::Default::hidden_dim;
+  m.attr("value_hidden_dim") = NN::Battle::Default::value_hidden_dim;
+  m.attr("policy_hidden_dim") = NN::Battle::Default::policy_hidden_dim;
+  m.attr("policy_out_dim") = Encode::Battle::Policy::n_dim;
+
+  // Build net hyperparams
+  m.attr("build_policy_hidden_dim") = NN::Build::Default::policy_hidden_dim;
+  m.attr("build_value_hidden_dim") = NN::Build::Default::value_hidden_dim;
+  m.attr("build_max_actions") = Py::Build::Tensorizer<>::max_actions;
+  {
+    std::vector<std::pair<int, int>> species_move_list;
+    species_move_list.reserve(Py::Build::Tensorizer<>::species_move_list_size);
+    for (int i = 0; i < Py::Build::Tensorizer<>::species_move_list_size; ++i) {
+      auto p = Py::Build::Tensorizer<>::species_move_list(i);
+      species_move_list.emplace_back(static_cast<int>(p.first),
+                                     static_cast<int>(p.second));
+    }
+    m.attr("species_move_list") = std::move(species_move_list);
+  }
+  {
+    const auto &src = Py::Build::Tensorizer<>::SPECIES_MOVE_TABLE;
+    std::vector<std::vector<int>> species_move_table;
+    species_move_table.reserve(src.size());
+    std::transform(src.begin(), src.end(),
+                   std::back_inserter(species_move_table), [](const auto &row) {
+                     return std::vector<int>(row.begin(), row.end());
+                   });
+    m.attr("species_move_table") = std::move(species_move_table);
+  }
+
+  {
+    // Strings
+    m.attr("move_names") = dim_labels_to_vec(PKMN::Data::MOVE_CHAR_ARRAY);
+    m.attr("species_names") = dim_labels_to_vec(PKMN::Data::SPECIES_CHAR_ARRAY);
+    m.attr("active_dim_labels") =
+        dim_labels_to_vec(Encode::Battle::Active::dim_labels);
+    m.attr("pokemon_dim_labels") =
+        dim_labels_to_vec(Encode::Battle::Pokemon::dim_labels);
+    m.attr("active_pokemon_dim_labels") =
+        dim_labels_to_vec(Encode::Battle::ActivePokemon::dim_labels);
+    {
+      auto v = dim_labels_to_vec(Encode::Battle::Policy::dim_labels);
+      v.push_back(""); // preserve extra empty string
+      m.attr("policy_dim_labels") = v;
+    }
+  }
 }
 
 } // namespace
