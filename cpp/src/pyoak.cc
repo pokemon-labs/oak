@@ -1122,7 +1122,9 @@ PYBIND11_MODULE(pyoak, m) {
            py::return_value_policy::reference_internal)
       .def("bytes", &DurationsView::bytes,
            "Return current (possibly mutated) 8-byte representation.")
-      .def("__repr__", [](const DurationsView &) { return "<Durations>"; });
+      .def("__repr__", [](const DurationsView &) { return "<Durations>"; })
+      .def(py::pickle([](const DurationsView &d) { return d.bytes(); },
+                      [](py::bytes b) { return DurationsView(b); }));
 
   py::class_<BattleView>(m, "Battle",
                          "Structured view of a 384-byte pkmn_gen1_battle.\n\n"
@@ -1144,15 +1146,31 @@ PYBIND11_MODULE(pyoak, m) {
            "Return the current (possibly mutated) 384-byte battle "
            "representation.")
       .def("__str__", &BattleView::to_string)
-      .def("__repr__", [](const BattleView &b) {
-        return "<Battle turn=" + std::to_string(b.get_turn()) + ">";
-      });
+      .def("__repr__",
+           [](const BattleView &b) {
+             return "<Battle turn=" + std::to_string(b.get_turn()) + ">";
+           })
+      .def(py::pickle([](const BattleView &b) { return b.bytes(); },
+                      [](py::bytes b) { return BattleView(b); }));
 
   py::class_<PokemonSet>(m, "Set")
       .def(py::init<>(), "Construct zeroed Set.")
       .def_readwrite("species", &PokemonSet::species)
       .def_readwrite("level", &PokemonSet::level)
-      .def_readwrite("moves", &PokemonSet::moves);
+      .def_readwrite("moves", &PokemonSet::moves)
+      .def(py::pickle(
+          [](const PokemonSet &s) {
+            return py::make_tuple(s.species, s.level, s.moves);
+          },
+          [](py::tuple t) {
+            if (t.size() != 3)
+              throw std::runtime_error("PokemonSet: invalid pickle state");
+            PokemonSet s;
+            s.species = t[0].cast<uint8_t>();
+            s.level = t[1].cast<uint8_t>();
+            s.moves = t[2].cast<std::array<uint8_t, 4>>();
+            return s;
+          }));
 
   // Search
 
