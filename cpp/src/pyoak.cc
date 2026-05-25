@@ -6,6 +6,7 @@
 #include <libpkmn/data/species.h>
 #include <libpkmn/data/status.h>
 #include <libpkmn/data/strings.h>
+#include <libpkmn/init.h>
 #include <libpkmn/layout.h>
 #include <libpkmn/strings.h>
 #include <nn/battle/network.h>
@@ -24,6 +25,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <random>
 #include <stdexcept>
@@ -32,6 +34,7 @@
 #include <vector>
 
 #include <pybind11/numpy.h>
+#include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -43,7 +46,7 @@ namespace py = pybind11;
 using namespace PKMN;
 using namespace PKMN::Data;
 
-template <std::size_t N, std::size_t M>
+template <size_t N, size_t M>
 std::vector<std::string>
 dim_labels_to_vec(const std::array<std::array<char, M>, N> &data) {
   std::vector<std::string> result;
@@ -868,6 +871,30 @@ struct PokemonSet {
     level = static_cast<uint8_t>(s.level);
     std::transform(s.moves.begin(), s.moves.end(), moves.begin(),
                    [](const auto move) { return static_cast<uint8_t>(move); });
+    std::sort(moves.begin(), moves.end());
+  }
+  bool operator==(const PokemonSet &) const = default;
+  bool operator<(const PokemonSet &other) const {
+    return (species == other.species) &&
+           std::all_of(moves.begin(), moves.end(), [&other](const auto m) {
+             return !m || (std::find(other.moves.begin(), other.moves.end(),
+                                     m) != other.moves.end());
+           });
+  }
+  bool operator<=(const PokemonSet &other) const {
+    return (*this == other) || (*this < other);
+  }
+  static inline void hash_combine(size_t &seed, size_t value) {
+    seed ^= value + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+  }
+
+  static size_t hash_set(const PokemonSet &s) {
+    size_t h = 0;
+    hash_combine(h, s.species);
+    hash_combine(h, s.level);
+    for (auto m : s.moves)
+      hash_combine(h, m);
+    return h;
   }
 };
 
@@ -1170,7 +1197,20 @@ PYBIND11_MODULE(pyoak, m) {
             s.level = t[1].cast<uint8_t>();
             s.moves = t[2].cast<std::array<uint8_t, 4>>();
             return s;
-          }));
+          }))
+      .def("__eq__",
+           [](const PokemonSet &a, const PokemonSet &b) { return a == b; })
+      .def("__lt__",
+           [](const PokemonSet &a, const PokemonSet &b) { return a < b; })
+      .def("__le__",
+           [](const PokemonSet &a, const PokemonSet &b) { return a <= b; })
+      .def("__gt__",
+           [](const PokemonSet &a, const PokemonSet &b) { return b < a; })
+      .def("__ge__",
+           [](const PokemonSet &a, const PokemonSet &b) { return b <= a; })
+      .def("__hash__", [](const PokemonSet &s) {
+        return static_cast<py::ssize_t>(PokemonSet::hash_set(s));
+      });
 
   // Search
 
@@ -1427,13 +1467,16 @@ PYBIND11_MODULE(pyoak, m) {
 
   m.def(
       "search",
-      [](const MCTS::Input &input, RuntimeSearch::Heap &heap,
-         RuntimeSearch::Agent &agent, MCTS::Output output = {}) {
+      [](const BattleView &battle, const DurationsView &durations,
+         uint8_t result, RuntimeSearch::Heap &heap, RuntimeSearch::Agent &agent,
+         MCTS::Output output = {}) {
         mt19937 device{std::random_device{}()};
+        MCTS::Input input{battle.raw, durations.raw,
+                          static_cast<pkmn_result>(result)};
         return RuntimeSearch::run(device, input, heap, agent, output);
       },
-      py::arg("input"), py::arg("heap"), py::arg("agent"),
-      py::arg("output") = MCTS::Output{});
+      py::arg("battle"), py::arg("durations"), py::arg("result"),
+      py::arg("heap"), py::arg("agent"), py::arg("output") = MCTS::Output{});
 
   m.def("load_teams", [](const std::string &path) {
     std::vector<std::vector<PokemonSet>> res{};
@@ -1447,6 +1490,82 @@ PYBIND11_MODULE(pyoak, m) {
     }
     return res;
   });
+
+  m.def(
+      "stats",
+      [](const uint8_t species, uint8_t level = 100,
+         std::array<uint8_t, 5> evs = {255, 255, 255, 255, 255},
+         std::array<uint8_t, 5> dvs = {15, 15, 15, 15, 15}) {
+        std::array<uint16_t, 5> stats;
+        const auto base_stats = get_species_data(static_cast<Species>(species)).base_stats;
+        stats[0] =
+            Init::compute_stat(base_stats.hp, true, level, evs[0], dvs[0]);
+        stats[1] =
+            Init::compute_stat(base_stats.atk, false, level, evs[1], dvs[1]);
+        stats[2] =
+            Init::compute_stat(base_stats.def, false, level, evs[2], dvs[2]);
+        stats[3] =
+            Init::compute_stat(base_stats.spe, false, level, evs[3], dvs[3]);
+        stats[4] =
+            Init::compute_stat(base_stats.spc, false, level, evs[4], dvs[4]);
+        return stats;
+      },
+      py::arg("species"), py::arg("level"), py::arg("EVs"), py::arg("DVs"));
+
+  m.def(
+      "complete_pokemon_from_set",
+      [](PokemonProxy &proxy, const PokemonSet &set) -> void {
+        PKMN::Pokemon &pokemon = *proxy.p;
+
+        if (pokemon.species == Species::None) {
+          pokemon.species = static_cast<Species>(set.species);
+          pokemon.level = set.level;
+          const auto base_stats = get_species_data(pokemon.species).base_stats;
+          pokemon.stats.hp =
+              Init::compute_stat(base_stats.hp, true, pokemon.level);
+          pokemon.stats.atk =
+              Init::compute_stat(base_stats.atk, false, pokemon.level);
+          pokemon.stats.def =
+              Init::compute_stat(base_stats.def, false, pokemon.level);
+          pokemon.stats.spe =
+              Init::compute_stat(base_stats.spe, false, pokemon.level);
+          pokemon.stats.spc =
+              Init::compute_stat(base_stats.spc, false, pokemon.level);
+          pokemon.hp = pokemon.stats.hp;
+          const auto types = get_types(pokemon.species);
+          pokemon.types = static_cast<uint8_t>(types[0]) |
+                          (static_cast<uint8_t>(types[1]) << 4);
+
+        } else {
+          assert(pokemon.species == static_cast<Species>(set.species));
+          assert(pokemon.level == set.level);
+        }
+
+        // moves
+        for (auto move_id : set.moves) {
+          auto incoming_move = static_cast<Move>(move_id);
+          if (incoming_move == Move::None) {
+            continue;
+          }
+          // if incoming not in move set
+          auto matching_slot =
+              std::find_if(pokemon.moves.begin(), pokemon.moves.end(),
+                           [incoming_move](const auto &ms) {
+                             return ms.id == incoming_move;
+                           });
+          if (matching_slot == pokemon.moves.end()) {
+            auto empty = std::find_if(
+                pokemon.moves.begin(), pokemon.moves.end(),
+                [](const auto &ms) { return ms.id == Move::None; });
+            assert(empty != pokemon.moves.end());
+            empty->id = incoming_move;
+            empty->pp = max_pp(incoming_move);
+          } else {
+            // idk
+          }
+        }
+      },
+      "Fully initialize empty or partially revealed Pokemon slot from a Set");
 
   // Battle net hyperparams
   m.attr("pokemon_in_dim") = Encode::Battle::Pokemon::n_dim;
