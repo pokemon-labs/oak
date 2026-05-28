@@ -866,12 +866,14 @@ struct PokemonSet {
   uint8_t level;
   std::array<uint8_t, 4> moves;
   PokemonSet() = default;
-  PokemonSet(const PKMN::Set &s) {
+  PokemonSet(const PKMN::Set &s) : moves{} {
     species = static_cast<uint8_t>(s.species);
     level = static_cast<uint8_t>(s.level);
     std::transform(s.moves.begin(), s.moves.end(), moves.begin(),
                    [](const auto move) { return static_cast<uint8_t>(move); });
-    std::sort(moves.begin(), moves.end());
+    // std::sort(moves.begin(), moves.end());
+    std::sort(moves.begin(), moves.end(),
+              [](uint8_t a, uint8_t b) { return a < b; });
   }
   bool operator==(const PokemonSet &) const = default;
   bool operator<(const PokemonSet &other) const {
@@ -897,6 +899,27 @@ struct PokemonSet {
     return h;
   }
 };
+
+void complete_move_set(std::array<PKMN::MoveSlot, 4> &move_slots,
+                       const std::array<uint8_t, 4> &moves) {
+  for (auto move_id : moves) {
+    auto incoming_move = static_cast<Move>(move_id);
+    if (incoming_move == Move::None) {
+      continue;
+    }
+    auto matching_slot = std::find_if(
+        move_slots.begin(), move_slots.end(),
+        [incoming_move](const auto &ms) { return ms.id == incoming_move; });
+    if (matching_slot == move_slots.end()) {
+      auto empty =
+          std::find_if(move_slots.begin(), move_slots.end(),
+                       [](const auto &ms) { return ms.id == Move::None; });
+      assert(empty != move_slots.end());
+      empty->id = incoming_move;
+      empty->pp = max_pp(incoming_move);
+    }
+  }
+}
 
 // ============================================================================
 // Module definition
@@ -1230,11 +1253,11 @@ PYBIND11_MODULE(pyoak, m) {
 
   py::class_<MCTS::Output>(m, "Output")
       .def(py::init<>())
-      // .def_readonly("m", &MCTS::Output::m)
-      // .def_readonly("n", &MCTS::Output::n)
       .def_readonly("iterations", &MCTS::Output::iterations)
       .def_readonly("empirical_value", &MCTS::Output::empirical_value)
       .def_readonly("nash_value", &MCTS::Output::nash_value)
+      .def_property_readonly("m", [](const MCTS::Output &o) { return o.p1.k; })
+      .def_property_readonly("n", [](const MCTS::Output &o) { return o.p2.k; })
       .def_property_readonly(
           "duration_ms",
           [](const MCTS::Output &o) { return o.duration.count(); })
@@ -1260,6 +1283,20 @@ PYBIND11_MODULE(pyoak, m) {
                                                  : 0.0;
                                return arr;
                              })
+      .def_property_readonly(
+          "empirical_matrix",
+          [](const MCTS::Output &o) {
+            auto arr = py::array_t<double>({9, 9});
+            auto r = arr.mutable_unchecked<2>();
+            for (size_t i = 0; i < 9; ++i)
+              for (size_t j = 0; j < 9; ++j)
+                r(i, j) = (i < o.p1.k && j < o.p2.k)
+                              ? (o.visit_matrix[i][j] ? o.value_matrix[i][j] /
+                                                            o.visit_matrix[i][j]
+                                                      : 0.5)
+                              : 0.0;
+            return arr;
+          })
       // 1D vectors
       .def_property_readonly("p1_prior",
                              [](const MCTS::Output &o) {
@@ -1302,13 +1339,15 @@ PYBIND11_MODULE(pyoak, m) {
                                return arr;
                              })
 
-      .def_property_readonly("p2_nash", [](const MCTS::Output &o) {
-        auto arr = py::array_t<double>(9);
-        auto r = arr.mutable_unchecked<1>();
-        for (size_t i = 0; i < 9; ++i)
-          r(i) = o.p2.nash[i];
-        return arr;
-      });
+      .def_property_readonly("p2_nash",
+                             [](const MCTS::Output &o) {
+                               auto arr = py::array_t<double>(9);
+                               auto r = arr.mutable_unchecked<1>();
+                               for (size_t i = 0; i < 9; ++i)
+                                 r(i) = o.p2.nash[i];
+                               return arr;
+                             }
+      );
 
   // Network
 
@@ -1478,6 +1517,44 @@ PYBIND11_MODULE(pyoak, m) {
       py::arg("battle"), py::arg("durations"), py::arg("result"),
       py::arg("heap"), py::arg("agent"), py::arg("output") = MCTS::Output{});
 
+  m.def(
+      "search_mp",
+      [](py::bytes battle_bytes, py::bytes durations_bytes, uint8_t result,
+         std::string budget, std::string bandit, std::string eval,
+         std::string matrix_ucb = "") {
+        std::cerr << "[search_mp]"
+                  << " battle_bytes=" << py::len(battle_bytes)
+                  << " durations_bytes=" << py::len(durations_bytes)
+                  << " result=" << static_cast<int>(result) << " budget=\""
+                  << budget << '"' << " bandit=\"" << bandit << '"'
+                  << " eval=\"" << eval << '"' << " matrix_ucb=\"" << matrix_ucb
+                  << '"' << std::endl;
+        auto battle = BattleView{battle_bytes};
+        auto durations = DurationsView{durations_bytes};
+        RuntimeSearch::Heap heap{};
+        mt19937 device{std::random_device{}()};
+        MCTS::Input input{battle.raw, durations.raw,
+                          static_cast<pkmn_result>(result)};
+        auto agent = RuntimeSearch::Agent{};
+        agent.budget = budget;
+        agent.bandit = bandit;
+        agent.eval = eval;
+        agent.matrix_ucb = matrix_ucb;
+        // py::gil_scoped_release release;
+        auto output = RuntimeSearch::run(device, input, heap, agent);
+        py::dict d;
+        d["m"] = output.p1.k;
+        d["n"] = output.p2.k;
+        d["visit_matrix"] = output.visit_matrix;
+        d["value_matrix"] = output.value_matrix;
+        d["p1_choices"] = output.p1.choices;
+        d["p2_choices"] = output.p2.choices;
+        return d;
+      },
+      py::arg("battle_bytes"), py::arg("durations_bytes"), py::arg("result"),
+      py::arg("budget"), py::arg("bandit"), py::arg("eval"),
+      py::arg("matrix-ucb"));
+
   m.def("load_teams", [](const std::string &path) {
     std::vector<std::vector<PokemonSet>> res{};
     const auto out = _load_teams(path);
@@ -1497,7 +1574,8 @@ PYBIND11_MODULE(pyoak, m) {
          std::array<uint8_t, 5> evs = {255, 255, 255, 255, 255},
          std::array<uint8_t, 5> dvs = {15, 15, 15, 15, 15}) {
         std::array<uint16_t, 5> stats;
-        const auto base_stats = get_species_data(static_cast<Species>(species)).base_stats;
+        const auto base_stats =
+            get_species_data(static_cast<Species>(species)).base_stats;
         stats[0] =
             Init::compute_stat(base_stats.hp, true, level, evs[0], dvs[0]);
         stats[1] =
@@ -1519,7 +1597,11 @@ PYBIND11_MODULE(pyoak, m) {
 
         if (pokemon.species == Species::None) {
           pokemon.species = static_cast<Species>(set.species);
+        }
+        if (pokemon.level == 0) {
           pokemon.level = set.level;
+        }
+        if (pokemon.stats == PKMN::Stats{}) {
           const auto base_stats = get_species_data(pokemon.species).base_stats;
           pokemon.stats.hp =
               Init::compute_stat(base_stats.hp, true, pokemon.level);
@@ -1532,40 +1614,132 @@ PYBIND11_MODULE(pyoak, m) {
           pokemon.stats.spc =
               Init::compute_stat(base_stats.spc, false, pokemon.level);
           pokemon.hp = pokemon.stats.hp;
+        }
+
+        if (pokemon.types == 0) {
           const auto types = get_types(pokemon.species);
           pokemon.types = static_cast<uint8_t>(types[0]) |
                           (static_cast<uint8_t>(types[1]) << 4);
-
-        } else {
-          assert(pokemon.species == static_cast<Species>(set.species));
-          assert(pokemon.level == set.level);
         }
 
-        // moves
-        for (auto move_id : set.moves) {
-          auto incoming_move = static_cast<Move>(move_id);
-          if (incoming_move == Move::None) {
-            continue;
-          }
-          // if incoming not in move set
-          auto matching_slot =
-              std::find_if(pokemon.moves.begin(), pokemon.moves.end(),
-                           [incoming_move](const auto &ms) {
-                             return ms.id == incoming_move;
-                           });
-          if (matching_slot == pokemon.moves.end()) {
-            auto empty = std::find_if(
-                pokemon.moves.begin(), pokemon.moves.end(),
-                [](const auto &ms) { return ms.id == Move::None; });
-            assert(empty != pokemon.moves.end());
-            empty->id = incoming_move;
-            empty->pp = max_pp(incoming_move);
-          } else {
-            // idk
-          }
-        }
+        complete_move_set(pokemon.moves, set.moves);
       },
       "Fully initialize empty or partially revealed Pokemon slot from a Set");
+
+  m.def("complete_pokemon_moves",
+        [](PokemonProxy &proxy, const PokemonSet &set) -> void {
+          PKMN::Pokemon &pokemon = *proxy.p;
+          complete_move_set(pokemon.moves, set.moves);
+        });
+
+  m.def("complete_active_moves",
+        [](ActivePokemonProxy &proxy, const PokemonSet &set) -> void {
+          PKMN::ActivePokemon &active = *proxy.p;
+          complete_move_set(active.moves, set.moves);
+        });
+
+  m.def(
+      "boost",
+      [](SideProxy &p, SideProxy &f, std::string stat, int diff) {
+        constexpr std::array<std::pair<int, int>, 13> BOOSTS{{
+            {25, 100}, // -6
+            {28, 100}, // -5
+            {33, 100}, // -4
+            {40, 100}, // -3
+            {50, 100}, // -2
+            {66, 100}, // -1
+            {1, 1},    //  0
+            {15, 10},  // +1
+            {2, 1},    // +2
+            {25, 10},  // +3
+            {3, 1},    // +4
+            {35, 10},  // +5
+            {4, 1},    // +6
+        }};
+        constexpr uint16_t MIN_STAT_VALUE = 1;
+        constexpr uint16_t MAX_STAT_VALUE = 999;
+
+        PKMN::Side &player = *p.p;
+        PKMN::ActivePokemon &active = player.active;
+        PKMN::Boosts &boosts = player.active.boosts;
+
+        // Returns the new boost value clamped to [-6, 6]
+        const auto clamped_boost = [](int8_t current, int diff) -> int8_t {
+          return static_cast<int8_t>(
+              std::max(std::min(static_cast<int>(current) + diff, 6), -6));
+        };
+        // Returns the BOOSTS table entry for a given boost level
+        const auto boost_mod = [&BOOSTS](int8_t new_boost) {
+          return BOOSTS[6 + new_boost];
+        };
+
+        if (stat == "atk") {
+          const auto new_boost = clamped_boost(boosts.atk(), diff);
+          boosts.set_atk(new_boost);
+          const auto mod = boost_mod(new_boost);
+          const auto base = player.stored().stats.atk;
+          active.stats.atk = static_cast<uint16_t>(
+              std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
+                                static_cast<int>(MAX_STAT_VALUE)),
+                       static_cast<int>(MIN_STAT_VALUE)));
+        } else if (stat == "def") {
+          const auto new_boost = clamped_boost(boosts.def(), diff);
+          boosts.set_def(new_boost);
+          const auto mod = boost_mod(new_boost);
+          const auto base = player.stored().stats.def;
+          active.stats.def = static_cast<uint16_t>(
+              std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
+                                static_cast<int>(MAX_STAT_VALUE)),
+                       static_cast<int>(MIN_STAT_VALUE)));
+        } else if (stat == "spe") {
+          const auto new_boost = clamped_boost(boosts.spe(), diff);
+          boosts.set_spe(new_boost);
+          const auto mod = boost_mod(new_boost);
+          const auto base = player.stored().stats.spe;
+          active.stats.spe = static_cast<uint16_t>(
+              std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
+                                static_cast<int>(MAX_STAT_VALUE)),
+                       static_cast<int>(MIN_STAT_VALUE)));
+        } else if (stat == "spc") {
+          const auto new_boost = clamped_boost(boosts.spc(), diff);
+          boosts.set_spc(new_boost);
+          const auto mod = boost_mod(new_boost);
+          const auto base = player.stored().stats.spc;
+          active.stats.spc = static_cast<uint16_t>(
+              std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
+                                static_cast<int>(MAX_STAT_VALUE)),
+                       static_cast<int>(MIN_STAT_VALUE)));
+        } else if (stat == "acc") {
+          boosts.set_acc(clamped_boost(boosts.acc(), diff));
+        } else if (stat == "eva") {
+          boosts.set_eva(clamped_boost(boosts.eva(), diff));
+        } else if (stat == "non") {
+          // no-op
+        } else {
+          throw std::runtime_error{"boost: Invalid stat key"};
+        }
+
+        // GLITCH: Stat modification errors glitch — reapply foe's status to
+        // foe's active stats
+        PKMN::Side &foe = *f.p;
+        const auto foe_status = foe.stored().status;
+        if (foe_status == PKMN::Data::Status::Paralysis) {
+          foe.active.stats.spe = std::max(
+              static_cast<uint16_t>(foe.active.stats.spe / 4), MIN_STAT_VALUE);
+        } else if (foe_status == PKMN::Data::Status::Burn) {
+          foe.active.stats.atk = std::max(
+              static_cast<uint16_t>(foe.active.stats.atk / 2), MIN_STAT_VALUE);
+        }
+      },
+      "Apply changes to boosts, recompute active.stats with the stat "
+      "modification glitch");
+
+  m.def(
+      "switch_in",
+      [](const PokemonProxy &stored, ActivePokemonProxy &active) -> void {
+        *active.p = PKMN::switch_in(*stored.p);
+      },
+      py::arg("pokemon"), py::arg("active"));
 
   // Battle net hyperparams
   m.attr("pokemon_in_dim") = Encode::Battle::Pokemon::n_dim;
