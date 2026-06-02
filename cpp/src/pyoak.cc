@@ -921,6 +921,22 @@ void complete_move_set(std::array<PKMN::MoveSlot, 4> &move_slots,
   }
 }
 
+void status_modify(PKMN::Data::Status status, PKMN::Stats &stats) {
+  switch (status) {
+  case PKMN::Data::Status::Paralysis: {
+    stats.spe = std::max<uint16_t>(stats.spe / 4, 1);
+    return;
+  }
+  case PKMN::Data::Status::Burn: {
+    stats.atk = std::max<uint16_t>(stats.atk / 2, 1);
+    return;
+  }
+  default: {
+    assert(false);
+  }
+  }
+}
+
 // ============================================================================
 // Module definition
 // ============================================================================
@@ -1339,15 +1355,13 @@ PYBIND11_MODULE(pyoak, m) {
                                return arr;
                              })
 
-      .def_property_readonly("p2_nash",
-                             [](const MCTS::Output &o) {
-                               auto arr = py::array_t<double>(9);
-                               auto r = arr.mutable_unchecked<1>();
-                               for (size_t i = 0; i < 9; ++i)
-                                 r(i) = o.p2.nash[i];
-                               return arr;
-                             }
-      );
+      .def_property_readonly("p2_nash", [](const MCTS::Output &o) {
+        auto arr = py::array_t<double>(9);
+        auto r = arr.mutable_unchecked<1>();
+        for (size_t i = 0; i < 9; ++i)
+          r(i) = o.p2.nash[i];
+        return arr;
+      });
 
   // Network
 
@@ -1519,22 +1533,13 @@ PYBIND11_MODULE(pyoak, m) {
 
   m.def(
       "search_mp",
-      [](py::bytes battle_bytes, py::bytes durations_bytes, uint8_t result,
-         std::string budget, std::string bandit, std::string eval,
-         std::string matrix_ucb = "") {
-        std::cerr << "[search_mp]"
-                  << " battle_bytes=" << py::len(battle_bytes)
-                  << " durations_bytes=" << py::len(durations_bytes)
-                  << " result=" << static_cast<int>(result) << " budget=\""
-                  << budget << '"' << " bandit=\"" << bandit << '"'
-                  << " eval=\"" << eval << '"' << " matrix_ucb=\"" << matrix_ucb
-                  << '"' << std::endl;
+      [](py::bytes battle_bytes, py::bytes durations_bytes, std::string budget,
+         std::string bandit, std::string eval, std::string matrix_ucb = "") {
         auto battle = BattleView{battle_bytes};
         auto durations = DurationsView{durations_bytes};
         RuntimeSearch::Heap heap{};
         mt19937 device{std::random_device{}()};
-        MCTS::Input input{battle.raw, durations.raw,
-                          static_cast<pkmn_result>(result)};
+        MCTS::Input input{battle.raw, durations.raw, PKMN::result(battle.raw)};
         auto agent = RuntimeSearch::Agent{};
         agent.budget = budget;
         agent.bandit = bandit;
@@ -1547,13 +1552,24 @@ PYBIND11_MODULE(pyoak, m) {
         d["n"] = output.p2.k;
         d["visit_matrix"] = output.visit_matrix;
         d["value_matrix"] = output.value_matrix;
+        d["iterations"] = output.iterations;
+        d["duration"] = static_cast<int>(output.duration.count() / 1000) / 1000;
+        d["empirical_value"] = output.empirical_value;
+        d["nash_value"] = output.nash_value;
+
         d["p1_choices"] = output.p1.choices;
         d["p2_choices"] = output.p2.choices;
+        d["p1_empirical"] = output.p1.empirical;
+        d["p2_empirical"] = output.p2.empirical;
+        d["p1_nash"] = output.p1.nash;
+        d["p2_nash"] = output.p2.nash;
+        d["p1_prior"] = output.p1.prior;
+        d["p2_prior"] = output.p2.prior;
+
         return d;
       },
-      py::arg("battle_bytes"), py::arg("durations_bytes"), py::arg("result"),
-      py::arg("budget"), py::arg("bandit"), py::arg("eval"),
-      py::arg("matrix-ucb"));
+      py::arg("battle_bytes"), py::arg("durations_bytes"), py::arg("budget"),
+      py::arg("bandit"), py::arg("eval"), py::arg("matrix-ucb"));
 
   m.def("load_teams", [](const std::string &path) {
     std::vector<std::vector<PokemonSet>> res{};
@@ -1636,6 +1652,11 @@ PYBIND11_MODULE(pyoak, m) {
         [](ActivePokemonProxy &proxy, const PokemonSet &set) -> void {
           PKMN::ActivePokemon &active = *proxy.p;
           complete_move_set(active.moves, set.moves);
+        });
+
+  m.def("copy_moves_to_active",
+        [](const PokemonProxy &pokemon, ActivePokemonProxy &active) {
+          active.p->moves = pokemon.p->moves;
         });
 
   m.def(
@@ -1722,17 +1743,14 @@ PYBIND11_MODULE(pyoak, m) {
         // GLITCH: Stat modification errors glitch — reapply foe's status to
         // foe's active stats
         PKMN::Side &foe = *f.p;
-        const auto foe_status = foe.stored().status;
-        if (foe_status == PKMN::Data::Status::Paralysis) {
-          foe.active.stats.spe = std::max(
-              static_cast<uint16_t>(foe.active.stats.spe / 4), MIN_STAT_VALUE);
-        } else if (foe_status == PKMN::Data::Status::Burn) {
-          foe.active.stats.atk = std::max(
-              static_cast<uint16_t>(foe.active.stats.atk / 2), MIN_STAT_VALUE);
-        }
+        status_modify(foe.stored().status, foe.active.stats);
       },
       "Apply changes to boosts, recompute active.stats with the stat "
       "modification glitch");
+
+  m.def("status_modify", [](int status, StatsProxy &stats) {
+    status_modify(static_cast<PKMN::Data::Status>(status), *stats.p);
+  });
 
   m.def(
       "switch_in",
@@ -1740,6 +1758,11 @@ PYBIND11_MODULE(pyoak, m) {
         *active.p = PKMN::switch_in(*stored.p);
       },
       py::arg("pokemon"), py::arg("active"));
+
+  m.def("choice_label", [](const SideProxy &side, int choice) {
+    return PKMN::side_choice_string(reinterpret_cast<const uint8_t *>(side.p),
+                                    static_cast<pkmn_choice>(choice));
+  });
 
   // Battle net hyperparams
   m.attr("pokemon_in_dim") = Encode::Battle::Pokemon::n_dim;

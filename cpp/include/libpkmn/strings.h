@@ -27,6 +27,7 @@ constexpr const uint8_t *get_pokemon_from_slot(const uint8_t *side,
   return side + 24 * index;
 }
 
+// TODO binding, force, recharge etc
 inline std::string side_choice_string(const uint8_t *side, pkmn_choice choice) {
   const auto choice_type = choice & 3;
   const auto choice_data = choice >> 2;

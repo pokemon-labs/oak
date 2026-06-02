@@ -7,7 +7,6 @@ import threading
 import sys
 from typing import Dict
 
-
 parser = argparse.ArgumentParser(
     description="Reinforcement learning using a generate process and battle.py (and optionally build.py)",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
