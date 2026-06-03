@@ -46,7 +46,7 @@ jobs:
       - name: Setup Zig Compiler
         uses: mlugg/setup-zig@v2.2.1
         with:
-          version: master
+          version: 0.16.0
 
       - name: Build libpkmn
         run: |
