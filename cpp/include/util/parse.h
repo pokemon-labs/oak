@@ -127,29 +127,29 @@ inline auto parse_active(PKMN::Pokemon &pokemon, const auto &words)
       return x;
     };
     const auto read_boost = [](const auto &word) -> int8_t {
-      int8_t x = std::stoi(word.substr(3));
+      int8_t x = std::stoi(word.substr(3)); // +/- included
       assert(x < 7 && x > -7);
       return x;
     };
 
     if (lower.starts_with("atk=")) {
       stats.atk = read_stat(lower);
-    } else if (lower.starts_with("atk")) {
+    } else if (lower.starts_with("atk+") || lower.starts_with("atk-")) {
       active.boosts.set_atk(read_boost(lower));
     }
     if (lower.starts_with("def=")) {
       stats.def = read_stat(lower);
-    } else if (lower.starts_with("def")) {
+    } else if (lower.starts_with("def+") || lower.starts_with("def-")) {
       active.boosts.set_def(read_boost(lower));
     }
     if (lower.starts_with("spe=")) {
       stats.spe = read_stat(lower);
-    } else if (lower.starts_with("spe")) {
+    } else if (lower.starts_with("spe+") || lower.starts_with("spe-")) {
       active.boosts.set_spe(read_boost(lower));
     }
     if (lower.starts_with("spc=")) {
       stats.spc = read_stat(lower);
-    } else if (lower.starts_with("spc")) {
+    } else if (lower.starts_with("spc+") || lower.starts_with("spc-")) {
       active.boosts.set_spc(read_boost(lower));
     }
 

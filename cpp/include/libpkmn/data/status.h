@@ -28,11 +28,11 @@ enum class Status : std::underlying_type_t<std::byte> {
 };
 
 constexpr bool is_sleep(const auto status) {
-  return static_cast<unsigned char>(status) & 7;
+  return static_cast<uint8_t>(status) & 7;
 }
 
 constexpr bool self(const auto status) {
-  return static_cast<char>(status) & 0b10000000;
+  return static_cast<uint8_t>(status) & 0b10000000;
 }
 
 constexpr Status sleep(const auto n) {

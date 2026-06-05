@@ -57,6 +57,12 @@ inline bool match(const auto &A, const auto &B) {
       [](char a, char b) { return std::tolower(a) == std::tolower(b); });
 }
 
+inline std::string to_lower(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  return s;
+}
+
 inline auto find_unique(const auto &container, const auto &value) {
   const auto matches = [&value](const auto &x) { return match(x, value); };
   auto it = std::find_if(container.begin(), container.end(), matches);
@@ -314,6 +320,19 @@ inline std::string to_string(const auto &battle_data) {
 inline Species string_to_species(const std::string &str) {
   const int index = unique_index(PKMN::Data::SPECIES_CHAR_ARRAY, str);
   if (index < 0) {
+    const auto lower = to_lower(str);
+    if (lower == "pidgeot") {
+      return Species::Pidgeot;
+    }
+    if (lower == "paras") {
+      return Species::Paras;
+    }
+    if (lower == "kabuto") {
+      return Species::Kabuto;
+    }
+    if (lower == "mew") {
+      return Species::Mew;
+    }
     throw std::runtime_error{"Could not match string to Species"};
     return Species::None;
   } else {
@@ -324,6 +343,16 @@ inline Species string_to_species(const std::string &str) {
 inline Move string_to_move(const std::string &str) {
   const int index = unique_index(PKMN::Data::MOVE_CHAR_ARRAY, str);
   if (index < 0) {
+    const auto lower = to_lower(str);
+    if (lower == "acid") {
+      return Move::Acid;
+    }
+    if (lower == "bubble") {
+      return Move::Bubble;
+    }
+    if (lower == "thunder") {
+      return Move::Thunder;
+    }
     throw std::runtime_error{"Could not match string to Move"};
     return Move::None;
   } else {
