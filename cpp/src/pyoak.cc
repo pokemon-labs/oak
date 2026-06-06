@@ -1371,6 +1371,15 @@ PYBIND11_MODULE(pyoak, m) {
     }
   });
 
+  m.def("choices",
+        [](const BattleView &battle, int result)
+            -> std::pair<std::vector<pkmn_choice>, std::vector<pkmn_choice>> {
+          return PKMN::choices(battle.raw, static_cast<pkmn_result>(result));
+        });
+
+  m.def("result_type",
+        [](int result) -> int { return pkmn_result_type(result); });
+
   // Battle net hyperparams
   m.attr("pokemon_in_dim") = Encode::Battle::Pokemon::n_dim;
   m.attr("active_in_dim") = Encode::Battle::ActivePokemon::n_dim;
