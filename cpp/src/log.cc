@@ -8,7 +8,7 @@
 #include <optional>
 
 int rollout_sample_teams_and_stream_debug_log(int argc, char **argv) {
-  using namespace PKMN::Protocol;
+  using namespace PKMN::Log;
 
   constexpr size_t log_size{128};
   using Teams::ou_sample_teams;

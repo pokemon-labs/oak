@@ -9,7 +9,7 @@
 
 #include <libpkmn/strings.h>
 
-namespace PKMN::Protocol {
+namespace PKMN::Log {
 
 enum Opcode : uint8_t {
   null = 0x00,
@@ -577,4 +577,4 @@ template <View view = View::omnicient> struct Parser {
   }
 };
 
-} // namespace PKMN::Protocol
+} // namespace PKMN::Log

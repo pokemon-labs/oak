@@ -86,6 +86,12 @@ add_library(pyoak SHARED src/pyoak.cc)
 target_link_libraries(pyoak PRIVATE search_lib pybind11::module)
 set_target_properties(pyoak PROPERTIES PREFIX "" SUFFIX ".so")
 
+add_library(pyoaklog SHARED src/pyoaklog.cc)
+target_include_directories(pyoaklog PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(pyoaklog PRIVATE libpkmn_client pybind11::module)
+set_target_properties(pyoaklog PROPERTIES PREFIX "" SUFFIX ".so")
+set_target_properties(pyoaklog PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 add_executable(log src/log.cc)
 target_include_directories(log PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(log PRIVATE libpkmn_client)
