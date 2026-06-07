@@ -54,6 +54,19 @@ PYBIND11_MODULE(pyoaklog, m) {
       },
       py::arg("battle"), py::arg("durations"), py::arg("c1"), py::arg("c2"),
       py::arg("view"));
+
+  m.def(
+      "compare_battles",
+      [](const BattleView &public_battle, const DurationsView &public_durations,
+         const BattleView &truth_battle,
+         const DurationsView &truth_durations) -> std::pair<bool, std::string> {
+        std::string reason;
+        bool matches = PKMN::Client::compare_battles(
+            PKMN::view(public_battle.raw), PKMN::view(public_durations.raw),
+            PKMN::view(truth_battle.raw), PKMN::view(truth_durations.raw),
+            reason);
+        return {matches, reason};
+      });
 }
 
 } // namespace

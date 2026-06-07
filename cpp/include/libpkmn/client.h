@@ -2,7 +2,7 @@
 
 #include <libpkmn/pkmn.h>
 
-namespace Client {
+namespace PKMN::Client {
 
 using Moves = std::array<PKMN::MoveSlot, 4>;
 inline bool compare_moves(const Moves &_public, const Moves &truth,
@@ -271,4 +271,4 @@ inline bool compare_battles(const PKMN::Battle &_public_battle,
   return true;
 }
 
-} // namespace Client
+} // namespace PKMN::Client
