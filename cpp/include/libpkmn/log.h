@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <cstdint>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <vector>
@@ -58,7 +57,7 @@ enum Opcode : uint8_t {
 };
 
 enum class View : std::underlying_type_t<std::byte> {
-  omnicient = 0,
+  omniscient = 0,
   p1 = 1,
   p2 = 2,
 };
@@ -133,6 +132,30 @@ std::string damage_reason(uint8_t reason) {
   return "";
 }
 
+std::string boost_reason(uint8_t reason) {
+  switch (reason) {
+  case 0x00:
+    return "atk|[from] Rage";
+  case 0x01:
+    return "atk";
+  case 0x02:
+    return "def";
+  case 0x03:
+    return "spe";
+  case 0x04:
+    return "spa";
+  case 0x05:
+    return "spd";
+  case 0x06:
+    return "accuracy";
+  case 0x07:
+    return "evasion";
+  default:
+    assert(false);
+  }
+  return "";
+}
+
 inline std::string status_string(const auto status) {
   const auto byte = static_cast<uint8_t>(status);
   if (byte == 0) {
@@ -158,7 +181,7 @@ inline std::string status_string(const auto status) {
   };
 }
 
-template <View view = View::omnicient> struct Parser {
+template <View view = View::omniscient> struct Parser {
   const unsigned char *buf;
   size_t pos = 0;
 
@@ -178,10 +201,7 @@ template <View view = View::omnicient> struct Parser {
     return lo | (hi << 8);
   }
 
-  void push(const std::string &s) {
-    log.push_back(s);
-    std::cout << s << std::endl;
-  }
+  void push(const std::string &s) { log.push_back(s); }
 
   void annotate_last_move(const std::string &suffix) {
     if (last_move_index) {
@@ -192,7 +212,7 @@ template <View view = View::omnicient> struct Parser {
 
   void possibly_hide_hp(const PokemonIdent identity, uint16_t &hp,
                         uint16_t &max_hp) const noexcept {
-    if constexpr (view != View::omnicient) {
+    if constexpr (view != View::omniscient) {
       if (identity.view() != view && max_hp) {
         hp = 100 * hp / max_hp;
         max_hp = 100;
@@ -363,11 +383,23 @@ template <View view = View::omnicient> struct Parser {
         break;
       }
       case Opcode::boost: {
+        // The Pokémon identified by Ident has been (un)boosted by Num - 6 in a
+        // stat indicated by the Reason.
         auto ident = read_u8();
         auto reason = read_u8();
         auto num = read_u8();
-        push("|boost|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        auto identity = decode_ident(ident);
+        int boost = static_cast<int>(num) - 6;
+        if (boost > 0) {
+          push("|-boost|" + ident_to_string(PKMN::view(battle), identity) +
+               "|" + std::to_string(boost) + "|" + boost_reason(reason));
+        } else if (boost < 0) {
+          assert(reason != 0);
+          push("|-unboost|" + ident_to_string(PKMN::view(battle), identity) +
+               "|" + std::to_string(-boost) + "|" + boost_reason(reason));
+        } else {
+          assert(false);
+        }
         break;
       }
       case Opcode::clearallboost: {
@@ -569,7 +601,6 @@ template <View view = View::omnicient> struct Parser {
         break;
       }
       default: {
-        std::cout << "ERROR: " << std::to_string(opcode) << std::endl;
         assert(false);
       }
       }
