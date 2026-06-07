@@ -1,14 +1,6 @@
-#include <libpkmn/data.h>
-#include <libpkmn/data/moves.h>
-#include <libpkmn/data/species.h>
-#include <libpkmn/data/status.h>
-#include <libpkmn/data/strings.h>
-#include <libpkmn/init.h>
-#include <libpkmn/layout.h>
+#include <libpkmn/client.h>
 #include <libpkmn/log.h>
 #include <libpkmn/pkmn.h>
-#include <libpkmn/strings.h>
-
 #include <py/libpkmn/data.h>
 
 #include <pybind11/numpy.h>
