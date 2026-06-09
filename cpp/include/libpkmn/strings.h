@@ -39,7 +39,9 @@ inline std::string side_choice_string(const uint8_t *side, pkmn_choice choice) {
     if (choice_data == 0) {
       return "None";
     }
-    return move_string(get_pokemon_from_slot(side, 1)[8 + 2 * choice_data]);
+    using namespace PKMN::Layout::Offsets;
+    return move_string(
+        (side + Side::active + ActivePokemon::moves)[2 * (choice_data - 1)]);
   }
   case 2: {
     return species_string(get_pokemon_from_slot(side, choice_data)[21]);
@@ -198,6 +200,7 @@ battle_data_to_string(const pkmn_gen1_battle &battle,
   const auto &b = PKMN::view(battle);
   for (auto s = 0; s < 2; ++s) {
     const auto &side = b.sides[s];
+    const auto &active = side.active;
     const auto &duration = PKMN::view(durations).get(s);
     const auto &vol = side.active.volatiles;
 
@@ -211,7 +214,6 @@ battle_data_to_string(const pkmn_gen1_battle &battle,
       if (i == 0) {
 
         // boosts
-        const auto &active = side.active;
         bool equal = true;
         if (active.stats.atk != pokemon.stats.atk) {
           ss << "(atk " << pokemon.stats.atk << ">>" << active.stats.atk
@@ -297,8 +299,16 @@ battle_data_to_string(const pkmn_gen1_battle &battle,
         ss << ' ';
       }
       for (auto m = 0; m < 4; ++m) {
-        const auto moveslot = pokemon.moves[m];
+        const bool matching = (pokemon.moves[m] == side.active.moves[m]);
+        if ((i > 0) || matching) {
+          const auto &moveslot = pokemon.moves[m];
         ss << move_char_array(moveslot.id) << ":" << (int)moveslot.pp << ' ';
+        } else {
+          const auto &a = active.moves[m];
+          const auto &p = pokemon.moves[m];
+          ss << move_char_array(a.id) << ":" << (int)a.pp << '/';
+          ss << move_char_array(p.id) << ":" << (int)p.pp << ' ';
+        }
       }
       ss << '\n';
     }
