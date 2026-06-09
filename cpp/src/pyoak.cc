@@ -515,10 +515,26 @@ void status_modify(PKMN::Data::Status status, PKMN::Stats &stats) {
     return;
   }
   default: {
-    assert(false);
+    // assert(false);
   }
   }
 }
+
+constexpr std::array<std::pair<int, int>, 13> BOOSTS{{
+    {25, 100}, // -6
+    {28, 100}, // -5
+    {33, 100}, // -4
+    {40, 100}, // -3
+    {50, 100}, // -2
+    {66, 100}, // -1
+    {1, 1},    //  0
+    {15, 10},  // +1
+    {2, 1},    // +2
+    {25, 10},  // +3
+    {3, 1},    // +4
+    {35, 10},  // +5
+    {4, 1},    // +6
+}};
 
 // ============================================================================
 // Module definition
@@ -1245,21 +1261,6 @@ PYBIND11_MODULE(pyoak, m) {
   m.def(
       "boost",
       [](SideProxy &p, SideProxy &f, std::string stat, int diff) {
-        constexpr std::array<std::pair<int, int>, 13> BOOSTS{{
-            {25, 100}, // -6
-            {28, 100}, // -5
-            {33, 100}, // -4
-            {40, 100}, // -3
-            {50, 100}, // -2
-            {66, 100}, // -1
-            {1, 1},    //  0
-            {15, 10},  // +1
-            {2, 1},    // +2
-            {25, 10},  // +3
-            {3, 1},    // +4
-            {35, 10},  // +5
-            {4, 1},    // +6
-        }};
         constexpr uint16_t MIN_STAT_VALUE = 1;
         constexpr uint16_t MAX_STAT_VALUE = 999;
 
@@ -1349,8 +1350,11 @@ PYBIND11_MODULE(pyoak, m) {
 
   // Fills any Move::None slots in `set.moves` with randomly sampled legal OU
   // moves. Does not duplicate moves already present.
-  m.def("fill_random_moveset", [](PokemonSet &set) {
-    std::mt19937 rng(std::random_device{}());
+  m.def("fill_random_moveset", [](PokemonSet &set, uint64_t seed = 0) {
+    if (seed == 0) {
+      seed = std::random_device{}();
+    }
+    std::mt19937 rng{seed};
     const auto &pool = Format::OU::move_pool(set.species);
     const auto pool_size = Format::OU::move_pool_size(set.species);
     const auto &moves = set.moves;
