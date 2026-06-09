@@ -113,7 +113,7 @@ std::string cant_reason(uint8_t reason) {
 std::string damage_reason(uint8_t reason) {
   switch (reason) {
   case 0x00:
-    return "None";
+    return "";
   case 0x01:
     return "psn";
   case 0x02:
@@ -126,6 +126,23 @@ std::string damage_reason(uint8_t reason) {
     return "Recoil|[of]";
   case 0x06:
     return "[from] Spikes";
+  default:
+    assert(false);
+  }
+  return "";
+}
+
+std::string heal_reason(uint8_t reason) {
+  switch (reason) {
+  case 0x00:
+    return "";
+  case 0x01:
+    return "|[silent]";
+  case 0x02:
+    return "|[from] drain|";
+  case 0x03:
+    assert(false);
+    return "|[from] Leftovers";
   default:
     assert(false);
   }
@@ -233,6 +250,59 @@ inline std::string status_string(const auto status) {
     assert(false);
     return "";
   };
+}
+
+/*
+FIXME leechseed From Of
+Reason
+Raw	Description
+0x00	Disable*
+0x01	confusion
+0x02	Bide*
+0x03	Substitute
+0x04	Disable|[silent]
+0x05	confusion|[silent]
+0x06	mist|[silent]
+0x07	focusenergy|[silent]
+0x08	leechseed|[silent]
+0x09	Toxic counter|[silent]
+0x0A	lightscreen|[silent]
+0x0B	reflect|[silent]
+0x0C	move: Bide|[silent]
+*0x00 corresponds to move: Disable and 0x02 to move: Bide in Generation II.
+*/
+std::string end_reason(uint8_t reason) {
+  switch (reason) {
+  case 0x00:
+    return "Disable";
+  case 0x01:
+    return "confusion";
+  case 0x02:
+    return "Bide";
+  case 0x03:
+    return "Substitute";
+  case 0x04:
+    return "Disable|[silent]";
+  case 0x05:
+    return "confusion|[silent]";
+  case 0x06:
+    return "mist|[silent]";
+  case 0x07:
+    return "focusenergy|[silent]";
+  case 0x08:
+    return "leechseed|[silent]";
+  case 0x09:
+    return "Toxic counter|[silent]";
+  case 0x0A:
+    return "lightscreen|[silent]";
+  case 0x0B:
+    return "reflect|[silent]";
+  case 0x0C:
+    return "move: Bide|[silent]";
+  default:
+    assert(false);
+  }
+  return "";
 }
 
 template <View view = View::omniscient> struct Parser {
@@ -402,35 +472,43 @@ template <View view = View::omniscient> struct Parser {
         // |-damage|p1a: Tauros|91/353
         // |-damage|p2a: Starmie|18/100 slp
         // |-damage|p1a: Jolteon|157/333|[from] Recoil|[of] p2a: Snorlax
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto hp = read_u16();
         auto max_hp = read_u16();
         auto status = read_u8();
         auto reason = read_u8();
-
-        auto identity = decode_ident(ident);
         possibly_hide_hp(identity, hp, max_hp);
-
-        uint8_t of;
-        if (reason == 0x05) {
-          of = read_u8();
+        std::string prefix = "|-damage|" +
+                             ident_to_string(PKMN::view(battle), identity) +
+                             "|" + condition_string(hp, max_hp, status);
+        if (reason != 0x00) {
+          prefix += "|" + damage_reason(reason);
+          if (reason == 0x05) {
+            auto of = decode_ident(read_u8());
+            prefix += "|" + ident_to_string(PKMN::view(battle), identity);
+          }
         }
-        push("|-damage|" + ident_to_string(PKMN::view(battle), identity) + "|" +
-             condition_string(hp, max_hp, status));
+        push(prefix);
         break;
       }
       case ArgType::heal: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto hp = read_u16();
         auto max_hp = read_u16();
         auto status = read_u8();
         auto reason = read_u8();
-        uint8_t of;
-        if (reason == 0x02) {
-          of = read_u8();
+        possibly_hide_hp(identity, hp, max_hp);
+        std::string prefix = "|-heal|" +
+                             ident_to_string(PKMN::view(battle), identity) +
+                             "|" + condition_string(hp, max_hp, status);
+        if (reason != 0x00) {
+          prefix += "|" + heal_reason(reason);
+          if (reason == 0x02) {
+            auto of = read_u8();
+            prefix += "|" + PKMN::move_string(of);
+          }
         }
-        push("|heal|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push(prefix);
         break;
       }
       case ArgType::status: {
@@ -575,10 +653,10 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::end: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto reason = read_u8();
-        push("|end|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|-end|" + ident_to_string(PKMN::view(battle), identity) + "|" +
+             end_reason(reason));
         break;
       }
       case ArgType::ohko: {

@@ -302,7 +302,7 @@ battle_data_to_string(const pkmn_gen1_battle &battle,
         const bool matching = (pokemon.moves[m] == side.active.moves[m]);
         if ((i > 0) || matching) {
           const auto &moveslot = pokemon.moves[m];
-        ss << move_char_array(moveslot.id) << ":" << (int)moveslot.pp << ' ';
+          ss << move_char_array(moveslot.id) << ":" << (int)moveslot.pp << ' ';
         } else {
           const auto &a = active.moves[m];
           const auto &p = pokemon.moves[m];
