@@ -13,7 +13,7 @@ namespace py = pybind11;
 
 namespace {
 
-struct Output {
+struct OutputBuffer {
   size_t size;
   size_t pokemon_out_dim;
   size_t active_out_dim;
@@ -29,7 +29,7 @@ struct Output {
   // last dim is neg inf, invalid actions map to it
   static constexpr size_t policy_out_dim = Encode::Battle::Policy::n_dim + 1;
 
-  Output(size_t size, size_t pod = NN::Battle::Default::pokemon_out_dim,
+  OutputBuffer(size_t size, size_t pod = NN::Battle::Default::pokemon_out_dim,
          size_t aod = NN::Battle::Default::active_out_dim)
       : size{size}, pokemon_out_dim{pod}, active_out_dim{aod},
         side_out_dim{(1 + active_out_dim) + 5 * (1 + pokemon_out_dim)} {

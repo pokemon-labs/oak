@@ -7,7 +7,7 @@
 #include <nn/default-hyperparameters.h>
 #include <py/battle/encoded-frames.h>
 #include <py/battle/frames.h>
-#include <py/battle/output.h>
+#include <py/battle/output-buffer.h>
 #include <py/build/trajectories.h>
 #include <py/libpkmn/data.h>
 #include <train/battle/compressed-frame.h>
@@ -35,8 +35,6 @@ dim_labels_to_vec(const std::array<std::array<char, M>, N> &data) {
 namespace py = pybind11;
 using namespace PKMN;
 using namespace PKMN::Data;
-
-using Py::Battle::Output;
 
 py::list read_battle_data(const std::string &path) {
   std::ifstream file(path, std::ios::binary);
@@ -366,21 +364,21 @@ PYBIND11_MODULE(pyoaknumpy, m) {
       .def_readonly("choice_indices",
                     &Py::Battle::EncodedFrames::choice_indices);
 
-  py::class_<Output>(m, "OutputBuffer")
+  py::class_<Py::Battle::OutputBuffer>(m, "OutputBuffer")
       .def(py::init<size_t, size_t, size_t>(), py::arg("size"),
            py::arg("pokemon_out_dim") = NN::Battle::Default::pokemon_out_dim,
            py::arg("active_out_dim") = NN::Battle::Default::active_out_dim)
-      .def_readonly("size", &Output::size)
-      .def_readonly("pokemon_out_dim", &Output::pokemon_out_dim)
-      .def_readonly("active_out_dim", &Output::active_out_dim)
-      .def_readonly("pokemon", &Output::pokemon)
-      .def_readonly("active_pokemon", &Output::active_pokemon)
-      .def_readonly("sides", &Output::sides)
-      .def_readonly("value", &Output::value)
-      .def_readonly("logit", &Output::logit)
-      .def_readonly("policy_logit", &Output::policy_logit)
-      .def_readonly("policy", &Output::policy)
-      .def("clear", &Output::clear);
+      .def_readonly("size", &Py::Battle::OutputBuffer::size)
+      .def_readonly("pokemon_out_dim", &Py::Battle::OutputBuffer::pokemon_out_dim)
+      .def_readonly("active_out_dim", &Py::Battle::OutputBuffer::active_out_dim)
+      .def_readonly("pokemon", &Py::Battle::OutputBuffer::pokemon)
+      .def_readonly("active_pokemon", &Py::Battle::OutputBuffer::active_pokemon)
+      .def_readonly("sides", &Py::Battle::OutputBuffer::sides)
+      .def_readonly("value", &Py::Battle::OutputBuffer::value)
+      .def_readonly("logit", &Py::Battle::OutputBuffer::logit)
+      .def_readonly("policy_logit", &Py::Battle::OutputBuffer::policy_logit)
+      .def_readonly("policy", &Py::Battle::OutputBuffer::policy)
+      .def("clear", &Py::Battle::OutputBuffer::clear);
 
   py::class_<SampleIndexer>(m, "SampleIndexer")
       .def(py::init<>())

@@ -2,11 +2,10 @@
 #include <libpkmn/log.h>
 #include <libpkmn/pkmn.h>
 #include <py/battle/frames.h>
-#include <py/battle/output.h>
+#include <py/battle/output-buffer.h>
 #include <py/libpkmn/data.h>
 #include <util/search.h>
 
-#include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -14,9 +13,7 @@
 
 namespace {
 
-using Py::Battle::Output;
-
-Output cpp_inference(const Py::Battle::Frames &battle_frames,
+Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
                      std::string network_path, bool discrete = false,
                      std::string budget = "0") {
 
@@ -34,7 +31,7 @@ Output cpp_inference(const Py::Battle::Frames &battle_frames,
   agent.initialize_network(battle);
   mt19937 device{std::random_device{}()};
 
-  Output buffer{battle_frames.size};
+  Py::Battle::OutputBuffer buffer{battle_frames.size};
   auto value = buffer.value.mutable_data();
   auto p1_logit = buffer.policy_logit.mutable_data();
   auto p2_logit = buffer.policy_logit.mutable_data() + 9;
