@@ -10,7 +10,7 @@
 
 namespace PKMN::Log {
 
-enum Opcode : uint8_t {
+enum ArgType : uint8_t {
   null = 0x00,
   laststill = 0x01,
   lastmiss = 0x02,
@@ -156,6 +156,60 @@ std::string boost_reason(uint8_t reason) {
   return "";
 }
 
+std::string activate_reason(uint8_t reason) {
+  switch (reason) {
+  case 0x00:
+    return "Bide";
+  case 0x01:
+    return "confusion";
+  case 0x02:
+    return "move: Haze";
+  case 0x03:
+    return "move: Mist"; // TODO
+  case 0x04:
+    return "move: Struggle";
+  case 0x05:
+    return "Substitute|";
+  case 0x06:
+    return "||move: Splash";
+  default:
+    assert(false);
+  }
+  return "";
+}
+
+std::string start_reason(uint8_t reason) {
+  switch (reason) {
+  case 0x00:
+    return "Bide";
+  case 0x01:
+    return "confusion";
+  case 0x02:
+    return "confusion|[silent]";
+  case 0x03:
+    return "move: Focus Energy";
+  case 0x04:
+    return "move: Leech Seed";
+  case 0x05:
+    return "Light Screen";
+  case 0x06:
+    return "Mist";
+  case 0x07:
+    return "Reflect";
+  case 0x08:
+    return "Substitute";
+  case 0x09:
+    return "typechange|";
+  case 0x0A:
+    return "Disable|";
+  case 0x0B:
+    return "Mimic|";
+  default:
+    assert(false);
+  }
+  return "";
+}
+
 inline std::string status_string(const auto status) {
   const auto byte = static_cast<uint8_t>(status);
   if (byte == 0) {
@@ -201,7 +255,10 @@ template <View view = View::omniscient> struct Parser {
     return lo | (hi << 8);
   }
 
-  void push(const std::string &s) { log.push_back(s); }
+  void push(const std::string &s) {
+    std::cout << s << std::endl;
+    log.push_back(s);
+  }
 
   void annotate_last_move(const std::string &suffix) {
     if (last_move_index) {
@@ -239,44 +296,61 @@ template <View view = View::omniscient> struct Parser {
 
   void parse() {
     while (true) {
-      const auto opcode = static_cast<Opcode>(read_u8());
+      const auto opcode = static_cast<ArgType>(read_u8());
 
       switch (opcode) {
-      case Opcode::null: {
+      case ArgType::null: {
         return;
       }
-      case Opcode::lastmiss: {
-        push("|lastmiss");
+      case ArgType::lastmiss: {
+
+        for (int i = log.size() - 1; i >= 0; --i) {
+          auto &line = log[i];
+          auto x = line.substr(0, 6);
+          if (x == "|move|") {
+            line += "|[miss]";
+            break;
+          }
+        }
         break;
       }
-      case Opcode::laststill: {
+      case ArgType::laststill: {
         push("|laststill");
         break;
       }
-      case Opcode::move: {
+      case ArgType::move: {
         // |move|p1a: Jynx|Blizzard|p2a: Chansey|[miss]
         // |move|p1a: Cloyster|Clamp|p2a: Alakazam|[from] Clamp
         auto source = read_u8();
         auto move = read_u8();
         auto target = read_u8();
         auto reason = read_u8();
-        auto from = 0;
-        if (reason == 0x02) {
-          from = read_u8();
+        switch (reason) {
+        case 0x00: {
+          push("|move|" +
+               ident_to_string(PKMN::view(battle), decode_ident(source)) + "|" +
+               PKMN::move_string(move) + "|" +
+               ident_to_string(PKMN::view(battle), decode_ident(target)));
+          break;
+        }
+        case 0x01:
+        case 0x02: {
+          auto from = read_u8();
           push("|move|" +
                ident_to_string(PKMN::view(battle), decode_ident(source)) + "|" +
                PKMN::move_string(move) + "|" +
                ident_to_string(PKMN::view(battle), decode_ident(target)) +
                "|[from] " + PKMN::move_string(from));
-        } else {
-          push("|move|" +
-               ident_to_string(PKMN::view(battle), decode_ident(source)) + "|" +
-               PKMN::move_string(move) + "|" +
-               ident_to_string(PKMN::view(battle), decode_ident(target)));
+
+          break;
+        }
+        default: {
+          assert(false);
+        }
         }
         break;
       }
-      case Opcode::switch_: {
+      case ArgType::switch_: {
         // |switch|p1a: Starmie|Starmie|247/323
         // |switch|p2a: Starmie|Starmie|81/100
         auto ident = read_u8();
@@ -295,7 +369,7 @@ template <View view = View::omniscient> struct Parser {
              std::to_string(hp) + "/" + std::to_string(max_hp));
         break;
       }
-      case Opcode::cant: {
+      case ArgType::cant: {
         auto ident = read_u8();
         auto reason = read_u8();
         push("|cant|" +
@@ -303,27 +377,27 @@ template <View view = View::omniscient> struct Parser {
              cant_reason(reason));
         break;
       }
-      case Opcode::faint: {
+      case ArgType::faint: {
         auto ident = read_u8();
         push("|faint|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::turn: {
+      case ArgType::turn: {
         auto turn = read_u16();
         push("|turn|" + std::to_string(turn));
         break;
       }
-      case Opcode::win: {
+      case ArgType::win: {
         auto player = read_u8();
         push("|win|p" + std::to_string(player));
         break;
       }
-      case Opcode::tie: {
+      case ArgType::tie: {
         push("|tie|");
         break;
       }
-      case Opcode::damage: {
+      case ArgType::damage: {
         // |-damage|p2a: Exeggutor|0 fnt
         // |-damage|p1a: Tauros|91/353
         // |-damage|p2a: Starmie|18/100 slp
@@ -345,7 +419,7 @@ template <View view = View::omniscient> struct Parser {
              condition_string(hp, max_hp, status));
         break;
       }
-      case Opcode::heal: {
+      case ArgType::heal: {
         auto ident = read_u8();
         auto hp = read_u16();
         auto max_hp = read_u16();
@@ -359,30 +433,43 @@ template <View view = View::omniscient> struct Parser {
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::status: {
+      case ArgType::status: {
         auto ident = read_u8();
         auto status = read_u8();
         auto reason = read_u8();
-
         auto identity = decode_ident(ident);
-
-        uint8_t from;
-        if (reason == 0x02) {
-          from = read_u8();
+        std::string prefix = "|-status|" +
+                             ident_to_string(PKMN::view(battle), identity) +
+                             "|" + status_string(status);
+        switch (reason) {
+        case 0x00: {
+          push(prefix);
+          break;
         }
-        push("|-status|" + ident_to_string(PKMN::view(battle), identity) + "|" +
-             status_string(status));
+        case 0x01: {
+          push(prefix + "|[silent]");
+          break;
+        }
+        case 0x02: {
+          auto move = read_u8();
+          push(prefix + "|[from]|" + PKMN::move_string(move));
+          break;
+        }
+        default: {
+          assert(false);
+        }
+        }
         break;
       }
-      case Opcode::curestatus: {
+      case ArgType::curestatus: {
         auto ident = read_u8();
         auto status = read_u8();
         auto reason = read_u8();
-        push("|curestatus|" +
+        push("|-curestatus|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::boost: {
+      case ArgType::boost: {
         // The Pokémon identified by Ident has been (un)boosted by Num - 6 in a
         // stat indicated by the Reason.
         auto ident = read_u8();
@@ -392,124 +479,144 @@ template <View view = View::omniscient> struct Parser {
         int boost = static_cast<int>(num) - 6;
         if (boost > 0) {
           push("|-boost|" + ident_to_string(PKMN::view(battle), identity) +
-               "|" + std::to_string(boost) + "|" + boost_reason(reason));
+               "|" + boost_reason(reason) + "|" + std::to_string(boost));
         } else if (boost < 0) {
           assert(reason != 0);
           push("|-unboost|" + ident_to_string(PKMN::view(battle), identity) +
-               "|" + std::to_string(-boost) + "|" + boost_reason(reason));
+               "|" + boost_reason(reason) + "|" + std::to_string(-boost));
         } else {
           assert(false);
         }
         break;
       }
-      case Opcode::clearallboost: {
+      case ArgType::clearallboost: {
         push("|clearallboost|");
         break;
       }
-      case Opcode::fail: {
+      case ArgType::fail: {
         auto ident = read_u8();
         auto reason = read_u8();
         push("|fail|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::miss: {
+      case ArgType::miss: {
         auto ident = read_u8();
         push("|miss|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::hitcount: {
+      case ArgType::hitcount: {
         auto ident = read_u8();
         auto num = read_u8();
         push("|hitcount|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::prepare: {
+      case ArgType::prepare: {
         auto ident = read_u8();
         auto move = read_u8();
-        push("|prepare|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        auto identity = decode_ident(ident);
+        push("|-prepare|" + ident_to_string(PKMN::view(battle), identity) +
+             "|" + PKMN::move_string(move));
         break;
       }
-      case Opcode::mustrecharge: {
+      case ArgType::mustrecharge: {
         auto ident = read_u8();
-        push("|mustrecharge|" +
+        push("|-mustrecharge|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::activate: {
-        auto ident = read_u8();
-        auto reason = read_u8();
-        push("|activate|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
-        break;
-      }
-      case Opcode::fieldactivate: {
-        push("|fieldactivate|");
-        break;
-      }
-      case Opcode::start: {
+      case ArgType::activate: {
         auto ident = read_u8();
         auto reason = read_u8();
-        uint8_t move_type;
-        uint8_t of;
-
-        if (reason == 0x09) {
-          move_type = read_u8();
-        } else if (reason == 0x0A) {
-          move_type = read_u8();
-        } else if (reason == 0x0B) {
-          move_type = read_u8();
+        auto identity = decode_ident(ident);
+        push("|-activate|" + ident_to_string(PKMN::view(battle), identity) +
+             "|" + activate_reason(reason));
+        break;
+      }
+      case ArgType::fieldactivate: {
+        push("|-fieldactivate|");
+        break;
+      }
+      case ArgType::start: {
+        auto ident = read_u8();
+        auto reason = read_u8();
+        auto identity = decode_ident(ident);
+        std::string prefix = "|-start|" +
+                             ident_to_string(PKMN::view(battle), identity) +
+                             "|" + start_reason(reason);
+        // weird cases
+        switch (reason) {
+        case 0x09: {
+          assert(false);
+          auto types = read_u8();
+          auto of = read_u8();
+          auto of_ident = decode_ident(of);
+          push(prefix + std::to_string(types) + "|" +
+               ident_to_string(PKMN::view(battle), of_ident));
+          break;
         }
-        push("|start|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        case 0x0A:
+        case 0x0B: {
+          auto move = read_u8();
+          push(prefix + PKMN::move_string(move));
+          break;
+        }
+        default: {
+          // normal cases
+          if (reason < 0x09) {
+            push(prefix);
+          } else {
+            assert(false);
+          }
+        }
+        }
         break;
       }
-      case Opcode::end: {
+      case ArgType::end: {
         auto ident = read_u8();
         auto reason = read_u8();
         push("|end|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::ohko: {
+      case ArgType::ohko: {
         push("|ohko|");
         break;
       }
-      case Opcode::crit: {
+      case ArgType::crit: {
         auto ident = read_u8();
         push("|crit|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::supereffective: {
+      case ArgType::supereffective: {
         auto ident = read_u8();
         push("|supereffective|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::resisted: {
+      case ArgType::resisted: {
         auto ident = read_u8();
         push("|resisted|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::immune: {
+      case ArgType::immune: {
         auto ident = read_u8();
         auto reason = read_u8(); // 0x00 none, 0x01 ohko
         push("|immune|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::transform: {
+      case ArgType::transform: {
         auto source = read_u8();
         auto target = read_u8();
         push("|transform|" + std::to_string(source));
         break;
       }
-      case Opcode::drag: {
+      case ArgType::drag: {
         auto ident = read_u8();
         auto species = read_u8();
         auto gender = read_u8();
@@ -521,27 +628,27 @@ template <View view = View::omniscient> struct Parser {
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::item: {
+      case ArgType::item: {
         auto target = read_u8();
         auto item = read_u8();
         auto source = read_u8();
         push("|item|" + std::to_string(target));
         break;
       }
-      case Opcode::enditem: {
+      case ArgType::enditem: {
         auto target = read_u8();
         auto item = read_u8();
         auto source = read_u8();
         push("|enditem|" + std::to_string(target));
         break;
       }
-      case Opcode::cureteam: {
+      case ArgType::cureteam: {
         auto ident = read_u8();
         push("|cureteam|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::sethp: {
+      case ArgType::sethp: {
         auto ident = read_u8();
         auto hp = read_u16();
         auto max_hp = read_u16();
@@ -551,26 +658,26 @@ template <View view = View::omniscient> struct Parser {
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::setboost: {
+      case ArgType::setboost: {
         auto ident = read_u8();
         auto num = read_u8();
         push("|setboost|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::copyboost: {
+      case ArgType::copyboost: {
         auto source = read_u8();
         auto target = read_u8();
         push("|copyboost|" + std::to_string(source));
         break;
       }
-      case Opcode::sidestart: {
+      case ArgType::sidestart: {
         auto player = read_u8();
         auto reason = read_u8();
         push("|sidestart|" + std::to_string(player));
         break;
       }
-      case Opcode::sideend: {
+      case ArgType::sideend: {
         auto player = read_u8();
         auto reason = read_u8();
         uint8_t of;
@@ -580,27 +687,28 @@ template <View view = View::omniscient> struct Parser {
         push("|sideend|" + std::to_string(player));
         break;
       }
-      case Opcode::singlemove: {
+      case ArgType::singlemove: {
         auto ident = read_u8();
         auto move = read_u8();
         push("|singlemove|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::singleturn: {
+      case ArgType::singleturn: {
         auto ident = read_u8();
         auto move = read_u8();
         push("|singleturn|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
-      case Opcode::weather: {
+      case ArgType::weather: {
         auto weather = read_u8();
         auto reason = read_u8();
         push("|weather|" + std::to_string(weather));
         break;
       }
       default: {
+        std::cout << "ERROR: " << static_cast<int>(opcode) << std::endl;
         assert(false);
       }
       }
