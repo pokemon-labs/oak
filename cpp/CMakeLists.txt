@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 project(oak VERSION 1.1.2)
 
 set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(extern/lrsnash EXCLUDE_FROM_ALL)
 add_subdirectory(extern/eigen EXCLUDE_FROM_ALL)
@@ -83,8 +84,20 @@ add_executable(vs src/vs.cc)
 target_link_libraries(vs PRIVATE search_lib argparse)
 
 add_library(pyoak SHARED src/pyoak.cc)
-target_link_libraries(pyoak PRIVATE search_lib pybind11::module)
+target_include_directories(pyoak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(pyoak PRIVATE libpkmn_chance pybind11::module eigen)
 set_target_properties(pyoak PROPERTIES PREFIX "" SUFFIX ".so")
+set_target_properties(pyoak PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+add_library(pyoaknumpy SHARED src/pyoaknumpy.cc)
+target_include_directories(pyoaknumpy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(pyoaknumpy PRIVATE libpkmn_chance pybind11::module eigen)
+set_target_properties(pyoaknumpy PROPERTIES PREFIX "" SUFFIX ".so")
+set_target_properties(pyoaknumpy PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+add_library(pyoaksearch SHARED src/pyoaksearch.cc)
+target_link_libraries(pyoaksearch PRIVATE search_lib pybind11::module)
+set_target_properties(pyoaksearch PROPERTIES PREFIX "" SUFFIX ".so")
 
 add_library(pyoaklog SHARED src/pyoaklog.cc)
 target_include_directories(pyoaklog PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

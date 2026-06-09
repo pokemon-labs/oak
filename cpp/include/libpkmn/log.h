@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cassert>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -412,7 +411,7 @@ template <View view = View::omniscient> struct Parser {
                PKMN::move_string(move) + "|" +
                ident_to_string(PKMN::view(battle), decode_ident(target)) +
                "|[from] " + PKMN::move_string(from));
-
+          // |move|p1a: Fearow|Psychic|p2a: Alakazam|[from] Mirror Move
           break;
         }
         default: {
@@ -508,7 +507,7 @@ template <View view = View::omniscient> struct Parser {
                              ident_to_string(PKMN::view(battle), identity) +
                              "|" + condition_string(hp, max_hp, status);
         if (reason != 0x00) {
-          prefix += "|" + heal_reason(reason);
+          prefix += heal_reason(reason);
           if (reason == 0x02) {
             auto of = read_u8();
             prefix += "|" + PKMN::move_string(of);

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <encode/battle/policy.h>
+#include <nn/default-hyperparameters.h>
+
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
