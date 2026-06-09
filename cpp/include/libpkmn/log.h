@@ -300,6 +300,7 @@ std::string end_reason(uint8_t reason) {
   case 0x0C:
     return "move: Bide|[silent]";
   default:
+    std::cout << (int)reason << std::endl;
     assert(false);
   }
   return "";
@@ -440,11 +441,16 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::cant: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto reason = read_u8();
-        push("|cant|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)) + "|" +
-             cant_reason(reason));
+        std::string prefix = "|cant|" +
+                             ident_to_string(PKMN::view(battle), identity) +
+                             "|" + cant_reason(reason);
+        if (reason == 0x05) {
+          auto move = read_u8();
+          prefix += "|" + PKMN::move_string(move);
+        }
+        push(prefix);
         break;
       }
       case ArgType::faint: {
@@ -568,26 +574,26 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::clearallboost: {
-        push("|clearallboost|");
+        push("|-clearallboost|");
         break;
       }
       case ArgType::fail: {
         auto ident = read_u8();
         auto reason = read_u8();
-        push("|fail|" +
+        push("|-fail|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
       case ArgType::miss: {
         auto ident = read_u8();
-        push("|miss|" +
+        push("|-miss|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
       case ArgType::hitcount: {
         auto ident = read_u8();
         auto num = read_u8();
-        push("|hitcount|" +
+        push("|-hitcount|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
@@ -627,7 +633,6 @@ template <View view = View::omniscient> struct Parser {
         // weird cases
         switch (reason) {
         case 0x09: {
-          assert(false);
           auto types = read_u8();
           auto of = read_u8();
           auto of_ident = decode_ident(of);
@@ -655,43 +660,44 @@ template <View view = View::omniscient> struct Parser {
       case ArgType::end: {
         auto identity = decode_ident(read_u8());
         auto reason = read_u8();
+        std::cout << ident_to_string(PKMN::view(battle), identity) << std::endl;
         push("|-end|" + ident_to_string(PKMN::view(battle), identity) + "|" +
              end_reason(reason));
         break;
       }
       case ArgType::ohko: {
-        push("|ohko|");
+        push("|-ohko|");
         break;
       }
       case ArgType::crit: {
         auto ident = read_u8();
-        push("|crit|" +
+        push("|-crit|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
       case ArgType::supereffective: {
         auto ident = read_u8();
-        push("|supereffective|" +
+        push("|-supereffective|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
       case ArgType::resisted: {
         auto ident = read_u8();
-        push("|resisted|" +
+        push("|-resisted|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
       case ArgType::immune: {
         auto ident = read_u8();
         auto reason = read_u8(); // 0x00 none, 0x01 ohko
-        push("|immune|" +
+        push("|-immune|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
       case ArgType::transform: {
         auto source = read_u8();
         auto target = read_u8();
-        push("|transform|" + std::to_string(source));
+        push("|-transform|" + std::to_string(source));
         break;
       }
       case ArgType::drag: {
@@ -710,19 +716,19 @@ template <View view = View::omniscient> struct Parser {
         auto target = read_u8();
         auto item = read_u8();
         auto source = read_u8();
-        push("|item|" + std::to_string(target));
+        push("|-item|" + std::to_string(target));
         break;
       }
       case ArgType::enditem: {
         auto target = read_u8();
         auto item = read_u8();
         auto source = read_u8();
-        push("|enditem|" + std::to_string(target));
+        push("|-enditem|" + std::to_string(target));
         break;
       }
       case ArgType::cureteam: {
         auto ident = read_u8();
-        push("|cureteam|" +
+        push("|-cureteam|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
@@ -732,27 +738,27 @@ template <View view = View::omniscient> struct Parser {
         auto max_hp = read_u16();
         auto status = read_u8();
         auto reason = read_u8();
-        push("|sethp|" +
+        push("|-sethp|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
       case ArgType::setboost: {
         auto ident = read_u8();
         auto num = read_u8();
-        push("|setboost|" +
+        push("|-setboost|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
       case ArgType::copyboost: {
         auto source = read_u8();
         auto target = read_u8();
-        push("|copyboost|" + std::to_string(source));
+        push("|-copyboost|" + std::to_string(source));
         break;
       }
       case ArgType::sidestart: {
         auto player = read_u8();
         auto reason = read_u8();
-        push("|sidestart|" + std::to_string(player));
+        push("|-sidestart|" + std::to_string(player));
         break;
       }
       case ArgType::sideend: {
@@ -762,27 +768,27 @@ template <View view = View::omniscient> struct Parser {
         if (reason == 0x03) {
           of = read_u8();
         }
-        push("|sideend|" + std::to_string(player));
+        push("|-sideend|" + std::to_string(player));
         break;
       }
       case ArgType::singlemove: {
         auto ident = read_u8();
         auto move = read_u8();
-        push("|singlemove|" +
+        push("|-singlemove|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
       case ArgType::singleturn: {
         auto ident = read_u8();
         auto move = read_u8();
-        push("|singleturn|" +
+        push("|-singleturn|" +
              ident_to_string(PKMN::view(battle), decode_ident(ident)));
         break;
       }
       case ArgType::weather: {
         auto weather = read_u8();
         auto reason = read_u8();
-        push("|weather|" + std::to_string(weather));
+        push("|-weather|" + std::to_string(weather));
         break;
       }
       default: {

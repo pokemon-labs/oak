@@ -1278,7 +1278,7 @@ PYBIND11_MODULE(pyoak, m) {
           return BOOSTS[6 + new_boost];
         };
 
-        if (stat == "atk") {
+        if (stat == "atk" || stat == "atk|[from] Rage") {
           const auto new_boost = clamped_boost(boosts.atk(), diff);
           boosts.set_atk(new_boost);
           const auto mod = boost_mod(new_boost);
@@ -1287,6 +1287,9 @@ PYBIND11_MODULE(pyoak, m) {
               std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
                                 static_cast<int>(MAX_STAT_VALUE)),
                        static_cast<int>(MIN_STAT_VALUE)));
+          if (stat == "atk|[from] Rage") {
+            return;
+          }
         } else if (stat == "def") {
           const auto new_boost = clamped_boost(boosts.def(), diff);
           boosts.set_def(new_boost);
