@@ -6,17 +6,27 @@ namespace PKMN::Client {
 
 using Moves = std::array<PKMN::MoveSlot, 4>;
 inline bool compare_moves(const Moves &_public, const Moves &truth,
-                          std::string &reason) {
+                          std::string prefix, std::string &reason) {
   for (const auto &ms : _public) {
     if (ms.id == PKMN::Data::Move::None) {
       continue;
     }
+    std::string miss;
     const auto x =
-        std::find_if(truth.begin(), truth.end(), [ms](const auto &x) {
-          return (x.id == ms.id) && (x.pp == ms.pp);
+        std::find_if(truth.begin(), truth.end(), [ms, &miss](const auto &x) {
+          bool match_id = (x.id == ms.id);
+          bool match_pp = (x.pp == ms.pp);
+          if (!match_id) {
+            miss += "miss id,";
+          }
+          if (!match_pp) {
+            miss += "miss pp,";
+          }
+          return match_id && match_pp;
         });
     if (x == truth.end()) {
-      reason = PKMN::move_string(ms.id) + " not found in true moveset";
+      reason = prefix + PKMN::move_string(ms.id) + ": " +
+               std::to_string(ms.pp) + " not found in true moveset " + miss;
       return false;
     }
   }
@@ -127,7 +137,7 @@ inline bool compare_stats(const PKMN::Stats &_public_stats,
 inline bool compare_active(const PKMN::ActivePokemon &_public,
                            const PKMN::ActivePokemon &truth,
                            std::string &reason) {
-  if (!compare_moves(_public.moves, truth.moves, reason)) {
+  if (!compare_moves(_public.moves, truth.moves, "active ", reason)) {
     return false;
   }
   if (!compare_volatiles(_public.volatiles, truth.volatiles, reason)) {
@@ -150,21 +160,26 @@ inline bool compare_active(const PKMN::ActivePokemon &_public,
   return true;
 }
 
+auto is_slept(PKMN::Status status) {
+  return PKMN::Data::is_sleep(status) && !PKMN::Data::self(status);
+}
+
+auto normalize_status(PKMN::Status status) {
+  if (is_slept(status)) {
+    return PKMN::Data::Status::Sleep1;
+  } else {
+    return status;
+  }
+}
+
 inline bool compare_pokemon(const PKMN::Pokemon &_public,
                             const PKMN::Pokemon &truth, std::string &reason) {
   if (!compare_stats(_public.stats, truth.stats, reason)) {
     return false;
   }
-  if (!compare_moves(_public.moves, truth.moves, reason)) {
+  if (!compare_moves(_public.moves, truth.moves, "stored ", reason)) {
     return false;
   }
-  const auto normalize_status = [](PKMN::Status status) {
-    if (PKMN::Data::is_sleep(status) && !PKMN::Data::self(status)) {
-      return PKMN::Data::Status::Sleep1;
-    } else {
-      return status;
-    }
-  };
   if (normalize_status(_public.status) != normalize_status(truth.status)) {
     reason = "stored status";
     return false;
@@ -196,9 +211,11 @@ inline bool compare_pokemon_sleep(const PokemonSleep &_public,
   if (!compare_pokemon(_public.first, truth.first, reason)) {
     return false;
   }
-  if (_public.second != truth.second) {
-    reason = "mismatched sleep duration";
-    return false;
+  if (is_slept(_public.first.status) || is_slept(truth.first.status)) {
+    if (_public.second != truth.second) {
+      reason = "mismatched sleep duration";
+      return false;
+    }
   }
   return true;
 }
@@ -206,7 +223,12 @@ inline bool compare_pokemon_sleep(const PokemonSleep &_public,
 Bench get_bench(const PKMN::Side &side, const PKMN::Duration &duration) {
   Bench bench{};
   for (auto slot = 1; slot <= 6; ++slot) {
-    bench[slot - 1] = {side.get(slot), duration.sleep(slot - 1)};
+    const auto i = side.order[slot - 1];
+    if (i == 0) {
+      bench[slot - 1] = {};
+    } else {
+      bench[slot - 1] = {side.get(slot), duration.sleep(slot - 1)};
+    }
   }
   return bench;
 }
@@ -227,8 +249,17 @@ inline bool compare_bench(const Bench &_public, const Bench &truth,
           return x.first.species == ps.first.species;
         });
     if (matching == truth.end()) {
-      reason =
-          "Could not match _public's " + PKMN::species_string(ps.first.species);
+      reason = "";
+      for (auto slot = 1; slot <= 6; ++slot) {
+        reason += " " + PKMN::species_string(_public[slot - 1].first.species);
+      }
+      reason += " ";
+      for (auto slot = 1; slot <= 6; ++slot) {
+        reason += " " + PKMN::species_string(truth[slot - 1].first.species);
+      }
+      reason += "Could not match _public's " +
+                PKMN::species_string(ps.first.species) + " at slot " +
+                std::to_string(slot);
       return false;
     }
     if (!compare_pokemon_sleep(ps, *matching, reason)) {
@@ -243,14 +274,40 @@ inline bool compare_side(const PKMN::Side &_public_side,
                          const PKMN::Side &truth_side,
                          const PKMN::Duration &truth_duration,
                          std::string &reason) {
-  if (!compare_active(_public_side.active, truth_side.active, reason)) {
+  const auto public_faint = _public_side.stored().hp == 0;
+  const auto truth_faint = _public_side.stored().hp == 0;
+  if (public_faint != truth_faint) {
+    reason = "stored faint missmatch";
     return false;
+  }
+  if (!public_faint) {
+    if (!compare_active(_public_side.active, truth_side.active, reason)) {
+      return false;
+    }
+    // non sleep durations
+    if (_public_duration.confusion() != truth_duration.confusion()) {
+      reason = "confusion duration";
+      return false;
+    }
+    if (_public_duration.attacking() != truth_duration.attacking()) {
+      reason = "attacking duration";
+      return false;
+    }
+    if (_public_duration.disable() != truth_duration.disable()) {
+      reason = "disable duration";
+      return false;
+    }
+    if (_public_duration.binding() != truth_duration.binding()) {
+      reason = "binding duration";
+      return false;
+    }
   }
   auto _public_bench = get_bench(_public_side, _public_duration);
   auto truth_bench = get_bench(truth_side, truth_duration);
   if (!compare_bench(_public_bench, truth_bench, reason)) {
     return false;
   }
+
   // TODO last_ stuff_public_bench
   return true;
 }
