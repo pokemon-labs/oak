@@ -197,9 +197,11 @@ inline bool compare_pokemon(const PKMN::Pokemon &_public,
     return false;
   }
   // TODO different behaviour for p1/p2
-  // if (_public.hp != truth.hp) {
-  //   reason = "stored hp";
-  // }
+  auto diff = _public.hp > truth.hp ? _public.hp - truth.hp : truth.hp - _public.hp;
+  if (diff > 15) {
+    reason = "stored hp" + std::to_string(_public.hp) + " " + std::to_string(truth.hp);
+    return false;
+  }
   return true;
 }
 
