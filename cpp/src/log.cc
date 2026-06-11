@@ -50,9 +50,9 @@ int rollout_sample_teams_and_stream_debug_log(int argc, char **argv) {
           PKMN_GEN1_MAX_CHOICES);
       c2 = choices[device.random_int(n)];
 
-      std::cout << PKMN::side_choice_string(battle.bytes, c1) << ' '
-                << PKMN::side_choice_string(
-                       battle.bytes + PKMN::Layout::Sizes::Side, c2)
+      std::cout << PKMN::side_choice_string(PKMN::view(battle).sides[0], c1)
+                << ' '
+                << PKMN::side_choice_string(PKMN::view(battle).sides[1], c2)
                 << std::endl;
 
       ++turns;

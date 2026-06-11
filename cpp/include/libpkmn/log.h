@@ -325,10 +325,7 @@ template <View view = View::omniscient> struct Parser {
     return lo | (hi << 8);
   }
 
-  void push(const std::string &s) {
-    std::cout << s << std::endl;
-    log.push_back(s);
-  }
+  void push(const std::string &s) { log.push_back(s); }
 
   void annotate_last_move(const std::string &suffix) {
     if (last_move_index) {
@@ -341,7 +338,7 @@ template <View view = View::omniscient> struct Parser {
                         uint16_t &max_hp) const noexcept {
     if constexpr (view != View::omniscient) {
       if (identity.view() != view && max_hp) {
-        hp = 100 * hp / max_hp;
+        hp = std::ceil(100.0 * hp / max_hp);
         max_hp = 100;
       }
     }
@@ -373,7 +370,6 @@ template <View view = View::omniscient> struct Parser {
         return;
       }
       case ArgType::lastmiss: {
-
         for (int i = log.size() - 1; i >= 0; --i) {
           auto &line = log[i];
           auto x = line.substr(0, 6);
@@ -423,14 +419,13 @@ template <View view = View::omniscient> struct Parser {
       case ArgType::switch_: {
         // |switch|p1a: Starmie|Starmie|247/323
         // |switch|p2a: Starmie|Starmie|81/100
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto species = read_u8();
         auto level = read_u8();
         auto hp = read_u16();
         auto max_hp = read_u16();
         auto status = read_u8();
 
-        auto identity = decode_ident(ident);
         possibly_hide_hp(identity, hp, max_hp);
         std::string level_string =
             level == 100 ? "" : (std::to_string(level) + "|");
@@ -659,7 +654,6 @@ template <View view = View::omniscient> struct Parser {
       case ArgType::end: {
         auto identity = decode_ident(read_u8());
         auto reason = read_u8();
-        std::cout << ident_to_string(PKMN::view(battle), identity) << std::endl;
         push("|-end|" + ident_to_string(PKMN::view(battle), identity) + "|" +
              end_reason(reason));
         break;

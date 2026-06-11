@@ -326,7 +326,7 @@ size_t read_build_trajectories(Py::Build::Trajectories &trajectories,
   return errors.load() ? 0 : std::min(count.load(), trajectories.size);
 }
 
-PYBIND11_MODULE(pyoaknumpy, m) {
+PYBIND11_MODULE(pyoaktrain, m) {
   // Network
 
   py::class_<Py::Battle::Frames>(m, "BattleFrames")

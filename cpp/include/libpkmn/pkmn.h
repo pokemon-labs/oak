@@ -162,11 +162,12 @@ inline auto choice_labels(const pkmn_gen1_battle &battle,
   std::vector<std::string> p1_labels{};
   std::vector<std::string> p2_labels{};
   for (auto i = 0; i < p1_choices.size(); ++i) {
-    p1_labels.push_back(side_choice_string(battle.bytes, p1_choices[i]));
+    p1_labels.push_back(
+        side_choice_string(PKMN::view(battle).sides[0], p1_choices[i]));
   }
   for (auto i = 0; i < p2_choices.size(); ++i) {
     p2_labels.push_back(
-        side_choice_string(battle.bytes + Layout::Sizes::Side, p2_choices[i]));
+        side_choice_string(PKMN::view(battle).sides[1], p2_choices[i]));
   }
   return {p1_labels, p2_labels};
 }

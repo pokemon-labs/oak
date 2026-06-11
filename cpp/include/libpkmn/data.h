@@ -147,7 +147,15 @@ struct alignas(1) Volatiles {
     bits |= (static_cast<uint64_t>(val) & 0xF) << 52;
   }
   constexpr uint8_t disable_move() const { return (bits >> 56) & 0b111; }
+  constexpr void set_disable_move(uint8_t val) {
+    bits &= ~(uint64_t{0b111} << 56);
+    bits |= (static_cast<uint64_t>(val) & 0b111) << 56;
+  }
   constexpr uint8_t toxic_counter() const { return (bits >> 59) & 0b11111; }
+  constexpr void set_toxic_counter(uint64_t val) {
+    bits &= ~(uint64_t{0b11111} << 59);
+    bits |= (static_cast<uint64_t>(val) & 0b11111) << 59;
+  }
 };
 
 constexpr uint8_t encode_i4(int8_t x) { return static_cast<uint8_t>(x) & 0x0F; }

@@ -21,14 +21,9 @@ using PKMN::Data::Move;
 using PKMN::Data::Species;
 using PKMN::Data::Status;
 
-constexpr const uint8_t *get_pokemon_from_slot(const uint8_t *side,
-                                               int slot = 1) {
-  const auto index = side[(Layout::Offsets::Side::order - 1) + slot] - 1;
-  return side + 24 * index;
-}
-
 // TODO binding, force, recharge etc
-inline std::string side_choice_string(const uint8_t *side, pkmn_choice choice) {
+inline std::string side_choice_string(const PKMN::Side &side,
+                                      pkmn_choice choice) {
   const auto choice_type = choice & 3;
   const auto choice_data = choice >> 2;
   switch (choice_type) {
@@ -40,11 +35,10 @@ inline std::string side_choice_string(const uint8_t *side, pkmn_choice choice) {
       return "None";
     }
     using namespace PKMN::Layout::Offsets;
-    return move_string(
-        (side + Side::active + ActivePokemon::moves)[2 * (choice_data - 1)]);
+    return move_string(side.active.moves[choice_data - 1].id);
   }
   case 2: {
-    return species_string(get_pokemon_from_slot(side, choice_data)[21]);
+    return species_string(side.get(choice_data).species);
   }
   default: {
     assert(false);

@@ -146,22 +146,6 @@ void status_modify(PKMN::Data::Status status, PKMN::Stats &stats) {
   }
 }
 
-constexpr std::array<std::pair<int, int>, 13> BOOSTS{{
-    {25, 100}, // -6
-    {28, 100}, // -5
-    {33, 100}, // -4
-    {40, 100}, // -3
-    {50, 100}, // -2
-    {66, 100}, // -1
-    {1, 1},    //  0
-    {15, 10},  // +1
-    {2, 1},    // +2
-    {25, 10},  // +3
-    {3, 1},    // +4
-    {35, 10},  // +5
-    {4, 1},    // +6
-}};
-
 // ============================================================================
 // Module definition
 // ============================================================================
@@ -632,6 +616,21 @@ PYBIND11_MODULE(pyoak, m) {
       [](SideProxy &p, SideProxy &f, std::string stat, int diff) {
         constexpr uint16_t MIN_STAT_VALUE = 1;
         constexpr uint16_t MAX_STAT_VALUE = 999;
+        constexpr std::array<std::pair<int, int>, 13> BOOSTS{{
+            {25, 100}, // -6
+            {28, 100}, // -5
+            {33, 100}, // -4
+            {40, 100}, // -3
+            {50, 100}, // -2
+            {66, 100}, // -1
+            {1, 1},    //  0
+            {15, 10},  // +1
+            {2, 1},    // +2
+            {25, 10},  // +3
+            {3, 1},    // +4
+            {35, 10},  // +5
+            {4, 1},    // +6
+        }};
 
         PKMN::Side &player = *p.p;
         PKMN::ActivePokemon &active = player.active;
@@ -691,7 +690,7 @@ PYBIND11_MODULE(pyoak, m) {
         } else if (stat == "eva") {
           boosts.set_eva(clamped_boost(boosts.eva(), diff));
         } else if (stat == "non") {
-          // no-op
+          return;
         } else {
           throw std::runtime_error{"boost: Invalid stat key"};
         }
@@ -704,20 +703,8 @@ PYBIND11_MODULE(pyoak, m) {
       "Apply changes to boosts, recompute active.stats with the stat "
       "modification glitch");
 
-  m.def("status_modify", [](int status, StatsProxy &stats) {
-    status_modify(static_cast<PKMN::Data::Status>(status), *stats.p);
-  });
-
-  m.def(
-      "switch_in",
-      [](const PokemonProxy &stored, ActivePokemonProxy &active) -> void {
-        *active.p = PKMN::switch_in(*stored.p);
-      },
-      py::arg("pokemon"), py::arg("active"));
-
   m.def("choice_label", [](const SideProxy &side, int choice) {
-    return PKMN::side_choice_string(reinterpret_cast<const uint8_t *>(side.p),
-                                    static_cast<pkmn_choice>(choice));
+    return PKMN::side_choice_string(*side.p, static_cast<pkmn_choice>(choice));
   });
 
   // Fills any Move::None slots in `set.moves` with randomly sampled legal OU
@@ -758,6 +745,50 @@ PYBIND11_MODULE(pyoak, m) {
 
   m.def("solve_matrix", &solve_matrix, py::arg("row_payoff"),
         py::arg("discretize_factor"));
+
+  m.def("clear_volatiles",
+        [](VolatilesProxy &volatiles, DurationProxy &duration) {
+          auto &vol = *volatiles.p;
+          auto &dur = *duration.p;
+          if (vol.disable_move() != 0) {
+            vol.set_disable_move(0);
+            dur.set_disable(0);
+          }
+          if (vol.confusion()) {
+            vol.set_confusion(false);
+            dur.set_confusion(0);
+          }
+          if (vol.mist()) {
+            vol.set_mist(false);
+          }
+          if (vol.focus_energy()) {
+            vol.set_focus_energy(false);
+          }
+          if (vol.leech_seed()) {
+            vol.set_leech_seed(false);
+          }
+          if (vol.light_screen()) {
+            vol.set_light_screen(false);
+          }
+          if (vol.reflect()) {
+            vol.set_reflect(false);
+          }
+          if (vol.toxic()) {
+            vol.set_toxic(false);
+            vol.set_toxic_counter(0);
+          }
+        });
+
+  m.def("status_modify", [](int status, StatsProxy &stats) {
+    status_modify(static_cast<PKMN::Data::Status>(status), *stats.p);
+  });
+
+  m.def(
+      "switch_in",
+      [](const PokemonProxy &stored, ActivePokemonProxy &active) -> void {
+        *active.p = PKMN::switch_in(*stored.p);
+      },
+      py::arg("pokemon"), py::arg("active"));
 }
 
 } // namespace

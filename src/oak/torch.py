@@ -8,11 +8,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import oak.numpy
+import oak.train
 
 
 class EncodedBattleFrames:
-    def __init__(self, frames: oak.numpy.EncodedBattleFrames):
+    def __init__(self, frames: oak.train.EncodedBattleFrames):
         self.size = frames.size
         self.k = torch.from_numpy(frames.k)
         self.empirical_policies = torch.from_numpy(frames.empirical_policies)
@@ -28,7 +28,7 @@ class EncodedBattleFrames:
     def permute_pokemon(self):
         perms = torch.stack([torch.randperm(5) for _ in range(self.size)], dim=0)
         perms_expanded = perms[:, None, :, None].expand(
-            -1, 2, -1, oak.numpy.pokemon_in_dim
+            -1, 2, -1, oak.train.pokemon_in_dim
         )
         self.pokemon[:, :, 1:, :] = torch.gather(
             self.pokemon[:, :, 1:, :], dim=2, index=perms_expanded
@@ -71,7 +71,7 @@ def combine_hash(h1: int, h2: int) -> int:
 
 
 class BuildTrajectories:
-    def __init__(self, traj: oak.numpy.BuildTrajectories, n=None, device="cpu"):
+    def __init__(self, traj: oak.train.BuildTrajectories, n=None, device="cpu"):
         if n is None:
             n = 31
         self.size = traj.size
@@ -345,7 +345,7 @@ class MainNet(nn.Module):
 
 # holds the output of the embedding nets, the input to main net, and value/policy output of main net
 class OutputBuffer:
-    def __init__(self, buffers: oak.numpy.OutputBuffer):
+    def __init__(self, buffers: oak.train.OutputBuffer):
         self.size = buffers.size
         self.pokemon_out_dim = buffers.pokemon_out_dim
         self.active_out_dim = buffers.active_out_dim
@@ -370,19 +370,19 @@ class OutputBuffer:
 
 class BattleNetwork(torch.nn.Module):
     # only remaining hard-coded dims
-    pokemon_in_dim = oak.numpy.pokemon_in_dim
-    active_in_dim = oak.numpy.active_in_dim
-    policy_out_dim = oak.numpy.policy_out_dim
+    pokemon_in_dim = oak.train.pokemon_in_dim
+    active_in_dim = oak.train.active_in_dim
+    policy_out_dim = oak.train.policy_out_dim
 
     def __init__(
         self,
-        phd=oak.numpy.pokemon_hidden_dim,
-        ahd=oak.numpy.active_hidden_dim,
-        pod=oak.numpy.pokemon_out_dim,
-        aod=oak.numpy.active_out_dim,
-        hd=oak.numpy.hidden_dim,
-        vhd=oak.numpy.value_hidden_dim,
-        pohd=oak.numpy.policy_hidden_dim,
+        phd=oak.train.pokemon_hidden_dim,
+        ahd=oak.train.active_hidden_dim,
+        pod=oak.train.pokemon_out_dim,
+        aod=oak.train.active_out_dim,
+        hd=oak.train.hidden_dim,
+        vhd=oak.train.value_hidden_dim,
+        pohd=oak.train.policy_hidden_dim,
         activation=Activation.relu,
     ):
         super().__init__()
@@ -496,21 +496,21 @@ class BattleNetwork(torch.nn.Module):
 class BuildNetwork(nn.Module):
     def __init__(
         self,
-        policy_hidden_dim=oak.numpy.build_policy_hidden_dim,
-        value_hidden_dim=oak.numpy.build_value_hidden_dim,
+        policy_hidden_dim=oak.train.build_policy_hidden_dim,
+        value_hidden_dim=oak.train.build_value_hidden_dim,
     ):
         super().__init__()
         self.policy_net = TeamBuildingNet(
-            len(oak.numpy.species_move_list),
+            len(oak.train.species_move_list),
             policy_hidden_dim,
             policy_hidden_dim,
-            len(oak.numpy.species_move_list),
+            len(oak.train.species_move_list),
             Activation.relu,
             Activation.relu,
             Activation.none,
         )
         self.value_net = TeamBuildingNet(
-            len(oak.numpy.species_move_list),
+            len(oak.train.species_move_list),
             value_hidden_dim,
             value_hidden_dim,
             1,
