@@ -4,6 +4,10 @@
 
 namespace PKMN::Client {
 
+using PKMN::Data::Effect;
+using PKMN::Data::Move;
+using PKMN::Data::Species;
+
 #define COMPARE_PROPERTY(a, b, field, suffix)                                  \
   do {                                                                         \
     if (a.field() != b.field()) {                                              \
@@ -37,9 +41,10 @@ inline bool compare_moves(const Moves &client, const Moves &truth,
     }
     const auto x =
         std::find_if(truth.begin(), truth.end(), [ms](const auto &x) {
-          bool match_id = (x.id == ms.id);
-          bool match_pp = (x.pp == ms.pp);
-          return match_id && match_pp;
+          // we can't determine binding move pp from client alone
+          return (x.id == ms.id) &&
+                 (PKMN::Data::move_data(ms.id).effect == Effect::Binding ||
+                  x.pp == ms.pp);
         });
     if (x == truth.end()) {
       reason += prefix + PKMN::move_string(ms.id) + ": " +
@@ -58,7 +63,8 @@ inline bool compare_volatiles(const PKMN::Volatiles &a,
   COMPARE_PROPERTY(a, b, multi_hit, "");
   // flinch
   COMPARE_PROPERTY(a, b, charging, "");
-  COMPARE_PROPERTY(a, b, binding, "");
+  // we deal with binding separately since it can end privately
+  // COMPARE_PROPERTY(a, b, binding, "");
   COMPARE_PROPERTY(a, b, invulnerable, "");
   COMPARE_PROPERTY(a, b, confusion, "");
   COMPARE_PROPERTY(a, b, mist, "");
@@ -170,9 +176,9 @@ inline bool compare_pokemon(const PKMN::Pokemon &client,
   auto diff =
       client.hp > truth.hp ? client.hp - truth.hp : truth.hp - client.hp;
   if (diff > options.max_hp_diff) {
-    reason += "stored hp" + std::to_string(client.hp) + " " +
+    reason += "stored hp " + std::to_string(client.hp) + " " +
               std::to_string(truth.hp) +
-              "exceeds max_diff: " + std::to_string(options.max_hp_diff);
+              " exceeds max_diff: " + std::to_string(options.max_hp_diff);
     return false;
   }
   return true;
@@ -181,8 +187,8 @@ inline bool compare_pokemon(const PKMN::Pokemon &client,
 inline bool compare_pokemon_sleep(const PokemonSleep &client,
                                   const PokemonSleep &truth,
                                   std::string &reason, const Options &options) {
-  const auto client_fainted = client.first.hp == 0;
-  const auto truth_fainted = truth.first.hp == 0;
+  const bool client_fainted = (client.first.hp == 0);
+  const bool truth_fainted = (truth.first.hp == 0);
   if (client_fainted != truth_fainted) {
     reason += "faint";
     return false;
@@ -253,7 +259,7 @@ inline bool compare_side(const PKMN::Side &client_side,
     reason += "stored faint mismatch";
     return false;
   }
-  if (!client_fainted) {
+  if (!truth_fainted) {
     if (!compare_active(client_side.active, truth_side.active, reason,
                         options)) {
       return false;
@@ -261,7 +267,19 @@ inline bool compare_side(const PKMN::Side &client_side,
     COMPARE_PROPERTY(client_duration, truth_duration, confusion, " duration");
     COMPARE_PROPERTY(client_duration, truth_duration, attacking, " duration");
     COMPARE_PROPERTY(client_duration, truth_duration, disable, " duration");
-    COMPARE_PROPERTY(client_duration, truth_duration, binding, " duration");
+    // COMPARE_PROPERTY(client_duration, truth_duration, binding, " duration");
+
+    if (truth_side.active.volatiles.binding() || truth_duration.binding()) {
+      if (truth_side.active.volatiles.binding() !=
+          client_side.active.volatiles.binding()) {
+        reason += "volatiles binding";
+        return false;
+      }
+      if (truth_duration.binding() != client_duration.binding()) {
+        reason += "duration binding";
+        return false;
+      }
+    }
   }
   const auto client_bench = get_bench(client_side, client_duration);
   const auto truth_bench = get_bench(truth_side, truth_duration);

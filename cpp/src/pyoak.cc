@@ -633,7 +633,7 @@ PYBIND11_MODULE(pyoak, m) {
         }};
 
         PKMN::Side &player = *p.p;
-        PKMN::ActivePokemon &active = player.active;
+        PKMN::Stats &stats = player.active.stats;
         PKMN::Boosts &boosts = player.active.boosts;
 
         // Returns the new boost value clamped to [-6, 6]
@@ -651,7 +651,7 @@ PYBIND11_MODULE(pyoak, m) {
           boosts.set_atk(new_boost);
           const auto mod = boost_mod(new_boost);
           const auto base = player.stored().stats.atk;
-          active.stats.atk = static_cast<uint16_t>(
+          stats.atk = static_cast<uint16_t>(
               std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
                                 static_cast<int>(MAX_STAT_VALUE)),
                        static_cast<int>(MIN_STAT_VALUE)));
@@ -663,7 +663,7 @@ PYBIND11_MODULE(pyoak, m) {
           boosts.set_def(new_boost);
           const auto mod = boost_mod(new_boost);
           const auto base = player.stored().stats.def;
-          active.stats.def = static_cast<uint16_t>(
+          stats.def = static_cast<uint16_t>(
               std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
                                 static_cast<int>(MAX_STAT_VALUE)),
                        static_cast<int>(MIN_STAT_VALUE)));
@@ -672,7 +672,7 @@ PYBIND11_MODULE(pyoak, m) {
           boosts.set_spe(new_boost);
           const auto mod = boost_mod(new_boost);
           const auto base = player.stored().stats.spe;
-          active.stats.spe = static_cast<uint16_t>(
+          stats.spe = static_cast<uint16_t>(
               std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
                                 static_cast<int>(MAX_STAT_VALUE)),
                        static_cast<int>(MIN_STAT_VALUE)));
@@ -681,7 +681,7 @@ PYBIND11_MODULE(pyoak, m) {
           boosts.set_spc(new_boost);
           const auto mod = boost_mod(new_boost);
           const auto base = player.stored().stats.spc;
-          active.stats.spc = static_cast<uint16_t>(
+          stats.spc = static_cast<uint16_t>(
               std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
                                 static_cast<int>(MAX_STAT_VALUE)),
                        static_cast<int>(MIN_STAT_VALUE)));
