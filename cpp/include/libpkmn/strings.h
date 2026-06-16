@@ -34,6 +34,9 @@ inline std::string side_choice_string(const PKMN::Side &side,
     if (choice_data == 0) {
       return "None";
     }
+    if (side.active.volatiles.rage()) {
+      return "Rage";
+    }
     using namespace PKMN::Layout::Offsets;
     return move_string(side.active.moves[choice_data - 1].id);
   }
@@ -176,8 +179,11 @@ inline std::string volatiles_to_string(const PKMN::Volatiles &vol) {
     ss << "(state: " << (int)vol.state() << ")";
   if (vol.substitute_hp())
     ss << "(sub_hp: " << (int)vol.substitute_hp() << ")";
-  if (vol.transform_species())
-    ss << "(transform: " << species_string(vol.transform_species()) << ")";
+  if (vol.transform_species()) {
+    const auto player_index = (vol.transform_species() & 0b1000) >> 3;
+    const auto slot = vol.transform_species() & 0b111;
+    ss << "(transform: p" << player_index << "s" << slot << ")";
+  }
   if (vol.disable_left())
     ss << "(disable_left: " << (int)vol.disable_left() << ")";
   if (vol.disable_move())
@@ -227,6 +233,31 @@ battle_data_to_string(const pkmn_gen1_battle &battle,
         if (active.stats.spc != pokemon.stats.spc) {
           ss << "(spc " << pokemon.stats.spc << ">>" << active.stats.spc
              << ") ";
+          equal = false;
+        }
+        const auto &boosts = active.boosts;
+        if (boosts.atk() != 0) {
+          ss << "[atk " << (int)boosts.atk() << "] ";
+          equal = false;
+        }
+        if (boosts.def() != 0) {
+          ss << "[def " << (int)boosts.def() << "] ";
+          equal = false;
+        }
+        if (boosts.spe() != 0) {
+          ss << "[spe " << (int)boosts.spe() << "] ";
+          equal = false;
+        }
+        if (boosts.spc() != 0) {
+          ss << "[spc " << (int)boosts.spc() << "] ";
+          equal = false;
+        }
+        if (boosts.acc() != 0) {
+          ss << "[acc " << (int)boosts.acc() << "] ";
+          equal = false;
+        }
+        if (boosts.eva() != 0) {
+          ss << "[eva " << (int)boosts.eva() << "] ";
           equal = false;
         }
         if (!equal) {
@@ -306,6 +337,13 @@ battle_data_to_string(const pkmn_gen1_battle &battle,
       }
       ss << '\n';
     }
+    ss << "|| last_used: " << PKMN::move_string(side.last_used_move) << '/'
+       << (int)side.last_used_move << ' ';
+    ss << '(';
+    for (auto o = 0; o < 6; ++o) {
+      ss << (int)side.order[o] << ' ';
+    }
+    ss << ")\n";
     if (s == 0) {
       ss << "--- --- --- " << b.turn << " --- --- ---" << "\n";
     }
