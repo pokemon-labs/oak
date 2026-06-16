@@ -146,10 +146,6 @@ void status_modify(PKMN::Data::Status status, PKMN::Stats &stats) {
   }
 }
 
-// ============================================================================
-// Module definition
-// ============================================================================
-
 PYBIND11_MODULE(pyoak, m) {
   m.doc() = "oak — low-level structured view of pkmn_gen1_battle bytes.\n\n"
             "  b    = oak.Battle(raw_bytes)   # 384 bytes\n"
@@ -166,7 +162,6 @@ PYBIND11_MODULE(pyoak, m) {
   m.attr("BATTLE_SIZE") = static_cast<int>(PKMN_GEN1_BATTLE_SIZE);
   m.attr("DURATIONS_SIZE") = static_cast<int>(PKMN_GEN1_CHANCE_DURATIONS_SIZE);
 
-  // ---- Stats ---------------------------------------------------------------
   py::class_<StatsProxy>(
       m, "Stats", "Base/active stats: hp, atk, def_, spe, spc (all uint16).")
       .def_property("hp", &StatsProxy::get_hp, &StatsProxy::set_hp)
@@ -182,7 +177,6 @@ PYBIND11_MODULE(pyoak, m) {
                " spc=" + std::to_string(s.get_spc()) + ">";
       });
 
-  // ---- MoveSlot ------------------------------------------------------------
   py::class_<MoveSlotProxy>(m, "MoveSlot", "id (uint8) + pp (uint8).")
       .def_property("id", &MoveSlotProxy::get_id, &MoveSlotProxy::set_id,
                     "Move enum value as uint8.")
@@ -193,7 +187,6 @@ PYBIND11_MODULE(pyoak, m) {
                ">";
       });
 
-  // ---- Boosts --------------------------------------------------------------
   py::class_<BoostsProxy>(
       m, "Boosts",
       "Stat boosts (int8, range -6..+6). raw exposes the underlying uint32.")
@@ -214,7 +207,6 @@ PYBIND11_MODULE(pyoak, m) {
                " eva=" + std::to_string(b.get_eva()) + ">";
       });
 
-  // ---- Volatiles -----------------------------------------------------------
   py::class_<VolatilesProxy>(
       m, "Volatiles",
       "Active-pokemon volatile flags and counters backed by a single uint64.\n"
@@ -296,7 +288,6 @@ PYBIND11_MODULE(pyoak, m) {
         }() + ">";
       });
 
-  // ---- Pokemon -------------------------------------------------------------
   py::class_<PokemonProxy>(m, "Pokemon")
       .def("stats", &PokemonProxy::stats,
            py::return_value_policy::reference_internal)
@@ -342,7 +333,6 @@ PYBIND11_MODULE(pyoak, m) {
         return "<ActivePokemon " + a.species_name() + ">";
       });
 
-  // ---- Side ----------------------------------------------------------------
   py::class_<SideProxy>(m, "Side")
       .def("pokemon", &SideProxy::pokemon, py::arg("index"),
            "Pokemon at storage index 0-5 (independent of battle order).",
@@ -364,7 +354,6 @@ PYBIND11_MODULE(pyoak, m) {
                     &SideProxy::set_last_used_move)
       .def("__repr__", [](const SideProxy &) { return "<Side>"; });
 
-  // ---- Duration ------------------------------------------------------------
   py::class_<DurationProxy>(m, "Duration",
                             "Per-side duration counters for one player.")
       .def("sleep", &DurationProxy::sleep, py::arg("slot"),
@@ -460,8 +449,6 @@ PYBIND11_MODULE(pyoak, m) {
         return static_cast<py::ssize_t>(PokemonSet::hash_set(s));
       });
 
-  // Methods
-
   m.def(
       "species_id", [](const int x) { return PKMN::species_string(x); },
       py::arg("number"));
@@ -514,6 +501,7 @@ PYBIND11_MODULE(pyoak, m) {
       },
       py::arg("battle"), py::arg("durations"));
 
+  // TODO move this
   m.def(
       "format",
       [](const BattleView &battle, const DurationsView &durations,

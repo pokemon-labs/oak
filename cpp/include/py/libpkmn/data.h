@@ -14,10 +14,6 @@ namespace py = pybind11;
 using namespace PKMN;
 using namespace PKMN::Data;
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
 static inline std::string_view bytes_sv(const py::bytes &b) {
   return {PyBytes_AS_STRING(b.ptr()),
           static_cast<size_t>(PyBytes_GET_SIZE(b.ptr()))};
@@ -38,14 +34,6 @@ static constexpr uint64_t bf_set(uint64_t bits, int shift, uint64_t val) {
   return (bits & ~mask) | ((val & ((1ULL << N) - 1)) << shift);
 }
 
-// ============================================================================
-// Proxy structs
-// (Each is a thin wrapper around a pointer into the owned Battle buffer.)
-// ============================================================================
-
-// ----------------------------------------------------------------------------
-// StatsProxy
-// ----------------------------------------------------------------------------
 struct StatsProxy {
   Stats *p;
 
@@ -62,9 +50,6 @@ struct StatsProxy {
   void set_spc(uint16_t v) { p->spc = v; }
 };
 
-// ----------------------------------------------------------------------------
-// MoveSlotProxy
-// ----------------------------------------------------------------------------
 struct MoveSlotProxy {
   MoveSlot *p;
 
@@ -76,17 +61,9 @@ struct MoveSlotProxy {
   std::string name() const { return std::string(PKMN::move_char_array(p->id)); }
 };
 
-// ----------------------------------------------------------------------------
-// BoostsProxy
-//
-// Raw access:  boosts.bytes  -> list[int] of the 4 underlying bytes.
-//              boosts.raw    -> uint32_t of the whole thing.
-// Named fields use the existing encode_i4 / decode_i4 logic in the C++ type.
-// ----------------------------------------------------------------------------
 struct BoostsProxy {
   Boosts *p;
 
-  // Getters — named
   int8_t get_atk() const { return p->atk(); }
   int8_t get_def() const { return p->def(); }
   int8_t get_spe() const { return p->spe(); }
@@ -94,7 +71,6 @@ struct BoostsProxy {
   int8_t get_acc() const { return p->acc(); }
   int8_t get_eva() const { return p->eva(); }
 
-  // Setters — named
   void set_atk(int8_t v) { p->set_atk(v); }
   void set_def(int8_t v) { p->set_def(v); }
   void set_spe(int8_t v) { p->set_spe(v); }
@@ -102,7 +78,6 @@ struct BoostsProxy {
   void set_acc(int8_t v) { p->set_acc(v); }
   void set_eva(int8_t v) { p->set_eva(v); }
 
-  // Raw access — uint32 of the 4 bytes
   uint32_t get_raw() const {
     uint32_t out;
     std::memcpy(&out, p->bytes, 4);
@@ -111,47 +86,9 @@ struct BoostsProxy {
   void set_raw(uint32_t v) { std::memcpy(p->bytes, &v, 4); }
 };
 
-// ----------------------------------------------------------------------------
-// VolatilesProxy
-//
-// Named flag setters delegate to the C++ helpers that already exist.
-// For the bit-packed counter fields where no setter exists in the C++ type
-// (state, substitute_hp, transform_species, toxic_counter, disable_move) we
-// do the bit math directly using the bf_set helper above.
-// `bits` is also exposed raw for any operation not covered by the above.
-//
-// Bit layout (from data.h / Layout::Volatiles):
-//   [0]      bide
-//   [1]      thrashing
-//   [2]      multi_hit
-//   [3]      flinch
-//   [4]      charging
-//   [5]      binding
-//   [6]      invulnerable
-//   [7]      confusion (flag)
-//   [8]      mist
-//   [9]      focus_energy
-//   [10]     substitute (flag)
-//   [11]     recharging
-//   [12]     rage
-//   [13]     leech_seed
-//   [14]     toxic (flag)
-//   [15]     light_screen
-//   [16]     reflect
-//   [17]     transform (flag)
-//   [20:18]  confusion_left (3 bits)
-//   [23:21]  attacks       (3 bits)
-//   [39:24]  state         (16 bits)
-//   [47:40]  substitute_hp (8 bits)
-//   [51:48]  transform_species (4 bits)
-//   [55:52]  disable_left  (4 bits)
-//   [58:56]  disable_move  (3 bits)
-//   [63:59]  toxic_counter (5 bits)
-// ----------------------------------------------------------------------------
 struct VolatilesProxy {
   Volatiles *p;
 
-  // --- boolean flags (setters exist in C++) ---
   bool get_bide() const { return p->bide(); }
   bool get_thrashing() const { return p->thrashing(); }
   bool get_multi_hit() const { return p->multi_hit(); }
@@ -190,7 +127,6 @@ struct VolatilesProxy {
   void set_reflect(bool v) { p->set_reflect(v); }
   void set_transform(bool v) { p->set_transform(v); }
 
-  // --- counters with existing C++ setters ---
   uint8_t get_confusion_left() const { return p->confusion_left(); }
   uint8_t get_attacks() const { return p->attacks(); }
   uint8_t get_disable_left() const { return p->disable_left(); }
@@ -199,7 +135,6 @@ struct VolatilesProxy {
   void set_attacks(uint8_t v) { p->set_attacks(v); }
   void set_disable_left(uint8_t v) { p->set_disable_left(v); }
 
-  // --- bit-packed fields without C++ setters — manual bit math ---
   uint16_t get_state() const { return p->state(); }
   uint8_t get_substitute_hp() const { return p->substitute_hp(); }
   uint8_t get_transform_species() const { return p->transform_species(); }
@@ -229,9 +164,6 @@ struct VolatilesProxy {
   std::string to_string() const { return volatiles_to_string(*p); }
 };
 
-// ----------------------------------------------------------------------------
-// PokemonProxy
-// ----------------------------------------------------------------------------
 struct PokemonProxy {
   Pokemon *p;
 
@@ -265,9 +197,6 @@ struct PokemonProxy {
   }
 };
 
-// ----------------------------------------------------------------------------
-// ActivePokemonProxy
-// ----------------------------------------------------------------------------
 struct ActivePokemonProxy {
   ActivePokemon *p;
 
@@ -290,9 +219,6 @@ struct ActivePokemonProxy {
   }
 };
 
-// ----------------------------------------------------------------------------
-// SideProxy
-// ----------------------------------------------------------------------------
 struct SideProxy {
   Side *p;
 
@@ -327,9 +253,6 @@ struct SideProxy {
   }
 };
 
-// ----------------------------------------------------------------------------
-// DurationProxy / DurationsView
-// ----------------------------------------------------------------------------
 struct DurationProxy {
   Duration *p;
 
@@ -354,7 +277,6 @@ struct DurationProxy {
   void set_attacking(uint8_t v) { p->set_attacking(v); }
   void set_binding(uint8_t v) { p->set_binding(v); }
 
-  // raw 32-bit access
   uint32_t get_raw() const { return p->data; }
   void set_raw(uint32_t v) { p->data = v; }
 };
@@ -389,9 +311,6 @@ struct DurationsView {
   }
 };
 
-// ----------------------------------------------------------------------------
-// BattleView — owns the 384 bytes
-// ----------------------------------------------------------------------------
 struct BattleView {
   pkmn_gen1_battle raw{};
 

@@ -137,11 +137,11 @@ generate_parser.add_argument(
 
 # get args from battle.py/build.py
 import oak.common_args
-import oak.battle
+import oak.scripts.battle
 import oak.build
 
 oak.common_args.add_common_args(battle_parser, "", True)
-oak.battle.add_local_args(battle_parser, "", True)
+oak.scripts.battle.add_local_args(battle_parser, "", True)
 
 oak.common_args.add_common_args(build_parser, "build", True)
 oak.build.add_local_args(build_parser, "build", True)
@@ -288,7 +288,7 @@ def main():
             sys.executable,
             "-u",
             "-m",
-            "oak.battle",
+            "oak.scripts.battle",
             f"--dir={nets_dir}",
         ]
         + get_common_cmd(args, "")
