@@ -55,8 +55,10 @@ inline bool compare_moves(const Moves &client, const Moves &truth,
   return true;
 }
 
-inline bool compare_volatiles(const PKMN::Volatiles &a,
-                              const PKMN::Volatiles &b, std::string &reason,
+inline bool compare_volatiles(
+                              const PKMN::Volatiles &a,
+                              const PKMN::Volatiles &b, 
+                              std::string &reason,
                               const Options &options) {
   COMPARE_PROPERTY(a, b, bide, "");
   COMPARE_PROPERTY(a, b, thrashing, "");
@@ -81,7 +83,26 @@ inline bool compare_volatiles(const PKMN::Volatiles &a,
   // attacks
   // state
   // sub_hp
-  COMPARE_PROPERTY(a, b, transform_species, "");
+
+  // if (a.transform_species == 0 && b.transform_species == 0) {
+  //   // pass
+  // } else {
+  //   struct ID {
+  //     int side;
+  //     int slot;
+  //     ID(auto ts) {
+  //       auto x = static_cast<uint8_t>(ts);
+  //       side = ((x & 0b1000) >> 3);
+  //       slot = x & 0b111;
+  //     }
+  //     auto get_species(const PKMN::Battle& battle) {
+  //       return battle.sides[side].get(slot).species;
+  //     }
+  //   };
+  //   ID x{a.transform_species()};
+  //   ID y{b.transform_species()};
+  // }
+
   // disable_left
   COMPARE_PROPERTY(a, b, toxic_counter, "");
   return true;
@@ -287,7 +308,10 @@ inline bool compare_side(const PKMN::Side &client_side,
     return false;
   }
   // TODO
-  // Data::Move last_selected_move;
+  if (client_side.last_used_move != truth_side.last_used_move) {
+    reason += " last_used_move";
+    return false;
+  }
   // Data::Move last_used_move;
   return true;
 }
