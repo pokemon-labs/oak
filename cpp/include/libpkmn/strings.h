@@ -35,6 +35,7 @@ inline std::string side_choice_string(const PKMN::Side &side,
       return "None";
     }
     if (side.active.volatiles.rage()) {
+      assert(choice_data == 1);
       return "Rage";
     }
     using namespace PKMN::Layout::Offsets;
