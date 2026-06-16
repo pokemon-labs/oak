@@ -117,7 +117,12 @@ inline std::string species_string(const auto species) noexcept {
 }
 
 inline std::string move_string(const auto move) noexcept {
-  return std::string{Data::MOVE_CHAR_ARRAY[static_cast<uint8_t>(move)].data()};
+  auto id = static_cast<uint8_t>(move);
+  if (id != 0xFF) [[likely]] {
+    return std::string{Data::MOVE_CHAR_ARRAY[id].data()};
+  } else {
+    return "SKIP_TURN";
+  }
 }
 
 inline std::string types_string(const auto types) noexcept {

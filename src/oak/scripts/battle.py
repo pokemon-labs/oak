@@ -9,6 +9,7 @@ import numpy as np
 import signal
 
 import oak
+import oak.train
 
 parser = argparse.ArgumentParser(
     description="Train an Oak battle network.",
@@ -101,43 +102,43 @@ def add_local_args(parser, prefix: str = "", rl: bool = False):
     parser.add_argument(
         prefix + "pokemon-hidden-dim",
         type=int,
-        default=oak.pokemon_hidden_dim,
+        default=oak.train.pokemon_hidden_dim,
         help="Pokemon encoding net hidden dim",
     )
     parser.add_argument(
         prefix + "active-hidden-dim",
         type=int,
-        default=oak.active_hidden_dim,
+        default=oak.train.active_hidden_dim,
         help="ActivePokemon encoding net hidden dim",
     )
     parser.add_argument(
         prefix + "pokemon-out-dim",
         type=int,
-        default=oak.pokemon_out_dim,
+        default=oak.train.pokemon_out_dim,
         help="Pokemon encoding net output dim",
     )
     parser.add_argument(
         prefix + "active-out-dim",
         type=int,
-        default=oak.active_out_dim,
+        default=oak.train.active_out_dim,
         help="ActivePokemon encoding net output dim",
     )
     parser.add_argument(
         prefix + "hidden-dim",
         type=int,
-        default=oak.hidden_dim,
+        default=oak.train.hidden_dim,
         help="Main subnet hidden dim",
     )
     parser.add_argument(
         prefix + "value-hidden-dim",
         type=int,
-        default=oak.value_hidden_dim,
+        default=oak.train.value_hidden_dim,
         help="Value head hidden dim",
     )
     parser.add_argument(
         prefix + "policy-hidden-dim",
         type=int,
-        default=oak.policy_hidden_dim,
+        default=oak.train.policy_hidden_dim,
         help="Policy head hidden dim",
     )
     parser.add_argument(

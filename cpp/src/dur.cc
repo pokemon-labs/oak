@@ -51,10 +51,10 @@ const auto F = [&map, &old_battle, &old_options](auto b, auto options) {
     const auto &vol = battle.sides[s].active.volatiles;
     const auto &duration = PKMN::view(durations).get(s);
 
-    if (vol.confusion() != 0) {
+    if (vol.binding() != 0) {
       // This is all you have to change besides setting the first move in main
-      const auto set = static_cast<int>(vol.confusion_left());
-      const auto seen = static_cast<int>(duration.confusion());
+      const auto set = static_cast<int>(vol.attacks());
+      const auto seen = static_cast<int>(duration.binding());
       std::pair<int, int> key{seen, set};
       map[key] += 1;
 
@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
 
   for (auto &team : teams) {
     for (auto &set : team) {
-      set.moves[0] = ConfuseRay;
+      set.moves[0] = Wrap;
     }
   }
 

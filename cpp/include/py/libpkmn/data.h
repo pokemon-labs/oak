@@ -63,7 +63,6 @@ struct MoveSlotProxy {
 struct BoostsProxy {
   Boosts *p;
 
-  // Getters — named
   int8_t get_atk() const { return p->atk(); }
   int8_t get_def() const { return p->def(); }
   int8_t get_spe() const { return p->spe(); }
@@ -71,7 +70,6 @@ struct BoostsProxy {
   int8_t get_acc() const { return p->acc(); }
   int8_t get_eva() const { return p->eva(); }
 
-  // Setters — named
   void set_atk(int8_t v) { p->set_atk(v); }
   void set_def(int8_t v) { p->set_def(v); }
   void set_spe(int8_t v) { p->set_spe(v); }
@@ -79,7 +77,6 @@ struct BoostsProxy {
   void set_acc(int8_t v) { p->set_acc(v); }
   void set_eva(int8_t v) { p->set_eva(v); }
 
-  // Raw access — uint32 of the 4 bytes
   uint32_t get_raw() const {
     uint32_t out;
     std::memcpy(&out, p->bytes, 4);

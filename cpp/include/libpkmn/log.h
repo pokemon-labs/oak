@@ -251,26 +251,8 @@ inline std::string status_string(const auto status) {
   };
 }
 
-/*
-FIXME leechseed From Of
-Reason
-Raw	Description
-0x00	Disable*
-0x01	confusion
-0x02	Bide*
-0x03	Substitute
-0x04	Disable|[silent]
-0x05	confusion|[silent]
-0x06	mist|[silent]
-0x07	focusenergy|[silent]
-0x08	leechseed|[silent]
-0x09	Toxic counter|[silent]
-0x0A	lightscreen|[silent]
-0x0B	reflect|[silent]
-0x0C	move: Bide|[silent]
-*0x00 corresponds to move: Disable and 0x02 to move: Bide in Generation II.
-*/
 std::string end_reason(uint8_t reason) {
+  assert(reason < 0x04 || reason > 0x0E);
   switch (reason) {
   case 0x00:
     return "Disable";
@@ -280,29 +262,53 @@ std::string end_reason(uint8_t reason) {
     return "Bide";
   case 0x03:
     return "Substitute";
+  // Gen 2+
   case 0x04:
-    return "Disable|[silent]";
+    return "Nightmare";
   case 0x05:
-    return "confusion|[silent]";
+    return "Curse";
   case 0x06:
-    return "mist|[silent]";
+    return "Foresight";
   case 0x07:
-    return "focusenergy|[silent]";
+    return "Encore";
   case 0x08:
-    return "leechseed|[silent]";
+    return "FutureSight";
   case 0x09:
-    return "Toxic counter|[silent]";
+    return "Leech Seed";
   case 0x0A:
-    return "lightscreen|[silent]";
+    return "Bind";
   case 0x0B:
-    return "reflect|[silent]";
+    return "Wrap";
   case 0x0C:
+    return "Fire Spin";
+  case 0x0D:
+    return "Clamp";
+  case 0x0E:
+    return "Whirlpool";
+  // Silent variants
+  case 0x0F:
+    return "Disable|[silent]";
+  case 0x10:
+    return "confusion|[silent]";
+  case 0x11:
+    return "Mist|[silent]";
+  case 0x12:
+    return "move: Focus Energy|[silent]";
+  case 0x13:
+    return "Leech Seed|[silent]";
+  case 0x14:
+    return "Toxic counter|[silent]";
+  case 0x15:
+    return "Light Screen|[silent]";
+  case 0x16:
+    return "Reflect|[silent]";
+  case 0x17:
     return "move: Bide|[silent]";
+  case 0x18:
+    return "Leech Seed|[from]"; // FIXME of
   default:
-    std::cout << (int)reason << std::endl;
-    assert(false);
+    throw std::runtime_error("Bad end reason: " + std::to_string(reason));
   }
-  return "";
 }
 
 template <View view = View::omniscient> struct Parser {
@@ -325,10 +331,7 @@ template <View view = View::omniscient> struct Parser {
     return lo | (hi << 8);
   }
 
-  void push(const std::string &s) {
-    std::cout << s << std::endl;
-    log.push_back(s);
-  }
+  void push(const std::string &s) { log.push_back(s); }
 
   void annotate_last_move(const std::string &suffix) {
     if (last_move_index) {
@@ -341,7 +344,7 @@ template <View view = View::omniscient> struct Parser {
                         uint16_t &max_hp) const noexcept {
     if constexpr (view != View::omniscient) {
       if (identity.view() != view && max_hp) {
-        hp = 100 * hp / max_hp;
+        hp = std::ceil(100.0 * hp / max_hp);
         max_hp = 100;
       }
     }
@@ -373,7 +376,6 @@ template <View view = View::omniscient> struct Parser {
         return;
       }
       case ArgType::lastmiss: {
-
         for (int i = log.size() - 1; i >= 0; --i) {
           auto &line = log[i];
           auto x = line.substr(0, 6);
@@ -423,14 +425,13 @@ template <View view = View::omniscient> struct Parser {
       case ArgType::switch_: {
         // |switch|p1a: Starmie|Starmie|247/323
         // |switch|p2a: Starmie|Starmie|81/100
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto species = read_u8();
         auto level = read_u8();
         auto hp = read_u16();
         auto max_hp = read_u16();
         auto status = read_u8();
 
-        auto identity = decode_ident(ident);
         possibly_hide_hp(identity, hp, max_hp);
         std::string level_string =
             level == 100 ? "" : (std::to_string(level) + "|");
@@ -490,7 +491,7 @@ template <View view = View::omniscient> struct Parser {
           prefix += "|" + damage_reason(reason);
           if (reason == 0x05) {
             auto of = decode_ident(read_u8());
-            prefix += "|" + ident_to_string(PKMN::view(battle), identity);
+            prefix += "|" + ident_to_string(PKMN::view(battle), of);
           }
         }
         push(prefix);
@@ -509,8 +510,8 @@ template <View view = View::omniscient> struct Parser {
         if (reason != 0x00) {
           prefix += heal_reason(reason);
           if (reason == 0x02) {
-            auto of = read_u8();
-            prefix += "|" + PKMN::move_string(of);
+            auto of = decode_ident(read_u8());
+            prefix += "|" + ident_to_string(PKMN::view(battle), of);
           }
         }
         push(prefix);
@@ -659,13 +660,13 @@ template <View view = View::omniscient> struct Parser {
       case ArgType::end: {
         auto identity = decode_ident(read_u8());
         auto reason = read_u8();
-        std::cout << ident_to_string(PKMN::view(battle), identity) << std::endl;
         push("|-end|" + ident_to_string(PKMN::view(battle), identity) + "|" +
              end_reason(reason));
         break;
       }
       case ArgType::ohko: {
         push("|-ohko|");
+        break;
         break;
       }
       case ArgType::crit: {
@@ -687,16 +688,16 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::immune: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto reason = read_u8(); // 0x00 none, 0x01 ohko
-        push("|-immune|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|-immune|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::transform: {
-        auto source = read_u8();
-        auto target = read_u8();
-        push("|-transform|" + std::to_string(source));
+        auto source = decode_ident(read_u8());
+        auto target = decode_ident(read_u8());
+        push("|-transform|" + ident_to_string(PKMN::view(battle), source) +
+             ident_to_string(PKMN::view(battle), target));
         break;
       }
       case ArgType::drag: {
