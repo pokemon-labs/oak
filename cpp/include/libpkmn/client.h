@@ -55,10 +55,8 @@ inline bool compare_moves(const Moves &client, const Moves &truth,
   return true;
 }
 
-inline bool compare_volatiles(
-                              const PKMN::Volatiles &a,
-                              const PKMN::Volatiles &b, 
-                              std::string &reason,
+inline bool compare_volatiles(const PKMN::Volatiles &a,
+                              const PKMN::Volatiles &b, std::string &reason,
                               const Options &options) {
   COMPARE_PROPERTY(a, b, bide, "");
   COMPARE_PROPERTY(a, b, thrashing, "");

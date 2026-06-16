@@ -251,26 +251,8 @@ inline std::string status_string(const auto status) {
   };
 }
 
-/*
-FIXME leechseed From Of
-Reason
-Raw	Description
-0x00	Disable*
-0x01	confusion
-0x02	Bide*
-0x03	Substitute
-0x04	Disable|[silent]
-0x05	confusion|[silent]
-0x06	mist|[silent]
-0x07	focusenergy|[silent]
-0x08	leechseed|[silent]
-0x09	Toxic counter|[silent]
-0x0A	lightscreen|[silent]
-0x0B	reflect|[silent]
-0x0C	move: Bide|[silent]
-*0x00 corresponds to move: Disable and 0x02 to move: Bide in Generation II.
-*/
 std::string end_reason(uint8_t reason) {
+  assert(reason < 0x04 || reason > 0x0E);
   switch (reason) {
   case 0x00:
     return "Disable";
@@ -280,29 +262,53 @@ std::string end_reason(uint8_t reason) {
     return "Bide";
   case 0x03:
     return "Substitute";
+  // Gen 2+
   case 0x04:
-    return "Disable|[silent]";
+    return "Nightmare";
   case 0x05:
-    return "confusion|[silent]";
+    return "Curse";
   case 0x06:
-    return "mist|[silent]";
+    return "Foresight";
   case 0x07:
-    return "focusenergy|[silent]";
+    return "Encore";
   case 0x08:
-    return "leechseed|[silent]";
+    return "FutureSight";
   case 0x09:
-    return "Toxic counter|[silent]";
+    return "Leech Seed";
   case 0x0A:
-    return "lightscreen|[silent]";
+    return "Bind";
   case 0x0B:
-    return "reflect|[silent]";
+    return "Wrap";
   case 0x0C:
+    return "Fire Spin";
+  case 0x0D:
+    return "Clamp";
+  case 0x0E:
+    return "Whirlpool";
+  // Silent variants
+  case 0x0F:
+    return "Disable|[silent]";
+  case 0x10:
+    return "confusion|[silent]";
+  case 0x11:
+    return "Mist|[silent]";
+  case 0x12:
+    return "move: Focus Energy|[silent]";
+  case 0x13:
+    return "Leech Seed|[silent]";
+  case 0x14:
+    return "Toxic counter|[silent]";
+  case 0x15:
+    return "Light Screen|[silent]";
+  case 0x16:
+    return "Reflect|[silent]";
+  case 0x17:
     return "move: Bide|[silent]";
+  case 0x18:
+    return "Leech Seed|[from]"; // FIXME of
   default:
-    std::cout << (int)reason << std::endl;
-    assert(false);
+    throw std::runtime_error("Bad end reason: " + std::to_string(reason));
   }
-  return "";
 }
 
 template <View view = View::omniscient> struct Parser {
@@ -485,7 +491,7 @@ template <View view = View::omniscient> struct Parser {
           prefix += "|" + damage_reason(reason);
           if (reason == 0x05) {
             auto of = decode_ident(read_u8());
-            prefix += "|" + ident_to_string(PKMN::view(battle), identity);
+            prefix += "|" + ident_to_string(PKMN::view(battle), of);
           }
         }
         push(prefix);
@@ -504,8 +510,8 @@ template <View view = View::omniscient> struct Parser {
         if (reason != 0x00) {
           prefix += heal_reason(reason);
           if (reason == 0x02) {
-            auto of = read_u8();
-            prefix += "|" + PKMN::move_string(of);
+            auto of = decode_ident(read_u8());
+            prefix += "|" + ident_to_string(PKMN::view(battle), of);
           }
         }
         push(prefix);
@@ -661,6 +667,7 @@ template <View view = View::omniscient> struct Parser {
       case ArgType::ohko: {
         push("|-ohko|");
         break;
+        break;
       }
       case ArgType::crit: {
         auto ident = read_u8();
@@ -681,16 +688,16 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::immune: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto reason = read_u8(); // 0x00 none, 0x01 ohko
-        push("|-immune|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|-immune|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::transform: {
-        auto source = read_u8();
-        auto target = read_u8();
-        push("|-transform|" + std::to_string(source));
+        auto source = decode_ident(read_u8());
+        auto target = decode_ident(read_u8());
+        push("|-transform|" + ident_to_string(PKMN::view(battle), source) +
+             ident_to_string(PKMN::view(battle), target));
         break;
       }
       case ArgType::drag: {
