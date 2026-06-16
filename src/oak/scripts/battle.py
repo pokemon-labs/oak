@@ -324,16 +324,16 @@ def main():
 
     print(f"Initial network hash: {network.hash()}")
 
-    encoded_frames = oak.EncodedBattleFrames(args.batch_size)
+    encoded_frames = oak.train.EncodedBattleFrames(args.batch_size)
     encoded_frames_torch = oak.torch.EncodedBattleFrames(encoded_frames).to(device)
 
-    output_buffer = oak.OutputBuffer(
+    output_buffer = oak.train.OutputBuffer(
         args.batch_size, args.pokemon_out_dim, args.active_out_dim
     )
 
     optimizer = Optimizer(network, args.lr)
 
-    sample_indexer = oak.SampleIndexer()
+    sample_indexer = oak.train.SampleIndexer()
 
     step_iterator = range(args.steps) if args.steps >= 0 else itertools.count()
 
@@ -357,7 +357,7 @@ def main():
 
         encoded_frames.clear()
         output_buffer.clear()
-        samples_read = oak.sample(
+        samples_read = oak.train.sample(
             encoded_frames,
             sample_indexer,
             args.threads,

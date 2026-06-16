@@ -369,7 +369,8 @@ PYBIND11_MODULE(pyoaktrain, m) {
            py::arg("pokemon_out_dim") = NN::Battle::Default::pokemon_out_dim,
            py::arg("active_out_dim") = NN::Battle::Default::active_out_dim)
       .def_readonly("size", &Py::Battle::OutputBuffer::size)
-      .def_readonly("pokemon_out_dim", &Py::Battle::OutputBuffer::pokemon_out_dim)
+      .def_readonly("pokemon_out_dim",
+                    &Py::Battle::OutputBuffer::pokemon_out_dim)
       .def_readonly("active_out_dim", &Py::Battle::OutputBuffer::active_out_dim)
       .def_readonly("pokemon", &Py::Battle::OutputBuffer::pokemon)
       .def_readonly("active_pokemon", &Py::Battle::OutputBuffer::active_pokemon)

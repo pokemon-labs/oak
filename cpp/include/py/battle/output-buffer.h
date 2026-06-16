@@ -30,7 +30,7 @@ struct OutputBuffer {
   static constexpr size_t policy_out_dim = Encode::Battle::Policy::n_dim + 1;
 
   OutputBuffer(size_t size, size_t pod = NN::Battle::Default::pokemon_out_dim,
-         size_t aod = NN::Battle::Default::active_out_dim)
+               size_t aod = NN::Battle::Default::active_out_dim)
       : size{size}, pokemon_out_dim{pod}, active_out_dim{aod},
         side_out_dim{(1 + active_out_dim) + 5 * (1 + pokemon_out_dim)} {
     pokemon =

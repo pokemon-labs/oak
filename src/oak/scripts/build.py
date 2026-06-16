@@ -29,7 +29,7 @@ def add_local_args(parser, prefix: str = "", rl: bool = False):
         prefix + "trajectories-per-step",
         type=int,
         required=True,
-        help="How many trajectories to read from a single oak.read_build_trajectories call",
+        help="How many trajectories to read from a single read_build_trajectories call",
     )
     parser.add_argument(
         prefix + "keep-prob",
@@ -83,13 +83,13 @@ def add_local_args(parser, prefix: str = "", rl: bool = False):
     parser.add_argument(
         prefix + "policy-hidden-dim",
         type=int,
-        default=oak.build_policy_hidden_dim,
+        default=oak.train.build_policy_hidden_dim,
         help="Policy head hidden dim",
     )
     parser.add_argument(
         prefix + "value-hidden-dim",
         type=int,
-        default=oak.build_value_hidden_dim,
+        default=oak.train.build_value_hidden_dim,
         help="Value head hidden dim",
     )
 
@@ -285,9 +285,9 @@ def main():
         # break batches up by file to limit memory use
         while b < args.batch_size:
 
-            trajectories = oak.BuildTrajectories(args.trajectories_per_step)
+            trajectories = oak.train.BuildTrajectories(args.trajectories_per_step)
 
-            n_read = oak.read_build_trajectories(trajectories, data_files, args.threads)
+            n_read = oak.train.read_build_trajectories(trajectories, data_files, args.threads)
 
             if n_read < trajectories.size:
                 print(f"Error reading files, continuing")

@@ -14,8 +14,9 @@
 namespace {
 
 Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
-                     std::string network_path, bool discrete = false,
-                     std::string budget = "0") {
+                                       std::string network_path,
+                                       bool discrete = false,
+                                       std::string budget = "0") {
 
   RuntimeSearch::AgentParams agent_params{};
   agent_params.eval = network_path;

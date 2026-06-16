@@ -138,13 +138,13 @@ generate_parser.add_argument(
 # get args from battle.py/build.py
 import oak.common_args
 import oak.scripts.battle
-import oak.build
+import oak.scripts.build
 
 oak.common_args.add_common_args(battle_parser, "", True)
 oak.scripts.battle.add_local_args(battle_parser, "", True)
 
 oak.common_args.add_common_args(build_parser, "build", True)
-oak.build.add_local_args(build_parser, "build", True)
+oak.scripts.build.add_local_args(build_parser, "build", True)
 
 parser.add_argument(
     "--generate-path",
@@ -309,7 +309,7 @@ def main():
             sys.executable,
             "-u",
             "-m",
-            "oak.build",
+            "oak.scripts.build",
             f"--dir={build_nets_dir}",
         ]
         + get_common_cmd(args, "build_")
