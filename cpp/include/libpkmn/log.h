@@ -319,11 +319,11 @@ template <View view = View::omniscient> struct Parser {
   std::optional<size_t> last_move_index;
   pkmn_gen1_battle battle;
 
-  Parser(const unsigned char *b) : buf(b), battle{} {}
+  Parser(const uint8_t *b) : buf(b), battle{} {}
 
   uint8_t peek_u8() const { return buf[pos]; }
 
-  auto read_u8() { return buf[pos++]; }
+  uint8_t read_u8() { return buf[pos++]; }
 
   uint16_t read_u16() {
     uint16_t lo = buf[pos++];
@@ -350,14 +350,6 @@ template <View view = View::omniscient> struct Parser {
     }
   }
 
-  std::string condition_hp_string(uint16_t hp, uint16_t max_hp) {
-    if ((hp == 0) || (max_hp == 0)) {
-      return "0";
-    } else {
-      return std::to_string(hp) + "/" + std::to_string(max_hp);
-    }
-  }
-
   std::string condition_string(uint16_t hp, uint16_t max_hp, uint8_t status) {
     if ((hp == 0) || (max_hp == 0)) {
       return "0 fnt";
@@ -370,7 +362,6 @@ template <View view = View::omniscient> struct Parser {
   void parse() {
     while (true) {
       const auto opcode = static_cast<ArgType>(read_u8());
-
       switch (opcode) {
       case ArgType::null: {
         return;
@@ -384,15 +375,20 @@ template <View view = View::omniscient> struct Parser {
             break;
           }
         }
-        break;
+        assert(false);
       }
       case ArgType::laststill: {
-        push("|laststill");
-        break;
+        for (int i = log.size() - 1; i >= 0; --i) {
+          auto &line = log[i];
+          auto x = line.substr(0, 6);
+          if (x == "|move|") {
+            line += "|[still]";
+            break;
+          }
+        }
+        assert(false);
       }
       case ArgType::move: {
-        // |move|p1a: Jynx|Blizzard|p2a: Chansey|[miss]
-        // |move|p1a: Cloyster|Clamp|p2a: Alakazam|[from] Clamp
         auto source = read_u8();
         auto move = read_u8();
         auto target = read_u8();
@@ -413,7 +409,6 @@ template <View view = View::omniscient> struct Parser {
                PKMN::move_string(move) + "|" +
                ident_to_string(PKMN::view(battle), decode_ident(target)) +
                "|[from] " + PKMN::move_string(from));
-          // |move|p1a: Fearow|Psychic|p2a: Alakazam|[from] Mirror Move
           break;
         }
         default: {
@@ -423,15 +418,12 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::switch_: {
-        // |switch|p1a: Starmie|Starmie|247/323
-        // |switch|p2a: Starmie|Starmie|81/100
         auto identity = decode_ident(read_u8());
         auto species = read_u8();
         auto level = read_u8();
         auto hp = read_u16();
         auto max_hp = read_u16();
         auto status = read_u8();
-
         possibly_hide_hp(identity, hp, max_hp);
         std::string level_string =
             level == 100 ? "" : (std::to_string(level) + "|");
@@ -454,9 +446,8 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::faint: {
-        auto ident = read_u8();
-        push("|faint|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        auto identity = decode_ident(read_u8());
+        push("|faint|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::turn: {
@@ -474,10 +465,6 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::damage: {
-        // |-damage|p2a: Exeggutor|0 fnt
-        // |-damage|p1a: Tauros|91/353
-        // |-damage|p2a: Starmie|18/100 slp
-        // |-damage|p1a: Jolteon|157/333|[from] Recoil|[of] p2a: Snorlax
         auto identity = decode_ident(read_u8());
         auto hp = read_u16();
         auto max_hp = read_u16();
@@ -518,10 +505,9 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::status: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto status = read_u8();
         auto reason = read_u8();
-        auto identity = decode_ident(ident);
         std::string prefix = "|-status|" +
                              ident_to_string(PKMN::view(battle), identity) +
                              "|" + status_string(status);
@@ -546,20 +532,16 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::curestatus: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto status = read_u8();
         auto reason = read_u8();
-        push("|-curestatus|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|-curestatus|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::boost: {
-        // The Pokémon identified by Ident has been (un)boosted by Num - 6 in a
-        // stat indicated by the Reason.
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto reason = read_u8();
         auto num = read_u8();
-        auto identity = decode_ident(ident);
         int boost = static_cast<int>(num) - 6;
         if (boost > 0) {
           push("|-boost|" + ident_to_string(PKMN::view(battle), identity) +
@@ -578,43 +560,37 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::fail: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto reason = read_u8();
-        push("|-fail|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|-fail|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::miss: {
-        auto ident = read_u8();
-        push("|-miss|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        auto identity = decode_ident(read_u8());
+        push("|-miss|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::hitcount: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto num = read_u8();
-        push("|-hitcount|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|-hitcount|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::prepare: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto move = read_u8();
-        auto identity = decode_ident(ident);
         push("|-prepare|" + ident_to_string(PKMN::view(battle), identity) +
              "|" + PKMN::move_string(move));
         break;
       }
       case ArgType::mustrecharge: {
-        auto ident = read_u8();
-        push("|-mustrecharge|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        auto identity = decode_ident(read_u8());
+        push("|-mustrecharge|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::activate: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto reason = read_u8();
-        auto identity = decode_ident(ident);
         push("|-activate|" + ident_to_string(PKMN::view(battle), identity) +
              "|" + activate_reason(reason));
         break;
@@ -624,9 +600,8 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::start: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto reason = read_u8();
-        auto identity = decode_ident(ident);
         std::string prefix = "|-start|" +
                              ident_to_string(PKMN::view(battle), identity) +
                              "|" + start_reason(reason);
@@ -634,10 +609,9 @@ template <View view = View::omniscient> struct Parser {
         switch (reason) {
         case 0x09: {
           auto types = read_u8();
-          auto of = read_u8();
-          auto of_ident = decode_ident(of);
+          auto of = decode_ident(read_u8());
           push(prefix + std::to_string(types) + "|" +
-               ident_to_string(PKMN::view(battle), of_ident));
+               ident_to_string(PKMN::view(battle), of));
           break;
         }
         case 0x0A:
@@ -670,21 +644,19 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::crit: {
-        auto ident = read_u8();
-        push("|-crit|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        auto identity = decode_ident(read_u8());
+        push("|-crit|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::supereffective: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         push("|-supereffective|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+             ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::resisted: {
-        auto ident = read_u8();
-        push("|-resisted|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        auto identity = decode_ident(read_u8());
+        push("|-resisted|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::immune: {
@@ -701,15 +673,14 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::drag: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto species = read_u8();
         auto gender = read_u8();
         auto level = read_u8();
         auto hp = read_u16();
         auto max_hp = read_u16();
         auto status = read_u8();
-        push("|drag|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|drag|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::item: {
@@ -727,26 +698,23 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::cureteam: {
-        auto ident = read_u8();
-        push("|-cureteam|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        auto identity = decode_ident(read_u8());
+        push("|-cureteam|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::sethp: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto hp = read_u16();
         auto max_hp = read_u16();
         auto status = read_u8();
         auto reason = read_u8();
-        push("|-sethp|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|-sethp|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::setboost: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto num = read_u8();
-        push("|-setboost|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|-setboost|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::copyboost: {
@@ -772,17 +740,15 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       case ArgType::singlemove: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto move = read_u8();
-        push("|-singlemove|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|-singlemove|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::singleturn: {
-        auto ident = read_u8();
+        auto identity = decode_ident(read_u8());
         auto move = read_u8();
-        push("|-singleturn|" +
-             ident_to_string(PKMN::view(battle), decode_ident(ident)));
+        push("|-singleturn|" + ident_to_string(PKMN::view(battle), identity));
         break;
       }
       case ArgType::weather: {
@@ -792,7 +758,6 @@ template <View view = View::omniscient> struct Parser {
         break;
       }
       default: {
-        std::cout << "ERROR: " << static_cast<int>(opcode) << std::endl;
         assert(false);
       }
       }
