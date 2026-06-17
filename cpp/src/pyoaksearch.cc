@@ -13,6 +13,10 @@
 
 namespace {
 
+namespace py = pybind11;
+using namespace PKMN;
+using namespace PKMN::Data;
+
 Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
                                        std::string network_path,
                                        bool discrete = false,
@@ -22,7 +26,6 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
   agent_params.eval = network_path;
   agent_params.bandit = "pucb-1.0";
   agent_params.discrete = discrete;
-  // TODO fix 1
   agent_params.budget = budget;
   RuntimeSearch::Agent agent{agent_params};
   auto battle =
@@ -77,14 +80,8 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
   return buffer;
 }
 
-namespace py = pybind11;
-using namespace PKMN;
-using namespace PKMN::Data;
-
 PYBIND11_MODULE(pyoaksearch, m) {
   py::module_::import("oak");
-
-  // Search
 
   py::class_<RuntimeSearch::Heap>(m, "Heap")
       .def(py::init<>())

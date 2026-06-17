@@ -7,9 +7,7 @@ struct ProgramArgs : public BenchmarkArgs {
 };
 
 int benchmark(int argc, char **argv) {
-
   auto args = argparse::parse<ProgramArgs>(argc, argv);
-
   auto agent_params = RuntimeSearch::AgentParams{
       .budget = args.budget.value_or(std::to_string(1 << 20)),
       .bandit = args.bandit.value_or("ucb-1.0"),
@@ -17,9 +15,7 @@ int benchmark(int argc, char **argv) {
       .matrix_ucb = args.matrix_ucb.value_or(""),
       .discrete = args.use_discrete,
       .table = args.use_table};
-
   auto agent = RuntimeSearch::Agent{agent_params};
-
   const uint32_t seed = 1111111;
   auto device = mt19937{seed};
   auto p1 = Teams::benchmark_teams[0];
@@ -29,17 +25,18 @@ int benchmark(int argc, char **argv) {
   const auto result = PKMN::update(battle, 0, 0, options);
   const auto durations = PKMN::durations();
   const auto input = MCTS::Input{battle, durations, result};
-  auto heap = RuntimeSearch::Heap{};
-
   const auto start = std::chrono::high_resolution_clock::now();
-  const auto output = RuntimeSearch::run(device, input, heap, agent);
+  auto output = MCTS::Output{};
+  {
+    auto heap = RuntimeSearch::Heap{};
+    output = RuntimeSearch::run(device, input, heap, agent);
+  }
   auto us = output.duration.count();
   if (args.cleanup) {
     const auto end = std::chrono::high_resolution_clock::now();
     us = std::chrono::duration_cast<std::chrono::microseconds>(end - start)
              .count();
   }
-
   if (us >= 10000) {
     std::cout << (us / 1000) << "ms." << std::endl;
   } else {
