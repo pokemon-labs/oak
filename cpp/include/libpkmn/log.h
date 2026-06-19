@@ -617,7 +617,7 @@ template <View view = View::omniscient> struct Parser {
         case 0x0A:
         case 0x0B: {
           auto move = read_u8();
-          push(prefix + PKMN::move_string(move));
+          push(prefix + "|" + PKMN::move_string(move));
           break;
         }
         default: {
@@ -640,7 +640,6 @@ template <View view = View::omniscient> struct Parser {
       }
       case ArgType::ohko: {
         push("|-ohko|");
-        break;
         break;
       }
       case ArgType::crit: {
