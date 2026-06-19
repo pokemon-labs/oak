@@ -130,22 +130,6 @@ void complete_move_set(std::array<PKMN::MoveSlot, 4> &move_slots,
   }
 }
 
-void status_modify(PKMN::Data::Status status, PKMN::Stats &stats) {
-  switch (status) {
-  case PKMN::Data::Status::Paralysis: {
-    stats.spe = std::max<uint16_t>(stats.spe / 4, 1);
-    return;
-  }
-  case PKMN::Data::Status::Burn: {
-    stats.atk = std::max<uint16_t>(stats.atk / 2, 1);
-    return;
-  }
-  default: {
-    // assert(false);
-  }
-  }
-}
-
 PYBIND11_MODULE(pyoak, m) {
   m.doc() = "oak — low-level structured view of pkmn_gen1_battle bytes.\n\n"
             "  b    = oak.Battle(raw_bytes)   # 384 bytes\n"
@@ -501,16 +485,6 @@ PYBIND11_MODULE(pyoak, m) {
       },
       py::arg("battle"), py::arg("durations"));
 
-  // TODO move this
-  m.def(
-      "format",
-      [](const BattleView &battle, const DurationsView &durations,
-         const MCTS::Output &output) {
-        return MCTS::output_string(output,
-                                   MCTS::Input{battle.raw, durations.raw});
-      },
-      py::arg("battle"), py::arg("durations"), py::arg("output"));
-
   m.def("load_teams", [](const std::string &path) {
     std::vector<std::vector<PokemonSet>> res{};
     const auto out = _load_teams(path);
@@ -599,98 +573,6 @@ PYBIND11_MODULE(pyoak, m) {
           active.p->moves = pokemon.p->moves;
         });
 
-  m.def(
-      "boost",
-      [](SideProxy &p, SideProxy &f, std::string stat, int diff) {
-        constexpr uint16_t MIN_STAT_VALUE = 1;
-        constexpr uint16_t MAX_STAT_VALUE = 999;
-        constexpr std::array<std::pair<int, int>, 13> BOOSTS{{
-            {25, 100}, // -6
-            {28, 100}, // -5
-            {33, 100}, // -4
-            {40, 100}, // -3
-            {50, 100}, // -2
-            {66, 100}, // -1
-            {1, 1},    //  0
-            {15, 10},  // +1
-            {2, 1},    // +2
-            {25, 10},  // +3
-            {3, 1},    // +4
-            {35, 10},  // +5
-            {4, 1},    // +6
-        }};
-
-        PKMN::Side &player = *p.p;
-        PKMN::Stats &stats = player.active.stats;
-        PKMN::Boosts &boosts = player.active.boosts;
-
-        // Returns the new boost value clamped to [-6, 6]
-        const auto clamped_boost = [](int8_t current, int diff) -> int8_t {
-          return static_cast<int8_t>(
-              std::max(std::min(static_cast<int>(current) + diff, 6), -6));
-        };
-        // Returns the BOOSTS table entry for a given boost level
-        const auto boost_mod = [&BOOSTS](int8_t new_boost) {
-          return BOOSTS[6 + new_boost];
-        };
-
-        if (stat == "atk" || stat == "atk|[from] Rage") {
-          const auto new_boost = clamped_boost(boosts.atk(), diff);
-          boosts.set_atk(new_boost);
-          const auto mod = boost_mod(new_boost);
-          const auto base = player.stored().stats.atk;
-          stats.atk = static_cast<uint16_t>(
-              std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
-                                static_cast<int>(MAX_STAT_VALUE)),
-                       static_cast<int>(MIN_STAT_VALUE)));
-          if (stat == "atk|[from] Rage") {
-            return;
-          }
-        } else if (stat == "def") {
-          const auto new_boost = clamped_boost(boosts.def(), diff);
-          boosts.set_def(new_boost);
-          const auto mod = boost_mod(new_boost);
-          const auto base = player.stored().stats.def;
-          stats.def = static_cast<uint16_t>(
-              std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
-                                static_cast<int>(MAX_STAT_VALUE)),
-                       static_cast<int>(MIN_STAT_VALUE)));
-        } else if (stat == "spe") {
-          const auto new_boost = clamped_boost(boosts.spe(), diff);
-          boosts.set_spe(new_boost);
-          const auto mod = boost_mod(new_boost);
-          const auto base = player.stored().stats.spe;
-          stats.spe = static_cast<uint16_t>(
-              std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
-                                static_cast<int>(MAX_STAT_VALUE)),
-                       static_cast<int>(MIN_STAT_VALUE)));
-        } else if (stat == "spc") {
-          const auto new_boost = clamped_boost(boosts.spc(), diff);
-          boosts.set_spc(new_boost);
-          const auto mod = boost_mod(new_boost);
-          const auto base = player.stored().stats.spc;
-          stats.spc = static_cast<uint16_t>(
-              std::max(std::min(static_cast<int>(base) * mod.first / mod.second,
-                                static_cast<int>(MAX_STAT_VALUE)),
-                       static_cast<int>(MIN_STAT_VALUE)));
-        } else if (stat == "acc") {
-          boosts.set_acc(clamped_boost(boosts.acc(), diff));
-        } else if (stat == "eva") {
-          boosts.set_eva(clamped_boost(boosts.eva(), diff));
-        } else if (stat == "non") {
-          return;
-        } else {
-          throw std::runtime_error{"boost: Invalid stat key"};
-        }
-
-        // GLITCH: Stat modification errors glitch — reapply foe's status to
-        // foe's active stats
-        PKMN::Side &foe = *f.p;
-        status_modify(foe.stored().status, foe.active.stats);
-      },
-      "Apply changes to boosts, recompute active.stats with the stat "
-      "modification glitch");
-
   m.def("choice_label", [](const SideProxy &side, int choice) {
     return PKMN::side_choice_string(*side.p, static_cast<pkmn_choice>(choice));
   });
@@ -733,43 +615,6 @@ PYBIND11_MODULE(pyoak, m) {
 
   m.def("solve_matrix", &solve_matrix, py::arg("row_payoff"),
         py::arg("discretize_factor"));
-
-  m.def("clear_volatiles",
-        [](VolatilesProxy &volatiles, DurationProxy &duration) {
-          auto &vol = *volatiles.p;
-          auto &dur = *duration.p;
-          if (vol.disable_move() != 0) {
-            vol.set_disable_move(0);
-            dur.set_disable(0);
-          }
-          if (vol.confusion()) {
-            vol.set_confusion(false);
-            dur.set_confusion(0);
-          }
-          if (vol.mist()) {
-            vol.set_mist(false);
-          }
-          if (vol.focus_energy()) {
-            vol.set_focus_energy(false);
-          }
-          if (vol.leech_seed()) {
-            vol.set_leech_seed(false);
-          }
-          if (vol.light_screen()) {
-            vol.set_light_screen(false);
-          }
-          if (vol.reflect()) {
-            vol.set_reflect(false);
-          }
-          if (vol.toxic()) {
-            vol.set_toxic(false);
-            vol.set_toxic_counter(0);
-          }
-        });
-
-  m.def("status_modify", [](int status, StatsProxy &stats) {
-    status_modify(static_cast<PKMN::Data::Status>(status), *stats.p);
-  });
 
   m.def(
       "switch_in",

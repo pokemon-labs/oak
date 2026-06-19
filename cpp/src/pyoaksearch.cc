@@ -5,6 +5,7 @@
 #include <py/battle/output-buffer.h>
 #include <py/libpkmn/data.h>
 #include <util/search.h>
+#include <util/strings.h>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -248,6 +249,15 @@ PYBIND11_MODULE(pyoaksearch, m) {
 
   m.def("cpp_inference", &cpp_inference, py::arg("battle_frames"),
         py::arg("network_path"), py::arg("discrete"), py::arg("budget"));
+
+  m.def(
+      "output_string",
+      [](const BattleView &battle, const DurationsView &durations,
+         const MCTS::Output &output) {
+        return MCTS::output_string(output,
+                                   MCTS::Input{battle.raw, durations.raw});
+      },
+      py::arg("battle"), py::arg("durations"), py::arg("output"));
 }
 
 } // namespace
