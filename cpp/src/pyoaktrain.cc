@@ -19,7 +19,7 @@
 
 #include <pkmn.h>
 
-namespace {
+namespace Py::PKMN {
 
 template <size_t N, size_t M>
 std::vector<std::string>
@@ -461,4 +461,4 @@ PYBIND11_MODULE(pyoaktrain, m) {
   m.attr("policy_dim_labels") = v;
 }
 
-} // namespace
+} // namespace Py::PKMN

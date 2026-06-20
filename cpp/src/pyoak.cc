@@ -30,7 +30,7 @@
 
 #include <py/libpkmn/data.h>
 
-namespace {
+namespace Py::PKMN {
 
 namespace py = pybind11;
 using namespace PKMN;
@@ -624,4 +624,4 @@ PYBIND11_MODULE(pyoak, m) {
       py::arg("pokemon"), py::arg("active"));
 }
 
-} // namespace
+} // namespace Py::PKMN

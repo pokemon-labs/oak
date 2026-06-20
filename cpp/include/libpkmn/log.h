@@ -375,7 +375,7 @@ template <View view = View::omniscient> struct Parser {
             break;
           }
         }
-        assert(false);
+        break;
       }
       case ArgType::laststill: {
         for (int i = log.size() - 1; i >= 0; --i) {
@@ -386,7 +386,7 @@ template <View view = View::omniscient> struct Parser {
             break;
           }
         }
-        assert(false);
+        break;
       }
       case ArgType::move: {
         auto source = read_u8();
@@ -607,6 +607,7 @@ template <View view = View::omniscient> struct Parser {
                              "|" + start_reason(reason);
         // weird cases
         switch (reason) {
+        // 9, 10, 11 have trailing '|' pipe in the reason already
         case 0x09: {
           auto types = read_u8();
           auto of = decode_ident(read_u8());
@@ -617,7 +618,7 @@ template <View view = View::omniscient> struct Parser {
         case 0x0A:
         case 0x0B: {
           auto move = read_u8();
-          push(prefix + "|" + PKMN::move_string(move));
+          push(prefix + PKMN::move_string(move));
           break;
         }
         default: {

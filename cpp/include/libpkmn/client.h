@@ -55,9 +55,11 @@ inline bool compare_moves(const Moves &client, const Moves &truth,
   return true;
 }
 
-inline bool compare_volatiles(const PKMN::Volatiles &a,
-                              const PKMN::Volatiles &b, std::string &reason,
-                              const Options &options) {
+inline bool compare_volatiles(int player, const PKMN::Battle &client_battle,
+                              const PKMN::Battle &truth_battle,
+                              std::string &reason, const Options &options) {
+  const auto &a = client_battle.sides[player].active.volatiles;
+  const auto &b = truth_battle.sides[player].active.volatiles;
   COMPARE_PROPERTY(a, b, bide, "");
   COMPARE_PROPERTY(a, b, thrashing, "");
   COMPARE_PROPERTY(a, b, multi_hit, "");
@@ -81,26 +83,30 @@ inline bool compare_volatiles(const PKMN::Volatiles &a,
   // attacks
   // state
   // sub_hp
-
-  // if (a.transform_species == 0 && b.transform_species == 0) {
-  //   // pass
-  // } else {
-  //   struct ID {
-  //     int side;
-  //     int slot;
-  //     ID(auto ts) {
-  //       auto x = static_cast<uint8_t>(ts);
-  //       side = ((x & 0b1000) >> 3);
-  //       slot = x & 0b111;
-  //     }
-  //     auto get_species(const PKMN::Battle& battle) {
-  //       return battle.sides[side].get(slot).species;
-  //     }
-  //   };
-  //   ID x{a.transform_species()};
-  //   ID y{b.transform_species()};
-  // }
-
+  if (a.transform_species() == 0 && b.transform_species() == 0) {
+    // pass
+  } else {
+    struct ID {
+      int side;
+      int slot;
+      ID(uint8_t ts) {
+        auto x = static_cast<uint8_t>(ts);
+        side = ((x & 0b1000) >> 3);
+        slot = x & 0b111;
+      }
+      auto get_species(const PKMN::Battle &battle) {
+        return battle.sides[side].pokemon[slot - 1].species;
+      }
+    };
+    auto client_species = ID{a.transform_species()}.get_species(client_battle);
+    auto truth_species = ID{b.transform_species()}.get_species(truth_battle);
+    if (client_species != truth_species) {
+      reason +=
+          "tranform species mismatch: " + PKMN::species_string(client_species) +
+          " " + PKMN::species_string(truth_species);
+      return false;
+    }
+  }
   // disable_left
   COMPARE_PROPERTY(a, b, toxic_counter, "");
   return true;
@@ -129,10 +135,13 @@ inline bool compare_stats(const PKMN::Stats &client_stats,
   return true;
 }
 
-inline bool compare_active(const PKMN::ActivePokemon &client,
-                           const PKMN::ActivePokemon &truth,
+inline bool compare_active(int player, const PKMN::Battle &client_battle,
+                           const PKMN::Battle &truth_battle,
                            std::string &reason, const Options &options) {
-  if (!compare_volatiles(client.volatiles, truth.volatiles, reason, options)) {
+  const auto &client = client_battle.sides[player].active;
+  const auto &truth = truth_battle.sides[player].active;
+  if (!compare_volatiles(player, client_battle, truth_battle, reason,
+                         options)) {
     return false;
   }
   if (!compare_moves(client.moves, truth.moves, "active ", reason, options)) {
@@ -267,11 +276,14 @@ inline bool compare_bench(const Bench &client, const Bench &truth,
   return true;
 }
 
-inline bool compare_side(const PKMN::Side &client_side,
+inline bool compare_side(int player, const PKMN::Battle &client_battle,
                          const PKMN::Duration &client_duration,
-                         const PKMN::Side &truth_side,
+                         const PKMN::Battle &truth_battle,
                          const PKMN::Duration &truth_duration,
                          std::string &reason, const Options &options) {
+
+  const auto &client_side = client_battle.sides[player];
+  const auto &truth_side = truth_battle.sides[player];
   const auto client_fainted = client_side.stored().hp == 0;
   const auto truth_fainted = client_side.stored().hp == 0;
   if (client_fainted != truth_fainted) {
@@ -279,8 +291,7 @@ inline bool compare_side(const PKMN::Side &client_side,
     return false;
   }
   if (!truth_fainted) {
-    if (!compare_active(client_side.active, truth_side.active, reason,
-                        options)) {
+    if (!compare_active(player, client_battle, truth_battle, reason, options)) {
       return false;
     }
     COMPARE_PROPERTY(client_duration, truth_duration, confusion, " duration");
@@ -322,9 +333,8 @@ inline bool compare_battles(const PKMN::Battle &client_battle,
   auto p1 = Options{.max_hp_diff = 0};
   auto p2 = Options{.max_hp_diff = 15};
   for (auto i = 0; i < 2; ++i) {
-    if (!compare_side(client_battle.sides[i], client_durations.get(i),
-                      truth_battle.sides[i], truth_durations.get(i), reason,
-                      i ? p2 : p1)) {
+    if (!compare_side(i, client_battle, client_durations.get(i), truth_battle,
+                      truth_durations.get(i), reason, i ? p2 : p1)) {
       return false;
     }
   }

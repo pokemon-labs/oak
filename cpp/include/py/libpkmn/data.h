@@ -11,11 +11,10 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-namespace {
+namespace Py::PKMN {
 
 namespace py = pybind11;
-using namespace PKMN;
-using namespace PKMN::Data;
+using namespace ::PKMN;
 
 static inline std::string_view bytes_sv(const py::bytes &b) {
   return {PyBytes_AS_STRING(b.ptr()),

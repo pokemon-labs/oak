@@ -12,7 +12,7 @@
 
 #include <pkmn.h>
 
-namespace {
+namespace Py::PKMN {
 
 namespace py = pybind11;
 using namespace PKMN;
@@ -260,4 +260,4 @@ PYBIND11_MODULE(pyoaksearch, m) {
       py::arg("battle"), py::arg("durations"), py::arg("output"));
 }
 
-} // namespace
+} // namespace Py::PKMN
