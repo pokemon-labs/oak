@@ -30,6 +30,7 @@ using Bench = std::array<PokemonSleep, 6>;
 
 struct Options {
   int max_hp_diff;
+  bool last_selected_move;
 };
 
 inline bool compare_moves(const Moves &client, const Moves &truth,
@@ -321,6 +322,11 @@ inline bool compare_side(int player, const PKMN::Battle &client_battle,
     reason += " last_used_move";
     return false;
   }
+  if (options.last_selected_move &&
+      (client_side.last_selected_move != truth_side.last_selected_move)) {
+    reason += " last_selected_move";
+    return false;
+  }
   // Data::Move last_used_move;
   return true;
 }
@@ -330,15 +336,33 @@ inline bool compare_battles(const PKMN::Battle &client_battle,
                             const PKMN::Battle &truth_battle,
                             const PKMN::Durations &truth_durations,
                             std::string &reason) {
-  auto p1 = Options{.max_hp_diff = 0};
-  auto p2 = Options{.max_hp_diff = 15};
+  auto p1 = Options{.max_hp_diff = 0, .last_selected_move = false};
+  auto p2 = Options{.max_hp_diff = 15, .last_selected_move = false};
   for (auto i = 0; i < 2; ++i) {
     if (!compare_side(i, client_battle, client_durations.get(i), truth_battle,
                       truth_durations.get(i), reason, i ? p2 : p1)) {
       return false;
     }
   }
-  // TODO
+  // last damage
+  // bool client_null_damage = (client_battle.last_damage == 0);
+  // bool truth_null_damage = (truth_battle.last_damage == 0);
+  // if (client_null_damage != truth_null_damage) {
+  //   reason += " battle null damage";
+  //   return false;
+  // }
+  // if (!client_null_damage) {
+  //   constexpr uint16_t max_last_damage_diff = 15;
+  //   auto c_dmg = client_battle.last_damage;
+  //   auto t_dmg = truth_battle.last_damage;
+  //   auto diff = (c_dmg > t_dmg ? c_dmg - t_dmg : t_dmg - c_dmg);
+  //   if (diff >= max_last_damage_diff) {
+  //     reason += " last_damage " + ' ' + std::to_string(c_dmg) + ' ' +
+  //     std::to_string(t_dmg); return false;
+  //   }
+  // }
+
+  // We probably ignore this since it's used for Desync detection
   // std::array<MoveDetails, 2> last_moves;
   return true;
 }
