@@ -622,6 +622,19 @@ PYBIND11_MODULE(pyoak, m) {
         *active.p = PKMN::switch_in(*stored.p);
       },
       py::arg("pokemon"), py::arg("active"));
+
+  m.def(
+      "move_data",
+      [](int m) {
+        py::dict d;
+        const auto &move_data = PKMN::move_data(m);
+        d["effect"] = static_cast<int>(move_data.effect);
+        d["bp"] = static_cast<int>(move_data.bp);
+        d["type"] = static_cast<int>(move_data.type);
+        d["accuracy"] = static_cast<int>(move_data.accuracy);
+        return d;
+      },
+      py::arg("move"));
 }
 
 } // namespace Py::PKMN

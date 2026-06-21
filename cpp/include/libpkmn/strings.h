@@ -340,6 +340,8 @@ battle_data_to_string(const pkmn_gen1_battle &battle,
     }
     ss << "|| last_used: " << PKMN::move_string(side.last_used_move) << '/'
        << (int)side.last_used_move << ' ';
+    ss << "last_selected: " << PKMN::move_string(side.last_selected_move) << '/'
+       << (int)side.last_selected_move << ' ';
     ss << '(';
     for (auto o = 0; o < 6; ++o) {
       ss << (int)side.order[o] << ' ';
@@ -349,6 +351,8 @@ battle_data_to_string(const pkmn_gen1_battle &battle,
       ss << "--- --- --- " << b.turn << " --- --- ---" << "\n";
     }
   }
+  ss << "---\n";
+  ss << "last_damage: " << b.last_damage << '\n';
   return ss.str();
 }
 
