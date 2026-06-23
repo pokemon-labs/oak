@@ -67,8 +67,8 @@ constexpr static std::array<std::array<Effectiveness, 15>, 15> TYPE_CHART{
      {E::N, E::N, E::N, E::N, E::N, E::N, E::N, E::N, E::N, E::N, E::N, E::N,
       E::N, E::N, E::S}}};
 
-inline consteval auto get_effectiveness(Type attacking,
-                                        Type defending) noexcept {
+inline constexpr auto get_effectiveness(auto attacking,
+                                        auto defending) noexcept {
   return TYPE_CHART[static_cast<uint8_t>(attacking)]
                    [static_cast<uint8_t>(defending)];
 }
