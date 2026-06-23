@@ -308,6 +308,15 @@ struct DurationsView {
   }
 };
 
+struct MoveDetailsProxy {
+  MoveDetails* p;
+
+  uint8_t &index() {return p->index;}
+  const uint8_t &index() const {return p->index;}
+  uint8_t &counterable() {return p->counterable;}
+  const uint8_t &counterable() const {return p->counterable;}
+};
+
 struct BattleView {
   pkmn_gen1_battle raw{};
 
@@ -329,6 +338,13 @@ struct BattleView {
     if (i < 0 || i > 1)
       throw std::out_of_range("side index must be 0 or 1");
     return {&battle().sides[static_cast<size_t>(i)]};
+  }
+
+  MoveDetailsProxy last_move(int i) {
+    if (i < 0 || i > 1) {
+      throw std::out_of_range("player = 0, 1");
+    }
+    return {&battle().last_moves[i]};
   }
 
   uint16_t get_turn() const { return battle().turn; }

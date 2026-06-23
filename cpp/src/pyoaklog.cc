@@ -56,13 +56,14 @@ PYBIND11_MODULE(pyoaklog, m) {
   m.def(
       "compare_battles",
       [](const BattleView &public_battle, const DurationsView &public_durations,
-         const BattleView &truth_battle,
-         const DurationsView &truth_durations) -> std::pair<bool, std::string> {
+         const BattleView &truth_battle, const DurationsView &truth_durations,
+         const BattleView &key_battle,
+         const DurationsView &key_durations) -> std::pair<bool, std::string> {
         std::string reason = "";
         bool matches = PKMN::Client::compare_battles(
             PKMN::view(public_battle.raw), PKMN::view(public_durations.raw),
             PKMN::view(truth_battle.raw), PKMN::view(truth_durations.raw),
-            reason);
+            PKMN::view(key_battle.raw), PKMN::view(key_durations.raw), reason);
         return {matches, reason};
       });
 }

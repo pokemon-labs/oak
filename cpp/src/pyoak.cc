@@ -385,6 +385,8 @@ PYBIND11_MODULE(pyoak, m) {
       .def("side", &BattleView::side, py::arg("index"),
            "Side 0 (P1) or Side 1 (P2).",
            py::return_value_policy::reference_internal)
+      .def("last_move", &BattleView::last_move, py::arg("index"),
+           "last_moves[_], 0 or 1", py::return_value_policy::reference_internal)
       .def_property("turn", &BattleView::get_turn, &BattleView::set_turn)
       .def_property("last_damage", &BattleView::get_last_damage,
                     &BattleView::set_last_damage)
@@ -635,6 +637,12 @@ PYBIND11_MODULE(pyoak, m) {
         return d;
       },
       py::arg("move"));
+
+  m.def("get_effectiveness", [](int attacking, int defending) -> int {
+    const auto a = static_cast<PKMN::Data::Type>(attacking);
+    const auto d = static_cast<PKMN::Data::Type>(defending);
+    return static_cast<int>(PKMN::Data::get_effectiveness(a, d));
+  });
 }
 
 } // namespace Py::PKMN
