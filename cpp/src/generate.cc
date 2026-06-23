@@ -273,7 +273,7 @@ void generate(const ProgramArgs *args_ptr) {
 
         if ((args.max_battle_length >= 1) &&
             (battle_length >= args.max_battle_length)) {
-          throw std::runtime_error{"Max game length exceeded"};
+          throw std::runtime_error{"Max episode length exceeded"};
         }
 
         while (RuntimeData::suspended) {
@@ -422,7 +422,7 @@ void print_thread_fn(const ProgramArgs *args_ptr) {
     std::cout << (frames_more - frames_done) / (float)args.print_interval
               << " frames/sec." << std::endl;
     std::cout << (battles_more - battles_done) / (float)args.print_interval
-              << " battles/sec." << std::endl;
+              << " episodes/sec." << std::endl;
     if (RuntimeData::provider.team_modify_prob > 0) {
       std::cout << (traj_more - traj_done) / (float)args.print_interval
                 << " build traj./sec." << std::endl;
@@ -442,7 +442,7 @@ void print_thread_fn(const ProgramArgs *args_ptr) {
     battles_done = battles_more;
     traj_done = traj_more;
 
-    std::cout << "Battle Lengths: ";
+    std::cout << "Episode Lengths: ";
     for (const auto len : RuntimeData::battle_lengths) {
       std::cout << len << ' ';
     }
