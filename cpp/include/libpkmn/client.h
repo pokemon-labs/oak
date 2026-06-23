@@ -8,19 +8,25 @@ using PKMN::Data::Effect;
 using PKMN::Data::Move;
 using PKMN::Data::Species;
 
-#define COMPARE_PROPERTY(a, b, field, suffix)                                  \
+#define COMPARE_PROPERTY(key, a, b, property, suffix)                          \
   do {                                                                         \
-    if (a.field() != b.field()) {                                              \
-      reason += #field suffix " mismatch";                                     \
-      return false;                                                            \
+    if (!key.property()) {                                                     \
+      if (a.property() != b.property()) {                                      \
+        reason += #property suffix " mismatch";                                \
+        return false;                                                          \
+      }                                                                        \
+    } else {                                                                   \
     }                                                                          \
   } while (0)
 
-#define COMPARE_FIELD(a, b, field, suffix)                                     \
+#define COMPARE_FIELD(key, a, b, field, suffix)                                \
   do {                                                                         \
-    if (a.field != b.field) {                                                  \
-      reason += #field suffix " mismatch";                                     \
-      return false;                                                            \
+    if (!key.field) {                                                          \
+      if (a.field != b.field) {                                                \
+        reason += #field suffix " mismatch";                                   \
+        return false;                                                          \
+      }                                                                        \
+    } else {                                                                   \
     }                                                                          \
   } while (0)
 
@@ -34,17 +40,20 @@ struct Options {
 };
 
 inline bool compare_moves(const Moves &client, const Moves &truth,
-                          std::string prefix, std::string &reason,
-                          const Options &options) {
-  for (const auto &ms : client) {
+                          std::string prefix, const Moves &key,
+                          std::string &reason) {
+  for (auto i = 0; i < 4; ++i) {
+    const auto &ms = client[i];
+    const auto &k = key[i];
     if (ms.id == PKMN::Data::Move::None) {
       continue;
     }
     const auto x =
-        std::find_if(truth.begin(), truth.end(), [ms](const auto &x) {
+        std::find_if(truth.begin(), truth.end(), [ms, k](const auto &x) {
           // we can't determine binding move pp from client alone
-          return (x.id == ms.id) &&
-                 (PKMN::Data::move_data(ms.id).effect == Effect::Binding ||
+          return (static_cast<bool>(k.id) || (x.id == ms.id)) &&
+                 (k.pp ||
+                  PKMN::Data::move_data(ms.id).effect == Effect::Binding ||
                   x.pp == ms.pp);
         });
     if (x == truth.end()) {
@@ -58,33 +67,45 @@ inline bool compare_moves(const Moves &client, const Moves &truth,
 
 inline bool compare_volatiles(int player, const PKMN::Battle &client_battle,
                               const PKMN::Battle &truth_battle,
-                              std::string &reason, const Options &options) {
+                              const PKMN::Volatiles &key, std::string &reason) {
   const auto &a = client_battle.sides[player].active.volatiles;
   const auto &b = truth_battle.sides[player].active.volatiles;
-  COMPARE_PROPERTY(a, b, bide, "");
-  COMPARE_PROPERTY(a, b, thrashing, "");
-  COMPARE_PROPERTY(a, b, multi_hit, "");
+  COMPARE_PROPERTY(key, a, b, bide, "");
+  COMPARE_PROPERTY(key, a, b, thrashing, "");
+  COMPARE_PROPERTY(key, a, b, multi_hit, "");
   // flinch
-  COMPARE_PROPERTY(a, b, charging, "");
+  COMPARE_PROPERTY(key, a, b, charging, "");
   // we deal with binding separately since it can end privately
-  // COMPARE_PROPERTY(a, b, binding, "");
-  COMPARE_PROPERTY(a, b, invulnerable, "");
-  COMPARE_PROPERTY(a, b, confusion, "");
-  COMPARE_PROPERTY(a, b, mist, "");
-  COMPARE_PROPERTY(a, b, focus_energy, "");
-  COMPARE_PROPERTY(a, b, substitute, "");
-  COMPARE_PROPERTY(a, b, recharging, "");
-  COMPARE_PROPERTY(a, b, rage, "");
-  COMPARE_PROPERTY(a, b, leech_seed, "");
-  COMPARE_PROPERTY(a, b, toxic, "");
-  COMPARE_PROPERTY(a, b, light_screen, "");
-  COMPARE_PROPERTY(a, b, reflect, "");
-  COMPARE_PROPERTY(a, b, transform, "");
+  // COMPARE_PROPERTY(key, a, b, binding, "");
+  COMPARE_PROPERTY(key, a, b, invulnerable, "");
+  COMPARE_PROPERTY(key, a, b, confusion, "");
+  COMPARE_PROPERTY(key, a, b, mist, "");
+  COMPARE_PROPERTY(key, a, b, focus_energy, "");
+  COMPARE_PROPERTY(key, a, b, substitute, "");
+  COMPARE_PROPERTY(key, a, b, recharging, "");
+  COMPARE_PROPERTY(key, a, b, rage, "");
+  COMPARE_PROPERTY(key, a, b, leech_seed, "");
+  COMPARE_PROPERTY(key, a, b, toxic, "");
+  COMPARE_PROPERTY(key, a, b, light_screen, "");
+  COMPARE_PROPERTY(key, a, b, reflect, "");
+  COMPARE_PROPERTY(key, a, b, transform, "");
   // confusion_left
   // attacks
-  // state
-  // sub_hp
-  if (a.transform_species() == 0 && b.transform_species() == 0) {
+  // state TODO
+  if (a.substitute_hp() < b.substitute_hp()) {
+    reason += "substitute hp smaller";
+    return false;
+  }
+  const auto sub_hp_diff = a.substitute_hp() - b.substitute_hp();
+  if (sub_hp_diff > key.substitute_hp()) {
+    reason += "substitute hp " + std::to_string(a.substitute_hp()) + " " +
+              std::to_string(a.substitute_hp()) +
+              " exceeds max_diff: " + std::to_string(key.substitute_hp());
+    return false;
+  }
+
+  if (key.transform() ||
+      (a.transform_species() == 0 && b.transform_species() == 0)) {
     // pass
   } else {
     struct ID {
@@ -109,56 +130,57 @@ inline bool compare_volatiles(int player, const PKMN::Battle &client_battle,
     }
   }
   // disable_left
-  COMPARE_PROPERTY(a, b, toxic_counter, "");
+  COMPARE_PROPERTY(key, a, b, toxic_counter, "");
   return true;
 }
 
 inline bool compare_boosts(const PKMN::Boosts &client,
-                           const PKMN::Boosts &truth, std::string &reason,
-                           const Options &options) {
-  COMPARE_PROPERTY(client, truth, atk, " boost");
-  COMPARE_PROPERTY(client, truth, def, " boost");
-  COMPARE_PROPERTY(client, truth, spc, " boost");
-  COMPARE_PROPERTY(client, truth, spe, " boost");
-  COMPARE_PROPERTY(client, truth, acc, " boost");
-  COMPARE_PROPERTY(client, truth, eva, " boost");
+                           const PKMN::Boosts &truth, const PKMN::Boosts &key,
+                           std::string &reason) {
+  COMPARE_PROPERTY(key, client, truth, atk, " boost");
+  COMPARE_PROPERTY(key, client, truth, def, " boost");
+  COMPARE_PROPERTY(key, client, truth, spc, " boost");
+  COMPARE_PROPERTY(key, client, truth, spe, " boost");
+  COMPARE_PROPERTY(key, client, truth, acc, " boost");
+  COMPARE_PROPERTY(key, client, truth, eva, " boost");
   return true;
 }
 
 inline bool compare_stats(const PKMN::Stats &client_stats,
-                          const PKMN::Stats &truth, std::string &reason,
-                          const Options &options) {
-  COMPARE_FIELD(client_stats, truth, hp, " stat");
-  COMPARE_FIELD(client_stats, truth, atk, " stat");
-  COMPARE_FIELD(client_stats, truth, def, " stat");
-  COMPARE_FIELD(client_stats, truth, spe, " stat");
-  COMPARE_FIELD(client_stats, truth, spc, " stat");
+                          const PKMN::Stats &truth, const PKMN::Stats &key,
+                          std::string &reason) {
+  COMPARE_FIELD(key, client_stats, truth, hp, " stat");
+  COMPARE_FIELD(key, client_stats, truth, atk, " stat");
+  COMPARE_FIELD(key, client_stats, truth, def, " stat");
+  COMPARE_FIELD(key, client_stats, truth, spe, " stat");
+  COMPARE_FIELD(key, client_stats, truth, spc, " stat");
   return true;
 }
 
 inline bool compare_active(int player, const PKMN::Battle &client_battle,
                            const PKMN::Battle &truth_battle,
-                           std::string &reason, const Options &options) {
+                           const PKMN::ActivePokemon &key,
+                           std::string &reason) {
   const auto &client = client_battle.sides[player].active;
   const auto &truth = truth_battle.sides[player].active;
-  if (!compare_volatiles(player, client_battle, truth_battle, reason,
-                         options)) {
+  if (!compare_volatiles(player, client_battle, truth_battle, key.volatiles,
+                         reason)) {
     return false;
   }
-  if (!compare_moves(client.moves, truth.moves, "active ", reason, options)) {
+  if (!compare_moves(client.moves, truth.moves, "active ", key.moves, reason)) {
     return false;
   }
-  if (!compare_stats(client.stats, truth.stats, reason, options)) {
+  if (!compare_stats(client.stats, truth.stats, key.stats, reason)) {
     return false;
   }
-  if (!compare_boosts(client.boosts, truth.boosts, reason, options)) {
+  if (!compare_boosts(client.boosts, truth.boosts, key.boosts, reason)) {
     return false;
   }
-  if (client.types != truth.types) {
+  if (!key.types && client.types != truth.types) {
     reason += "active types";
     return false;
   }
-  if (client.species != truth.species) {
+  if (!static_cast<bool>(key.species) && client.species != truth.species) {
     reason += "active species";
     return false;
   }
@@ -178,36 +200,37 @@ auto normalize_status(PKMN::Status status) {
 }
 
 inline bool compare_pokemon(const PKMN::Pokemon &client,
-                            const PKMN::Pokemon &truth, std::string &reason,
-                            const Options &options) {
-  if (!compare_stats(client.stats, truth.stats, reason, options)) {
+                            const PKMN::Pokemon &truth,
+                            const PKMN::Pokemon &key, std::string &reason) {
+  if (!compare_stats(client.stats, truth.stats, key.stats, reason)) {
     return false;
   }
-  if (!compare_moves(client.moves, truth.moves, "stored ", reason, options)) {
+  if (!compare_moves(client.moves, truth.moves, "stored ", key.moves, reason)) {
     return false;
   }
-  if (normalize_status(client.status) != normalize_status(truth.status)) {
+  if (!static_cast<bool>(key.status) &&
+      normalize_status(client.status) != normalize_status(truth.status)) {
     reason += "stored status";
     return false;
   }
-  if (client.species != truth.species) {
+  if (!static_cast<bool>(key.species) && client.species != truth.species) {
     reason += "stored species";
     return false;
   }
-  if (client.types != truth.types) {
+  if (!key.types && client.types != truth.types) {
     reason += "stored types";
     return false;
   }
-  if (client.level != truth.level) {
+  if (!key.level && client.level != truth.level) {
     reason += "stored level";
     return false;
   }
   auto diff =
       client.hp > truth.hp ? client.hp - truth.hp : truth.hp - client.hp;
-  if (diff > options.max_hp_diff) {
+  if (diff > key.hp) {
     reason += "stored hp " + std::to_string(client.hp) + " " +
               std::to_string(truth.hp) +
-              " exceeds max_diff: " + std::to_string(options.max_hp_diff);
+              " exceeds max_diff: " + std::to_string(key.hp);
     return false;
   }
   return true;
@@ -215,18 +238,20 @@ inline bool compare_pokemon(const PKMN::Pokemon &client,
 
 inline bool compare_pokemon_sleep(const PokemonSleep &client,
                                   const PokemonSleep &truth,
-                                  std::string &reason, const Options &options) {
+                                  const PKMN::Pokemon &key,
+                                  std::string &reason) {
   const bool client_fainted = (client.first.hp == 0);
   const bool truth_fainted = (truth.first.hp == 0);
-  if (client_fainted != truth_fainted) {
+  if (!key.hp && client_fainted != truth_fainted) {
     reason += "faint";
     return false;
   }
   if (!truth_fainted) {
-    if (!compare_pokemon(client.first, truth.first, reason, options)) {
+    if (!compare_pokemon(client.first, truth.first, key, reason)) {
       return false;
     }
-    if (is_slept(client.first.status) || is_slept(truth.first.status)) {
+    if (!static_cast<bool>(key.status) &&
+        (is_slept(client.first.status) || is_slept(truth.first.status))) {
       if (client.second != truth.second) {
         reason += "mismatched sleep duration";
         return false;
@@ -250,9 +275,9 @@ Bench get_bench(const PKMN::Side &side, const PKMN::Duration &duration) {
 }
 
 inline bool compare_bench(const Bench &client, const Bench &truth,
-                          std::string &reason, const Options &options) {
+                          const PKMN::Side &key, std::string &reason) {
 
-  if (!compare_pokemon_sleep(client[0], truth[0], reason, options)) {
+  if (!compare_pokemon_sleep(client[0], truth[0], key.pokemon[0], reason)) {
     return false;
   }
   for (auto slot = 2; slot <= 6; ++slot) {
@@ -265,12 +290,12 @@ inline bool compare_bench(const Bench &client, const Bench &truth,
           return x.first.species == ps.first.species;
         });
     if (matching == truth.end()) {
-      reason += "Could not match client's " +
+      reason += "species : Could not match client's " +
                 PKMN::species_string(ps.first.species) + " at slot " +
                 std::to_string(slot);
       return false;
     }
-    if (!compare_pokemon_sleep(ps, *matching, reason, options)) {
+    if (!compare_pokemon_sleep(ps, *matching, key.pokemon[0], reason)) {
       return false;
     }
   }
@@ -281,50 +306,45 @@ inline bool compare_side(int player, const PKMN::Battle &client_battle,
                          const PKMN::Duration &client_duration,
                          const PKMN::Battle &truth_battle,
                          const PKMN::Duration &truth_duration,
-                         std::string &reason, const Options &options) {
+                         const PKMN::Side &key,
+                         const PKMN::Duration &duration_key,
+                         std::string &reason) {
 
   const auto &client_side = client_battle.sides[player];
   const auto &truth_side = truth_battle.sides[player];
   const auto client_fainted = client_side.stored().hp == 0;
-  const auto truth_fainted = client_side.stored().hp == 0;
+  const auto truth_fainted = truth_side.stored().hp == 0;
   if (client_fainted != truth_fainted) {
     reason += "stored faint mismatch";
     return false;
   }
   if (!truth_fainted) {
-    if (!compare_active(player, client_battle, truth_battle, reason, options)) {
+    if (!compare_active(player, client_battle, truth_battle, key.active,
+                        reason)) {
       return false;
     }
-    COMPARE_PROPERTY(client_duration, truth_duration, confusion, " duration");
-    COMPARE_PROPERTY(client_duration, truth_duration, attacking, " duration");
-    COMPARE_PROPERTY(client_duration, truth_duration, disable, " duration");
-    // COMPARE_PROPERTY(client_duration, truth_duration, binding, " duration");
-
-    if (truth_side.active.volatiles.binding() || truth_duration.binding()) {
-      if (truth_side.active.volatiles.binding() !=
-          client_side.active.volatiles.binding()) {
-        reason += "volatiles binding";
-        return false;
-      }
-      if (truth_duration.binding() != client_duration.binding()) {
-        reason += "duration binding";
-        return false;
-      }
-    }
+    COMPARE_PROPERTY(duration_key, client_duration, truth_duration, confusion,
+                     " duration");
+    COMPARE_PROPERTY(duration_key, client_duration, truth_duration, attacking,
+                     " duration");
+    COMPARE_PROPERTY(duration_key, client_duration, truth_duration, disable,
+                     " duration");
+    COMPARE_PROPERTY(duration_key, client_duration, truth_duration, binding,
+                     " duration");
   }
   const auto client_bench = get_bench(client_side, client_duration);
   const auto truth_bench = get_bench(truth_side, truth_duration);
-  if (!compare_bench(client_bench, truth_bench, reason, options)) {
+  if (!compare_bench(client_bench, truth_bench, key, reason)) {
     return false;
   }
-  // TODO
-  if (client_side.last_used_move != truth_side.last_used_move) {
-    reason += " last_used_move";
+  if (!static_cast<bool>(key.last_used_move) &&
+      client_side.last_used_move != truth_side.last_used_move) {
+    reason += "last_used_move";
     return false;
   }
-  if (options.last_selected_move &&
+  if (!static_cast<bool>(key.last_selected_move) &&
       (client_side.last_selected_move != truth_side.last_selected_move)) {
-    reason += " last_selected_move";
+    reason += "last_selected_move";
     return false;
   }
   // Data::Move last_used_move;
@@ -335,35 +355,44 @@ inline bool compare_battles(const PKMN::Battle &client_battle,
                             const PKMN::Durations &client_durations,
                             const PKMN::Battle &truth_battle,
                             const PKMN::Durations &truth_durations,
+                            const PKMN::Battle &key,
+                            const PKMN::Durations &durations_key,
                             std::string &reason) {
-  auto p1 = Options{.max_hp_diff = 0, .last_selected_move = false};
-  auto p2 = Options{.max_hp_diff = 15, .last_selected_move = false};
   for (auto i = 0; i < 2; ++i) {
     if (!compare_side(i, client_battle, client_durations.get(i), truth_battle,
-                      truth_durations.get(i), reason, i ? p2 : p1)) {
+                      truth_durations.get(i), key.sides[i],
+                      durations_key.get(i), reason)) {
       return false;
     }
   }
   // last damage
-  // bool client_null_damage = (client_battle.last_damage == 0);
-  // bool truth_null_damage = (truth_battle.last_damage == 0);
-  // if (client_null_damage != truth_null_damage) {
-  //   reason += " battle null damage";
-  //   return false;
-  // }
-  // if (!client_null_damage) {
-  //   constexpr uint16_t max_last_damage_diff = 15;
-  //   auto c_dmg = client_battle.last_damage;
-  //   auto t_dmg = truth_battle.last_damage;
-  //   auto diff = (c_dmg > t_dmg ? c_dmg - t_dmg : t_dmg - c_dmg);
-  //   if (diff >= max_last_damage_diff) {
-  //     reason += " last_damage " + ' ' + std::to_string(c_dmg) + ' ' +
-  //     std::to_string(t_dmg); return false;
-  //   }
-  // }
-
+  bool client_null_damage = (client_battle.last_damage == 0);
+  bool truth_null_damage = (truth_battle.last_damage == 0);
+  if (client_null_damage != truth_null_damage) {
+    reason += "last_damage null";
+    return false;
+  }
+  if (!client_null_damage) {
+    auto c_dmg = client_battle.last_damage;
+    auto t_dmg = truth_battle.last_damage;
+    auto diff = (c_dmg > t_dmg ? c_dmg - t_dmg : t_dmg - c_dmg);
+    auto damage_ratio = (float)c_dmg / (t_dmg);
+    auto exceeds = (c_dmg > t_dmg);
+    // seemingly, normal damage variation seems really high with low damage
+    // numbers do to loss of precision
+    if (((c_dmg > 15) && (damage_ratio < (.8))) ||
+        (exceeds && (diff > key.last_damage))) {
+      reason +=
+          "last_damage " + std::to_string(c_dmg) + " " + std::to_string(t_dmg);
+      return false;
+    }
+  }
   // We probably ignore this since it's used for Desync detection
-  // std::array<MoveDetails, 2> last_moves;
+  COMPARE_FIELD(key, client_battle, truth_battle, last_moves[0].counterable,
+                "");
+  COMPARE_FIELD(key, client_battle, truth_battle, last_moves[1].counterable,
+                "");
+
   return true;
 }
 
