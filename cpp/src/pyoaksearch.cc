@@ -15,8 +15,7 @@
 namespace Py::PKMN {
 
 namespace py = pybind11;
-using namespace PKMN;
-using namespace PKMN::Data;
+using namespace ::PKMN::Data;
 
 Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
                                        std::string network_path,
@@ -31,8 +30,8 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
   RuntimeSearch::Agent agent{agent_params};
   auto battle =
       *reinterpret_cast<const pkmn_gen1_battle *>(battle_frames.battle.data());
-  auto options = PKMN::options();
-  auto result = PKMN::result();
+  auto options = ::PKMN::options();
+  auto result = ::PKMN::result();
   agent.initialize_network(battle);
   mt19937 device{std::random_device{}()};
 
@@ -52,7 +51,7 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
   for (auto i = 0; i < battle_frames.size; ++i) {
     MCTS::Input input{
         .battle = battle,
-        .durations = PKMN::durations(options),
+        .durations = ::PKMN::durations(options),
         .result = result,
     };
     RuntimeSearch::Heap heap{};
@@ -62,7 +61,7 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
     std::copy_n(output.p2.logit.data(), output.p2.k, p2_logit);
     std::copy_n(output.p1.prior.data(), output.p1.k, p1_policy);
     std::copy_n(output.p2.prior.data(), output.p2.k, p2_policy);
-    result = PKMN::update(battle, choice[0], choice[1], options);
+    result = ::PKMN::update(battle, choice[0], choice[1], options);
     // out
     value += 1;
     p1_logit += 18;
@@ -215,7 +214,8 @@ PYBIND11_MODULE(pyoaksearch, m) {
         auto durations = DurationsView{durations_bytes};
         RuntimeSearch::Heap heap{};
         mt19937 device{std::random_device{}()};
-        MCTS::Input input{battle.raw, durations.raw, PKMN::result(battle.raw)};
+        MCTS::Input input{battle.raw, durations.raw,
+                          ::PKMN::result(battle.raw)};
         auto agent = RuntimeSearch::Agent{};
         agent.budget = budget;
         agent.bandit = bandit;

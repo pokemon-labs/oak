@@ -14,7 +14,6 @@
 namespace Py::PKMN {
 
 namespace py = pybind11;
-using namespace ::PKMN;
 
 static inline std::string_view bytes_sv(const py::bytes &b) {
   return {PyBytes_AS_STRING(b.ptr()),
@@ -33,7 +32,7 @@ static constexpr uint64_t bf_set(uint64_t bits, int shift, uint64_t val) {
   return (bits & ~mask) | ((val & ((1ULL << N) - 1)) << shift);
 }
 struct StatsProxy {
-  Stats *p;
+  ::PKMN::Stats *p;
 
   uint16_t get_hp() const { return p->hp; }
   uint16_t get_atk() const { return p->atk; }
@@ -49,18 +48,27 @@ struct StatsProxy {
 };
 
 struct MoveSlotProxy {
-  MoveSlot *p;
+  ::PKMN::MoveSlot *p;
 
   uint8_t get_id() const { return static_cast<uint8_t>(p->id); }
   uint8_t get_pp() const { return p->pp; }
-  void set_id(uint8_t v) { p->id = static_cast<Move>(v); }
+  void set_id(uint8_t v) { p->id = static_cast<::PKMN::Move>(v); }
   void set_pp(uint8_t v) { p->pp = v; }
 
-  std::string name() const { return PKMN::move_string(p->id); }
+  std::string name() const { return ::PKMN::move_string(p->id); }
+};
+
+struct MoveDetailsProxy {
+  ::PKMN::MoveDetails* p;
+
+  uint8_t get_index() const {return p->index;}
+  void set_index(uint8_t val) {p->index = val;}
+  uint8_t get_counterable() const {return p->counterable;}
+  void set_counterable(uint8_t val) {p->counterable = val;}
 };
 
 struct BoostsProxy {
-  Boosts *p;
+  ::PKMN::Boosts *p;
 
   int8_t get_atk() const { return p->atk(); }
   int8_t get_def() const { return p->def(); }
@@ -85,7 +93,7 @@ struct BoostsProxy {
 };
 
 struct VolatilesProxy {
-  Volatiles *p;
+  ::PKMN::Volatiles *p;
 
   bool get_bide() const { return p->bide(); }
   bool get_thrashing() const { return p->thrashing(); }
@@ -162,7 +170,7 @@ struct VolatilesProxy {
 };
 
 struct PokemonProxy {
-  Pokemon *p;
+  ::PKMN::Pokemon *p;
 
   StatsProxy stats() { return {&p->stats}; }
   MoveSlotProxy move(int i) {
@@ -178,24 +186,24 @@ struct PokemonProxy {
   uint8_t get_level() const { return p->level; }
 
   void set_hp(uint16_t v) { p->hp = v; }
-  void set_status(uint8_t v) { p->status = static_cast<Status>(v); }
-  void set_species(uint8_t v) { p->species = static_cast<Species>(v); }
+  void set_status(uint8_t v) { p->status = static_cast<::PKMN::Status>(v); }
+  void set_species(uint8_t v) { p->species = static_cast<::PKMN::Species>(v); }
   void set_types(uint8_t v) { p->types = v; }
   void set_level(uint8_t v) { p->level = v; }
 
   int percent() const { return p->percent(); }
 
   std::string species_name() const {
-    return PKMN::species_string(p->species);
+    return ::PKMN::species_string(p->species);
   }
-  std::string status_name() const { return status_string(p->status); }
+  std::string status_name() const { return ::PKMN::status_string(p->status); }
   std::string to_string() const {
-    return pokemon_to_string(reinterpret_cast<const uint8_t *>(p));
+    return ::PKMN::pokemon_to_string(reinterpret_cast<const uint8_t *>(p));
   }
 };
 
 struct ActivePokemonProxy {
-  ActivePokemon *p;
+  ::PKMN::ActivePokemon *p;
 
   StatsProxy stats() { return {&p->stats}; }
   BoostsProxy boosts() { return {&p->boosts}; }
@@ -208,16 +216,16 @@ struct ActivePokemonProxy {
 
   uint8_t get_species() const { return static_cast<uint8_t>(p->species); }
   uint8_t get_types() const { return p->types; }
-  void set_species(uint8_t v) { p->species = static_cast<Species>(v); }
+  void set_species(uint8_t v) { p->species = static_cast<::PKMN::Species>(v); }
   void set_types(uint8_t v) { p->types = v; }
 
   std::string species_name() const {
-    return PKMN::species_string(p->species);
+    return ::PKMN::species_string(p->species);
   }
 };
 
 struct SideProxy {
-  Side *p;
+  ::PKMN::Side *p;
 
   PokemonProxy pokemon(int i) {
     if (i < 0 || i > 5)
@@ -243,15 +251,15 @@ struct SideProxy {
     return static_cast<uint8_t>(p->last_used_move);
   }
   void set_last_selected_move(uint8_t v) {
-    p->last_selected_move = static_cast<Move>(v);
+    p->last_selected_move = static_cast<::PKMN::Data::Move>(v);
   }
   void set_last_used_move(uint8_t v) {
-    p->last_used_move = static_cast<Move>(v);
+    p->last_used_move = static_cast<::PKMN::Data::Move>(v);
   }
 };
 
 struct DurationProxy {
-  Duration *p;
+  ::PKMN::Duration *p;
 
   uint8_t sleep(int slot) const {
     if (slot < 0 || slot > 5)
@@ -293,8 +301,8 @@ struct DurationsView {
     std::memcpy(&raw, sv.data(), PKMN_GEN1_CHANCE_DURATIONS_SIZE);
   }
 
-  Durations &durations() { return view(raw); }
-  const Durations &durations() const { return view(raw); }
+  ::PKMN::Durations &durations() { return ::PKMN::view(raw); }
+  const ::PKMN::Durations &durations() const { return ::PKMN::view(raw); }
 
   DurationProxy get(int i) {
     if (i < 0 || i > 1)
@@ -306,15 +314,6 @@ struct DurationsView {
     return py::bytes(reinterpret_cast<const char *>(&raw),
                      PKMN_GEN1_CHANCE_DURATIONS_SIZE);
   }
-};
-
-struct MoveDetailsProxy {
-  MoveDetails* p;
-
-  uint8_t get_index() const {return p->index;}
-  void set_index(uint8_t val) {p->index = val;}
-  uint8_t get_counterable() const {return p->counterable;}
-  void set_counterable(uint8_t val) {p->counterable = val;}
 };
 
 struct BattleView {
@@ -331,8 +330,8 @@ struct BattleView {
     std::memcpy(&raw, sv.data(), PKMN_GEN1_BATTLE_SIZE);
   }
 
-  Battle &battle() { return view(raw); }
-  const Battle &battle() const { return view(raw); }
+  ::PKMN::Battle &battle() { return ::PKMN::view(raw); }
+  const ::PKMN::Battle &battle() const { return ::PKMN::view(raw); }
 
   SideProxy side(int i) {
     if (i < 0 || i > 1)
@@ -360,7 +359,7 @@ struct BattleView {
                      PKMN_GEN1_BATTLE_SIZE);
   }
 
-  std::string to_string() const { return PKMN::to_string(raw); }
+  std::string to_string() const { return ::PKMN::to_string(raw); }
 };
 
 }

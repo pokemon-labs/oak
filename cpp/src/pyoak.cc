@@ -33,8 +33,8 @@
 namespace Py::PKMN {
 
 namespace py = pybind11;
-using namespace PKMN;
-using namespace PKMN::Data;
+using namespace ::PKMN;
+using namespace ::PKMN::Data;
 
 const auto solve_matrix(py::array_t<float> p1_payoffs,
                         const int discretize_factor = 256) {

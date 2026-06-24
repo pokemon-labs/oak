@@ -11,8 +11,8 @@
 namespace Py::PKMN {
 
 namespace py = pybind11;
-using namespace PKMN;
-using namespace PKMN::Data;
+using namespace ::PKMN;
+using namespace ::PKMN::Data;
 
 PYBIND11_MODULE(pyoaklog, m) {
   py::module_::import("oak");

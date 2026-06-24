@@ -33,8 +33,7 @@ dim_labels_to_vec(const std::array<std::array<char, M>, N> &data) {
 }
 
 namespace py = pybind11;
-using namespace PKMN;
-using namespace PKMN::Data;
+using namespace ::PKMN::Data;
 
 py::list read_battle_data(const std::string &path) {
   std::ifstream file(path, std::ios::binary);
