@@ -209,21 +209,21 @@ size_t sample(Py::Battle::EncodedFrames &encoded_frames,
             0, valid.size() - 1)(mt)];
 
         auto battle = compressed.battle;
-        auto options = PKMN::options();
-        auto result = PKMN::result();
+        auto options = ::PKMN::options();
+        auto result = ::PKMN::result();
         for (auto i = 0; i < selected; ++i) {
           const auto &update = compressed.updates[i];
-          result =
-              PKMN::update(battle, update.p1.choice, update.p2.choice, options);
+          result = ::PKMN::update(battle, update.p1.choice, update.p2.choice,
+                                  options);
         }
 
         size_t write_index = count.fetch_add(1);
         if (write_index >= encoded_frames.size) {
           return;
         }
-        encoded_frames.write(write_index, battle, PKMN::durations(options),
+        encoded_frames.write(write_index, battle, ::PKMN::durations(options),
                              result, compressed.updates[selected],
-                             PKMN::score(compressed.result));
+                             ::PKMN::score(compressed.result));
       }
     } catch (const std::exception &e) {
       report_error(e.what());
