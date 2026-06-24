@@ -311,10 +311,10 @@ struct DurationsView {
 struct MoveDetailsProxy {
   MoveDetails* p;
 
-  uint8_t &index() {return p->index;}
-  const uint8_t &index() const {return p->index;}
-  uint8_t &counterable() {return p->counterable;}
-  const uint8_t &counterable() const {return p->counterable;}
+  uint8_t get_index() const {return p->index;}
+  void set_index(uint8_t val) {p->index = val;}
+  uint8_t get_counterable() const {return p->counterable;}
+  void set_counterable(uint8_t val) {p->counterable = val;}
 };
 
 struct BattleView {

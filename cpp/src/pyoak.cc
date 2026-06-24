@@ -272,6 +272,14 @@ PYBIND11_MODULE(pyoak, m) {
         }() + ">";
       });
 
+  py::class_<MoveDetailsProxy>(m, "MoveDetails")
+      .def_property("index", &MoveDetailsProxy::get_index,
+                    &MoveDetailsProxy::set_index,
+                    py::return_value_policy::reference_internal)
+      .def_property("counterable", &MoveDetailsProxy::get_counterable,
+                    &MoveDetailsProxy::set_counterable,
+                    py::return_value_policy::reference_internal);
+
   py::class_<PokemonProxy>(m, "Pokemon")
       .def("stats", &PokemonProxy::stats,
            py::return_value_policy::reference_internal)

@@ -75,8 +75,8 @@ inline bool compare_volatiles(int player, const PKMN::Battle &client_battle,
   COMPARE_PROPERTY(key, a, b, multi_hit, "");
   // flinch
   COMPARE_PROPERTY(key, a, b, charging, "");
-  // we deal with binding separately since it can end privately
-  // COMPARE_PROPERTY(key, a, b, binding, "");
+  // we disable it with the key since it can end privately
+  COMPARE_PROPERTY(key, a, b, binding, "");
   COMPARE_PROPERTY(key, a, b, invulnerable, "");
   COMPARE_PROPERTY(key, a, b, confusion, "");
   COMPARE_PROPERTY(key, a, b, mist, "");
@@ -91,7 +91,16 @@ inline bool compare_volatiles(int player, const PKMN::Battle &client_battle,
   COMPARE_PROPERTY(key, a, b, transform, "");
   // confusion_left
   // attacks
-  // state TODO
+  if (!key.bide() && a.bide()) {
+    // b then also has bide set
+    const auto state_diff =
+        a.state() > b.state() ? a.state() - b.state() : b.state() - a.state();
+    if (state_diff > key.state()) {
+      reason += "state " + std::to_string(a.state()) + " " +
+                std::to_string(b.state());
+      return false;
+    }
+  }
   if (a.substitute_hp() < b.substitute_hp()) {
     reason += "substitute hp smaller";
     return false;
