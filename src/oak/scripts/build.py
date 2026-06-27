@@ -287,7 +287,9 @@ def main():
 
             trajectories = oak.train.BuildTrajectories(args.trajectories_per_step)
 
-            n_read = oak.train.read_build_trajectories(trajectories, data_files, args.threads)
+            n_read = oak.train.read_build_trajectories(
+                trajectories, data_files, args.threads
+            )
 
             if n_read < trajectories.size:
                 print(f"Error reading files, continuing")
