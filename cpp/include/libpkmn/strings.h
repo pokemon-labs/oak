@@ -338,10 +338,13 @@ battle_data_to_string(const pkmn_gen1_battle &battle,
       }
       ss << '\n';
     }
-    ss << "|| last_used: " << PKMN::move_string(side.last_used_move) << '/'
+    const auto &move_details = b.last_moves[s];
+    ss << "|| used: " << PKMN::move_string(side.last_used_move) << '/'
        << (int)side.last_used_move << ' ';
-    ss << "last_selected: " << PKMN::move_string(side.last_selected_move) << '/'
+    ss << "selected: " << PKMN::move_string(side.last_selected_move) << '/'
        << (int)side.last_selected_move << ' ';
+    ss << (move_details.counterable ? "[Counterable - " : "[Not Counterable - ")
+       << int(move_details.index) << "] ";
     ss << '(';
     for (auto o = 0; o < 6; ++o) {
       ss << (int)side.order[o] << ' ';
