@@ -10,7 +10,7 @@ using PKMN::Data::Species;
 
 #define COMPARE_PROPERTY(key, a, b, property, suffix)                          \
   do {                                                                         \
-    if (!key.property()) {                                                     \
+    if (!static_cast<bool>(key.property())) {                                  \
       if (a.property() != b.property()) {                                      \
         reason += #property suffix " mismatch";                                \
         return false;                                                          \
@@ -21,7 +21,7 @@ using PKMN::Data::Species;
 
 #define COMPARE_FIELD(key, a, b, field, suffix)                                \
   do {                                                                         \
-    if (!key.field) {                                                          \
+    if (!static_cast<bool>(key.field)) {                                       \
       if (a.field != b.field) {                                                \
         reason += #field suffix " mismatch";                                   \
         return false;                                                          \
@@ -33,11 +33,6 @@ using PKMN::Data::Species;
 using Moves = std::array<PKMN::MoveSlot, 4>;
 using PokemonSleep = std::pair<PKMN::Pokemon, uint8_t>;
 using Bench = std::array<PokemonSleep, 6>;
-
-struct Options {
-  int max_hp_diff;
-  bool last_selected_move;
-};
 
 inline bool compare_moves(const Moves &client, const Moves &truth,
                           std::string prefix, const Moves &key,
@@ -108,7 +103,7 @@ inline bool compare_volatiles(int player, const PKMN::Battle &client_battle,
   const auto sub_hp_diff = a.substitute_hp() - b.substitute_hp();
   if (sub_hp_diff > key.substitute_hp()) {
     reason += "substitute hp " + std::to_string(a.substitute_hp()) + " " +
-              std::to_string(a.substitute_hp()) +
+              std::to_string(b.substitute_hp()) +
               " exceeds max_diff: " + std::to_string(key.substitute_hp());
     return false;
   }
@@ -346,16 +341,10 @@ inline bool compare_side(int player, const PKMN::Battle &client_battle,
   if (!compare_bench(client_bench, truth_bench, key, reason)) {
     return false;
   }
-  if (!static_cast<bool>(key.last_used_move) &&
-      client_side.last_used_move != truth_side.last_used_move) {
-    reason += "last_used_move";
-    return false;
-  }
-  if (!static_cast<bool>(key.last_selected_move) &&
-      (client_side.last_selected_move != truth_side.last_selected_move)) {
-    reason += "last_selected_move";
-    return false;
-  }
+
+  COMPARE_FIELD(key, client_side, truth_side, last_used_move, "");
+  COMPARE_FIELD(key, client_side, truth_side, last_selected_move, "");
+
   // Data::Move last_used_move;
   return true;
 }
@@ -368,10 +357,36 @@ inline bool compare_battles(const PKMN::Battle &client_battle,
                             const PKMN::Durations &durations_key,
                             std::string &reason) {
   for (auto i = 0; i < 2; ++i) {
+    const auto &client_side = client_battle.sides[i];
+    const auto &truth_side = truth_battle.sides[i];
+
     if (!compare_side(i, client_battle, client_durations.get(i), truth_battle,
                       truth_durations.get(i), key.sides[i],
                       durations_key.get(i), reason)) {
       return false;
+    }
+    COMPARE_FIELD(key, client_battle, truth_battle, last_moves[i].counterable,
+                  "");
+    // last_move.index
+    const bool should_compare_index =
+        !static_cast<bool>(key.last_moves[i].index) &&
+        !static_cast<bool>(
+            key.sides[i].last_selected_move) && // they both match already from
+                                                // compare side
+        static_cast<bool>(
+            client_battle.sides[i]
+                .last_selected_move); // is this is None then last_move.index is
+                                      // *probably* 1
+    if (should_compare_index) {
+      const auto client_id =
+          client_side.active.moves[client_battle.last_moves[i].index - 1].id;
+      const auto truth_id =
+          truth_side.active.moves[truth_battle.last_moves[i].index - 1].id;
+      if (client_id != truth_id) {
+        reason += "last_moves.index " + PKMN::move_string(client_id) + " " +
+                  PKMN::move_string(truth_id);
+        return false;
+      }
     }
   }
   // last damage
@@ -396,11 +411,6 @@ inline bool compare_battles(const PKMN::Battle &client_battle,
       return false;
     }
   }
-  // We probably ignore this since it's used for Desync detection
-  COMPARE_FIELD(key, client_battle, truth_battle, last_moves[0].counterable,
-                "");
-  COMPARE_FIELD(key, client_battle, truth_battle, last_moves[1].counterable,
-                "");
 
   return true;
 }
