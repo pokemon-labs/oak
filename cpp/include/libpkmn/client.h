@@ -371,11 +371,11 @@ inline bool compare_battles(const PKMN::Battle &client_battle,
     const bool should_compare_index =
         !static_cast<bool>(key.last_moves[i].index) &&
         !static_cast<bool>(
-            key.sides[i].last_selected_move) && // they both match already from
+            key.sides[i].last_used_move) && // they both match already from
                                                 // compare side
         static_cast<bool>(
             client_battle.sides[i]
-                .last_selected_move); // is this is None then last_move.index is
+                .last_used_move); // is this is None then last_move.index is
                                       // *probably* 1
     if (should_compare_index) {
       const auto client_id =
