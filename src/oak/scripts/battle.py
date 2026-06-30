@@ -318,6 +318,18 @@ def main():
         with open(args.network_path, "rb") as f:
             network.read_parameters(f)
 
+    # Optimizer must be constructed after read_parameters: read_parameters
+    # rebuilds each Affine's nn.Linear submodule with fresh Parameter
+    # objects, so building the optimizer beforehand would bind it to
+    # discarded tensors that are no longer part of the network.
+    optimizer = Optimizer(network, args.lr)
+    print(args.network_path)
+    start_step = 0
+    if args.network_path:
+        start_step = oak.common_args.load_train_state(
+            oak.common_args.train_state_path(args.network_path), optimizer.opt
+        )
+
     with open(os.path.join(args.dir, "initial.battle.net"), "wb") as f:
         network.write_parameters(f)
         print("Saved initial network in output directory.")
@@ -331,13 +343,14 @@ def main():
         args.batch_size, args.pokemon_out_dim, args.active_out_dim
     )
 
-    optimizer = Optimizer(network, args.lr)
-
     sample_indexer = oak.train.SampleIndexer()
 
-    step_iterator = range(args.steps) if args.steps >= 0 else itertools.count()
+    remaining_steps = max(args.steps - start_step, 0) if args.steps >= 0 else None
+    step_iterator = (
+        range(remaining_steps) if remaining_steps is not None else itertools.count()
+    )
 
-    skipped_steps = 0
+    skipped_steps = -start_step
 
     for s in step_iterator:
 

@@ -221,6 +221,13 @@ def main():
                 print(f"Reading initial network from {args.network_path}")
                 with open(args.network_path, "rb") as g:
                     network.read_parameters(g)
+                optimizer = torch.optim.Adam(network.parameters(), lr=args.lr)
+                step = oak.common_args.load_train_state(
+                    oak.common_args.train_state_path(args.network_path), optimizer
+                )
+                oak.common_args.save_train_state(
+                    oak.common_args.train_state_path(network_path), optimizer, step
+                )
             network.write_parameters(f)
 
     if use_build:

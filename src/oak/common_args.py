@@ -2,9 +2,13 @@ import argparse
 import time
 import os
 import fcntl
+import random
 from typing import List
 
 import oak
+
+# Extension for pickled optimizer params, current step, RNG (doesn't matter)
+TRAIN_STATE_EXT = ".train_state"
 
 
 def add_common_args(
@@ -131,6 +135,50 @@ def get_files(args: argparse.ArgumentParser, ext: str) -> [List[str], bool]:
     return data_files, True
 
 
+def train_state_path(path: str) -> str:
+    return path + TRAIN_STATE_EXT
+
+
+def save_train_state(path: str, opt, step: int):
+    import torch
+
+    state = {
+        "step": step,
+        "optimizer": opt.state_dict(),
+        "random_state": random.getstate(),
+        "torch_rng_state": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
+    tmp_path = path + ".tmp"
+    torch.save(state, tmp_path)
+    os.replace(tmp_path, path)
+
+
+def load_train_state(path: str, opt) -> int:
+    step = 0
+    if not os.path.exists(path):
+        print(
+            f"No train state found at {path}; starting optimizer/step fresh "
+            "(this checkpoint predates resumable training state)."
+        )
+    else:
+        import torch
+
+        state = torch.load(path, map_location="cpu")
+        opt.load_state_dict(state["optimizer"])
+        if "random_state" in state:
+            random.setstate(state["random_state"])
+        if "torch_rng_state" in state:
+            torch.set_rng_state(state["torch_rng_state"].cpu())
+        if "cuda_rng_state_all" in state and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(state["cuda_rng_state_all"])
+
+        step = state.get("step", 0)
+        print(f"Loaded train state from {path}, resuming at step {step}.")
+    return step
+
+
 def save_and_decay(args, network, opt, step: int, ext: str):
     if step >= args.lr_decay_start:
         if (step % args.lr_decay_interval) == 0:
@@ -145,11 +193,13 @@ def save_and_decay(args, network, opt, step: int, ext: str):
             network.write_parameters(f)
             fcntl.flock(f, fcntl.LOCK_UN)
         os.replace(tmp_path, ckpt_path)
+        save_train_state(train_state_path(ckpt_path), opt, step + 1)
 
     if (step + 1) % args.checkpoint == 0:
         ckpt_path = os.path.join(args.dir, f"{step + 1}{ext}")
         with open(ckpt_path, "wb") as f:
             network.write_parameters(f)
+        save_train_state(train_state_path(ckpt_path), opt, step + 1)
         print(f"Checkpoint saved at step {step + 1}: {ckpt_path}")
 
     time.sleep(args.sleep)
