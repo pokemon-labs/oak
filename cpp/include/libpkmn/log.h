@@ -426,9 +426,9 @@ template <View view = View::omniscient> struct Parser {
         auto status = read_u8();
         possibly_hide_hp(identity, hp, max_hp);
         std::string level_string =
-            level == 100 ? "" : (std::to_string(level) + "|");
+            level == 100 ? "|" : (", L" + std::to_string(level) + "|");
         push("|switch|" + ident_to_string(PKMN::view(battle), identity) + "|" +
-             PKMN::species_string(species) + "|" + level_string +
+             PKMN::species_string(species) + level_string +
              std::to_string(hp) + "/" + std::to_string(max_hp));
         break;
       }
