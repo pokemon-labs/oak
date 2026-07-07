@@ -198,7 +198,6 @@ struct Eval {
     const auto &battle = PKMN::view(b);
     const float score = evaluate_battle(battle);
     const float value = scaled_sigmoid(score - root_score);
-    // std::cout << root_score << ' ' << score << ' ' << value << '\n';
     return value;
   }
 };

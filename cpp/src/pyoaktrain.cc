@@ -319,7 +319,6 @@ size_t read_build_trajectories(Py::Build::Trajectories &trajectories,
   const auto end_ = std::chrono::high_resolution_clock::now();
   const auto ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(end_ - start_);
-  // std::cout << ms.count() << std::endl;
   return errors.load() ? 0 : std::min(count.load(), trajectories.size);
 }
 

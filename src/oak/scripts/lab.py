@@ -30,6 +30,7 @@ def test_consistency():
     import torch
     import oak
     import oak.torch
+    import oak.search
 
     activation = (
         oak.torch.Activation.clamp if args.discrete else oak.torch.Activation.relu
@@ -39,20 +40,20 @@ def test_consistency():
     with open(args.network, "rb") as f:
         network.read_parameters(f)
 
-    buffer_list = oak.read_battle_data(args.data_path)
+    buffer_list = oak.train.read_battle_data(args.data_path)
 
     max_games = min(args.games or len(buffer_list), len(buffer_list))
 
     for buffer, n_frames in buffer_list[:max_games]:
-        encoded_frames = oak.EncodedBattleFrames.from_bytes(buffer, n_frames)
+        encoded_frames = oak.train.EncodedBattleFrames.from_bytes(buffer, n_frames)
         encoded_frames_torch = oak.torch.EncodedBattleFrames(encoded_frames)
-        o1 = oak.OutputBuffer(encoded_frames.size)
+        o1 = oak.train.OutputBuffer(encoded_frames.size)
         python_output = oak.torch.OutputBuffer(o1)
         network.inference(encoded_frames_torch, python_output)
         python_output.policy_logit[torch.isneginf(python_output.policy_logit)] = 0.0
 
-        o2 = oak.cpp_inference(
-            oak.BattleFrames.from_bytes(buffer, n_frames),
+        o2 = oak.search.cpp_inference(
+            oak.train.BattleFrames.from_bytes(buffer, n_frames),
             args.network,
             args.discrete,
             "0",
@@ -94,7 +95,7 @@ def battle_frame_stats():
         data = oak.read_battle_data(file)
 
         for buf, n in data:
-            frames = oak.BattleFrames.from_bytes(buf, n)
+            frames = oak.train.BattleFrames.from_bytes(buf, n)
 
             for i in range(n):
                 it = frames.iterations[i].item()

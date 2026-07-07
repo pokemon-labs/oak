@@ -428,8 +428,8 @@ template <View view = View::omniscient> struct Parser {
         std::string level_string =
             level == 100 ? "|" : (", L" + std::to_string(level) + "|");
         push("|switch|" + ident_to_string(PKMN::view(battle), identity) + "|" +
-             PKMN::species_string(species) + level_string +
-             std::to_string(hp) + "/" + std::to_string(max_hp));
+             PKMN::species_string(species) + level_string + std::to_string(hp) +
+             "/" + std::to_string(max_hp));
         break;
       }
       case ArgType::cant: {
