@@ -12,8 +12,6 @@ namespace py = pybind11;
 
 namespace Py::Battle {
 
-namespace {
-
 struct Target {
   size_t size;
   py::array_t<uint8_t> k; // num actions
@@ -67,7 +65,5 @@ struct Target {
                            nash_policies_, empirical_value_, nash_value_);
   }
 };
-
-} // namespace
 
 } // namespace Py::Battle

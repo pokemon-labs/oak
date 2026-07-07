@@ -11,8 +11,6 @@ namespace Py::Battle {
 
 namespace py = pybind11;
 
-namespace {
-
 struct Frames : public Target {
   py::array_t<uint8_t> battle;
   py::array_t<uint8_t> durations;
@@ -73,7 +71,5 @@ struct Frames : public Target {
     return f;
   }
 };
-
-} // namespace
 
 } // namespace Py::Battle

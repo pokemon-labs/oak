@@ -18,8 +18,6 @@ namespace Py::Battle {
 
 namespace py = pybind11;
 
-namespace {
-
 struct EncodedFrames : public Target {
   py::array_t<float> pokemon;
   py::array_t<float> active;
@@ -147,7 +145,5 @@ struct EncodedFrames : public Target {
     return std::tie(hp_, pokemon_, active_, choice_);
   }
 };
-
-} // namespace
 
 } // namespace Py::Battle

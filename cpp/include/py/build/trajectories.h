@@ -103,8 +103,6 @@ template <typename F = Format::OU> struct TeamHelper {
   }
 };
 
-namespace {
-
 struct Trajectories {
   size_t size;
   py::array_t<int64_t> action;
@@ -235,7 +233,5 @@ struct Trajectories {
     }
   }
 };
-
-} // namespace
 
 } // namespace Py::Build

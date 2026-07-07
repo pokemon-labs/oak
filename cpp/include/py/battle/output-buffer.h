@@ -11,8 +11,6 @@ namespace Py::Battle {
 
 namespace py = pybind11;
 
-namespace {
-
 struct OutputBuffer {
   size_t size;
   size_t pokemon_out_dim;
@@ -61,7 +59,5 @@ struct OutputBuffer {
     }
   }
 };
-
-} // namespace
 
 } // namespace Py::Battle
