@@ -82,6 +82,7 @@ def battle_frame_stats():
     assert args.data_path, "Provide path to recursively search for .battle.data files"
 
     import oak
+    import oak.train
 
     files = oak.util.find_data_files(args.data_path, ext=".battle.data")
     print(f"Found {len(files)} data files")
@@ -92,7 +93,7 @@ def battle_frame_stats():
     total_var = 0
 
     for file in files:
-        data = oak.read_battle_data(file)
+        data = oak.train.read_battle_data(file)
 
         for buf, n in data:
             frames = oak.train.BattleFrames.from_bytes(buf, n)
@@ -122,22 +123,24 @@ def build_trajectory_stats():
     files = oak.util.find_data_files(".", ext=".build.data")
     assert len(files) > 0, "No build files found in cwd"
 
+    import oak.train
+
     from random import sample
 
-    build_trajectories, read = oak.read_build_trajectories(files, 1024, 1)
+    build_trajectories, read = oak.train.read_build_trajectories(files, 1024, 1)
     print(build_trajectories.size, read)
     assert build_trajectories.size == read, f"Bad read from {file}."
     for i in range(min(10, build_trajectories.size)):
         index = sample(list(range(build_trajectories.size)), 1)[0]
         print(f"Sample {index}:")
         species_move = [
-            oak.species_move_list[_]
+            oak.train.species_move_list[_]
             for _ in build_trajectories.action[index].reshape(-1)
         ]
         names = []
         for sm in species_move:
             s, m = sm
-            names.append(oak.species_names[s] + " " + oak.move_names[m])
+            names.append(oak.species_id(s) + " " + oak.move_id(m))
         selection_probs = [
             int(1000 * float(_)) / 10
             for _ in build_trajectories.policy[index].reshape(-1)
@@ -176,9 +179,10 @@ def create_team():
     args = parser.parse_args()
 
     import oak
+    import oak.train
 
     def get_index(s: int, m: int):
-        x = oak.species_move_table[s][m]
+        x = oak.train.species_move_table[s][m]
         assert x >= 0, f"Invalid species move table access: {s}, {m}"
         return x
 
@@ -188,7 +192,7 @@ def create_team():
             self.moves = set()
             self.moves_remaining = set()
             if species > 0:
-                for m, index in enumerate(oak.species_move_table[species]):
+                for m, index in enumerate(oak.train.species_move_table[species]):
                     if index >= 0 and m > 0:
                         self.moves_remaining.add(m)
 
@@ -222,7 +226,7 @@ def create_team():
             self,
         ):
             print(
-                f"{oak.species_names[self.species]}: {[oak.move_names[m] for m in self.moves]} | {len([oak.move_names[m] for m in self.moves_remaining])}"
+                f"{oak.species_id(self.species)}: {[oak.move_id(m) for m in self.moves]} | {len([oak.move_id(m) for m in self.moves_remaining])}"
             )
 
     def update_team(team, s, m):
@@ -271,15 +275,15 @@ def create_team():
         )
 
     def initial_mask():
-        mask = torch.zeros([len(oak.species_move_list)])
-        for i, sm in enumerate(oak.species_move_list):
+        mask = torch.zeros([len(oak.train.species_move_list)])
+        for i, sm in enumerate(oak.train.species_move_list):
             s, m = sm
             if m == 0:
                 mask[i] = 1
         return mask
 
     def clear_species(mask):
-        for i, sm in enumerate(oak.species_move_list):
+        for i, sm in enumerate(oak.train.species_move_list):
             s, m = sm
             if m == 0:
                 mask[i] = 0
@@ -288,7 +292,7 @@ def create_team():
 
         team = [Set() for _ in range(args.max_pokemon)]
 
-        encoded_team = torch.zeros([len(oak.species_move_list)])
+        encoded_team = torch.zeros([len(oak.train.species_move_list)])
         mask = initial_mask()
 
         steps = 10000
@@ -307,7 +311,7 @@ def create_team():
 
             logits, _ = network.forward(encoded_team)
             index, p, q = sample_masked_logits(logits * args.temp, mask)
-            species, move = oak.species_move_list[index]
+            species, move = oak.train.species_move_list[index]
             update_team(team, species, move)
 
         print("\nTeam", t)
