@@ -9,6 +9,29 @@
 #include <fstream>
 #include <thread>
 
+// budget
+// #define NO_ITERATION
+// #define NO_DURATION
+// #define NO_FLAG
+
+// evals
+// #define NO_MONTE_CARLO
+// #define NO_POKE_ENGINE
+// #define NO_NETWORK
+
+// bandits
+// #define NO_UCB
+// #define NO_UCB1
+// #define NO_PUCB
+// #define NO_EXP3
+// #define NO_PEXP3
+// matrix ucb
+// #define NO_MATRIX_UCB
+
+// heap
+// #define NO_NODE
+// #define NO_TABLE
+
 namespace RuntimeSearch {
 
 bool Heap::empty() const noexcept {
@@ -124,13 +147,21 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
   const auto parse_eval_and_search = [&](const auto dur, const auto &params,
                                          auto &heap) {
     MCTS::Search s{};
-    if (agent.is_monte_carlo()) {
+    if (false) {
+    }
+#ifndef NO_MONTE_CARLO
+    else if (agent.is_monte_carlo()) {
       MCTS::MonteCarlo model{};
       return s.run(device, dur, params, heap, model, input, output);
-    } else if (agent.is_foul_play()) {
+    }
+#endif
+#ifndef NO_POKE_ENGINE
+    else if (agent.is_foul_play()) {
       PokeEngine::Eval model{};
       return s.run(device, dur, params, heap, model, input, output);
-    } else {
+    }
+#endif
+    else {
       if (!agent.network_ptr) {
         agent.initialize_network(input.battle);
       }
@@ -165,7 +196,10 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
     using Node = std::remove_cvref_t<decltype(*node_ptr)>;
     using Table = std::remove_cvref_t<decltype(*table_ptr)>;
     auto &heap = heap_variant.data;
-    if (agent.table) {
+    if (false) {
+    }
+#ifndef NO_TABLE
+    else if (agent.table) {
       if (heap_variant.empty()) {
         heap = Table{};
         return parse_eval_and_search(dur, params, std::get<Table>(heap));
@@ -174,7 +208,9 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
                                  std::string{typeid(Table).name()}};
       }
       return parse_eval_and_search(dur, params, std::get<Table>(heap));
-    } else {
+    }
+#endif
+    else {
       if (heap_variant.empty()) {
         heap = Node{};
         return parse_eval_and_search(dur, params, std::get<Node>(heap));
@@ -189,7 +225,10 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
   const auto parse_matrix_ucb_and_search = [&](auto dur, auto &bandit_params,
                                                const auto &both) {
     const auto &matrix_ucb = agent.matrix_ucb;
-    if (!matrix_ucb.empty()) {
+    if (false) {
+    }
+#ifndef NO_MATRIX_UCB
+    else if (!matrix_ucb.empty()) {
       const auto matrix_ucb_split = Parse::split(agent.matrix_ucb, '-');
       if (matrix_ucb_split.size() != 4) {
         throw std::runtime_error{"Could not parse MatrixUCB name: " +
@@ -202,7 +241,9 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
       matrix_ucb_params.minimum = std::stoull(matrix_ucb_split[2]);
       matrix_ucb_params.c = std::stof(matrix_ucb_split[3]);
       return parse_heap_and_search(dur, matrix_ucb_params, both);
-    } else {
+    }
+#endif
+    else {
       return parse_heap_and_search(dur, bandit_params, both);
     }
   };
@@ -223,33 +264,50 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
 
     const auto &name = bandit_split[0];
     const float f1 = std::stof(bandit_split[1]);
-    if (name == "ucb") {
+    if (false) {
+    }
+#ifndef NO_UCB
+    else if (name == "ucb") {
       UCB::Bandit::Params params{.c = f1};
       return parse_matrix_ucb_and_search(dur, params,
                                          both<UCB::JointBandit>(heap_variant));
-    } else if (name == "ucb1") {
+    }
+#endif
+#ifndef NO_UCB1
+    else if (name == "ucb1") {
       UCB1::Bandit::Params params{.c = f1};
       return parse_matrix_ucb_and_search(dur, params,
                                          both<UCB1::JointBandit>(heap_variant));
-    } else if (name == "pucb") {
+    }
+#endif
+#ifndef NO_PUCB
+    else if (name == "pucb") {
       check_for_priors();
       PUCB::Bandit::Params params{.c = f1};
       return parse_matrix_ucb_and_search(dur, params,
                                          both<PUCB::JointBandit>(heap_variant));
     }
+#endif
 
     float alpha = .05;
     if (bandit_split.size() >= 3) {
       alpha = std::stof(bandit_split[2]);
     }
-    if (name == "exp3") {
+
+    if (false) {
+    }
+#ifndef NO_EXP3
+    else if (name == "exp3") {
       Exp3::Bandit::Params params{.gamma = f1,
                                   .one_minus_gamma = (1 - f1),
                                   .alpha = alpha,
                                   .one_minus_alpha = (1 - alpha)};
       return parse_matrix_ucb_and_search(dur, params,
                                          both<Exp3::JointBandit>(heap_variant));
-    } else if (name == "pexp3") {
+    }
+#endif
+#ifndef NO_PEXP3
+    else if (name == "pexp3") {
       check_for_priors();
       PExp3::Bandit::Params params{.gamma = f1,
                                    .one_minus_gamma = (1 - f1),
@@ -257,7 +315,9 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
                                    .one_minus_alpha = (1 - alpha)};
       return parse_matrix_ucb_and_search(
           dur, params, both<PExp3::JointBandit>(heap_variant));
-    } else {
+    }
+#endif
+    else {
       throw std::runtime_error("Could not parse bandit string: " + name);
     }
   };
@@ -270,13 +330,21 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
     size_t number = std::stoll(agent.budget.substr(0, pos));
     std::string unit =
         (pos == std::string::npos) ? "" : agent.budget.substr(pos);
-    if (unit.empty()) {
+    if (false) {
+    }
+#ifndef NO_ITERATION
+    else if (unit.empty()) {
       return parse_bandit_and_search(number);
-    } else if (unit == "ms" || unit == "millisec" || unit == "milliseconds") {
+    }
+#endif
+#ifndef NO_DURATION
+    else if (unit == "ms" || unit == "millisec" || unit == "milliseconds") {
       return parse_bandit_and_search(std::chrono::milliseconds{number});
     } else if (unit == "s" || unit == "sec" || unit == "seconds") {
       return parse_bandit_and_search(std::chrono::seconds{number});
-    } else {
+    }
+#endif
+    else {
       throw std::runtime_error("Invalid search duration specification: " +
                                agent.budget);
     }
@@ -286,3 +354,25 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
 }
 
 } // namespace RuntimeSearch
+
+// budget
+#undef NO_ITERATION
+#undef NO_DURATION
+#undef NO_FLAG
+
+// evals
+#undef NO_MONTE_CARLO
+#undef NO_POKE_ENGINE
+#undef NO_NETWORK
+
+// bandits
+#undef NO_UCB
+#undef NO_UCB1
+#undef NO_PUCB
+#undef NO_EXP3
+#undef NO_PEXP3
+#undef NO_MATRIX_UCB
+
+// heap
+#undef NO_NODE
+#undef NO_TABLE
