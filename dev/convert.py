@@ -2,6 +2,7 @@ import sys
 
 # Util for converting rby-ou.tsv (not public) into a header (teams.h)
 
+# fmt:off
 libpkmn_species = ["None",       "Bulbasaur",  "Ivysaur",    "Venusaur",   "Charmander",
     "Charmeleon", "Charizard",  "Squirtle",   "Wartortle",  "Blastoise",
     "Caterpie",   "Metapod",    "Butterfree", "Weedle",     "Kakuna",
@@ -76,6 +77,7 @@ libpkmn_moves = [    "None",         "Pound",        "KarateChop",  "DoubleSlap"
     "Rest",         "RockSlide",    "HyperFang",   "Sharpen",
     "Conversion",   "TriAttack",    "SuperFang",   "Slash",
     "Substitute",   "Struggle"]
+# fmt:on
 
 species_map = {}
 for species in libpkmn_species:
@@ -84,28 +86,32 @@ move_map = {}
 for move in libpkmn_moves:
     move_map[move.lower()] = move
 
+
 def convert_to_cpp_initializer(line):
-    _, team_data = line.split('\t')
-    team_entries = team_data.split(']')
-    
+    _, team_data = line.split("\t")
+    team_entries = team_data.split("]")
+
     team_output = []
     for entry in team_entries:
         if not entry:  # skip any empty entries
             continue
-        species, moves = entry.split('|')
+        species, moves = entry.split("|")
         species = species_map[species]
-        moves_list = moves.split(',')
-        formatted_moves = ', '.join([move_map[move] for move in moves_list])
+        moves_list = moves.split(",")
+        formatted_moves = ", ".join([move_map[move] for move in moves_list])
         team_output.append(f"Set{{Species::{species}, {{{formatted_moves}}}}}")
 
     cpp_output = []
-    cpp_output.append(f"std::array<Set, 6>{{\n    " + ',\n    '.join(team_output) + "\n},")
+    cpp_output.append(
+        f"std::array<Set, 6>{{\n    " + ",\n    ".join(team_output) + "\n},"
+    )
 
-    return ''.join(cpp_output)
+    return "".join(cpp_output)
 
-def convert (path, n=1):
+
+def convert(path, n=1):
     print(f"constexpr std::array<std::array<Set, 6>, {n}> teams {{")
-    with open(path, 'r') as file:
+    with open(path, "r") as file:
         lines = file.readlines()
     lines = lines[:n]
     code = ""
@@ -116,7 +122,9 @@ def convert (path, n=1):
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: provide path to the tsv team dump and the number of lines to convert.")
+        print(
+            "Usage: provide path to the tsv team dump and the number of lines to convert."
+        )
         return 1
 
     try:
@@ -125,7 +133,7 @@ def main():
     except ValueError:
         print("Error: All arguments must be integers.")
         return 1
-        
+
     header = """
 #pragma once
 
@@ -150,5 +158,6 @@ using Set = PKMN::PokemonInit;
 } // namespace SampleTeams
 """
     print(footer)
+
 
 main()
