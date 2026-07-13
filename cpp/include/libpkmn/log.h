@@ -114,15 +114,15 @@ std::string damage_reason(uint8_t reason) {
   case 0x00:
     return "";
   case 0x01:
-    return "psn";
+    return "[from] psn";
   case 0x02:
-    return "brn";
+    return "[from] brn";
   case 0x03:
-    return "confusion";
+    return "[from] confusion";
   case 0x04:
-    return "Leech Seed";
+    return "[from] Leech Seed";
   case 0x05:
-    return "Recoil|[of]";
+    return "[from] Recoil|[of]";
   case 0x06:
     return "[from] Spikes";
   default:
