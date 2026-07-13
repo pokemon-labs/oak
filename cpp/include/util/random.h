@@ -122,12 +122,15 @@ public:
 
   template <typename Container>
   int sample_pdf(const Container &input) noexcept {
-    double p = uniform();
-    for (int i = 0; i < static_cast<int>(input.size()); ++i) {
-      p -= static_cast<double>(input[i]);
-      if (p <= 0.0)
-        return i;
+    while (true) {
+      double p = uniform();
+      for (int i = 0; i < static_cast<int>(input.size()); ++i) {
+        p -= static_cast<double>(input[i]);
+        if (p <= 0.0) {
+          return i;
+        }
+      }
+      // std::cerr << "sample_pdf retried\n";
     }
-    return 0;
   }
 };
