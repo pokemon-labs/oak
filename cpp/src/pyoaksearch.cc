@@ -253,11 +253,12 @@ PYBIND11_MODULE(pyoaksearch, m) {
   m.def(
       "output_string",
       [](const BattleView &battle, const DurationsView &durations,
-         const MCTS::Output &output) {
-        return MCTS::output_string(output,
-                                   MCTS::Input{battle.raw, durations.raw});
+         const pkmn_result result, const MCTS::Output &output) {
+        return MCTS::output_string(
+            output, MCTS::Input{battle.raw, durations.raw, result});
       },
-      py::arg("battle"), py::arg("durations"), py::arg("output"));
+      py::arg("battle"), py::arg("durations"), py::arg("result"),
+      py::arg("output"));
 }
 
 } // namespace Py::PKMN
