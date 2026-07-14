@@ -43,7 +43,7 @@ struct Bandit {
     softmax(this->priors.data(), logits, k);
   }
 
-  void update(const auto &outcome) noexcept {
+  void update(const Params &params, const auto &outcome) noexcept {
     scores[outcome.index] += outcome.value;
     ++visits[outcome.index];
   }

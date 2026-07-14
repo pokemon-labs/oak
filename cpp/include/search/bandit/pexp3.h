@@ -26,7 +26,6 @@ struct Bandit {
 
   struct Params {
     float gamma;
-    float one_minus_gamma;
     float alpha;
     float one_minus_alpha;
   };
@@ -68,7 +67,7 @@ struct Bandit {
     }
   }
 
-  void update(const auto &outcome) noexcept {
+  void update(const Params &params, const auto &outcome) noexcept {
     constexpr float baseline = 0;
     if ((gains[outcome.index] += (outcome.value - baseline) / outcome.prob) >
         0) {

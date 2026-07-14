@@ -11,7 +11,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace Exp3 {
+namespace Exp3IX {
 
 constexpr float neg_inf = -std::numeric_limits<float>::infinity();
 
@@ -27,7 +27,6 @@ struct Bandit {
   struct Params {
     float gamma;
     float alpha;
-    float one_minus_alpha;
   };
 
   std::array<float, 9> gains;
@@ -49,12 +48,7 @@ struct Bandit {
       outcome.prob = 1;
     } else {
       const float eta{params.gamma / k};
-      const float delta{params.alpha / k};
       softmax(policy, gains, eta);
-      std::transform(policy.begin(), policy.end(), policy.begin(),
-                     [eta, delta, &params](const float x) {
-                       return params.one_minus_alpha * x + delta;
-                     });
       outcome.index = std::min(static_cast<uint8_t>(device.sample_pdf(policy)),
                                static_cast<uint8_t>(k - 1));
       outcome.prob = policy[outcome.index];
@@ -63,11 +57,14 @@ struct Bandit {
 
   void update(const Params &params, const auto &outcome) noexcept {
     constexpr float baseline = 0;
-    if ((gains[outcome.index] += (outcome.value - baseline) / outcome.prob) >
+    if ((gains[outcome.index] += (outcome.value - baseline) / (outcome.prob)) >
         0) {
       const auto max = gains[outcome.index];
       for (auto &v : gains) {
         v -= max;
+        if (std::isfinite(v)) {
+          v = std::max(v, -4.0f);
+        }
       }
     }
   }
@@ -78,4 +75,4 @@ using JointBandit = Joint<Bandit>;
 
 static_assert(sizeof(JointBandit) == 74);
 
-}; // namespace Exp3
+}; // namespace Exp3IX

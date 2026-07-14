@@ -182,6 +182,8 @@ template <SearchOptions Options = default_search> struct Search {
       }
     }();
 
+    // std::cout << typeid(stats).name() << '\n';
+
     if (!stats.is_init()) {
 
       stats.init(output.p1.k, output.p2.k);
@@ -333,6 +335,20 @@ template <SearchOptions Options = default_search> struct Search {
       // do bandit
       JointOutcome outcome;
 
+      // if constexpr (requires {stats.p1.gains;}) {
+      //   if ((depth == 0) && (output.iterations % 100 == 0)) {
+      //     std::cout << "gains: ";
+      //     for (auto i = 0; i < 9; ++i) {
+      //       std::cout << stats.p1.gains[i] << ' ';
+      //     }
+      //     std::cout << " | ";
+      //     for (auto i = 0; i < 9; ++i) {
+      //       std::cout << stats.p2.gains[i] << ' ';
+      //     }
+      //     std::cout << "\n";
+      //   }
+      // }
+
       stats.select(device, bandit_params, outcome);
       pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P1, pkmn_result_p1(result),
                                p1_choices.data(), PKMN_GEN1_MAX_CHOICES);
@@ -370,12 +386,12 @@ template <SearchOptions Options = default_search> struct Search {
       outcome.p2.value = value.second;
 
       if constexpr (is_node<decltype(heap)>) {
-        stats.update(outcome);
+        stats.update(bandit_params, outcome);
       } else {
         if (!turn_limit(battle)) {
-          stats.update(outcome);
+          stats.update(bandit_params, outcome);
         } else {
-          stats.update(outcome);
+          stats.update(bandit_params, outcome);
           // return {0.5, 0.5};
         }
       }

@@ -37,7 +37,7 @@ struct Bandit {
 
   bool is_init() const noexcept { return k; }
 
-  void update(const auto &outcome) noexcept {
+  void update(const Params &params, const auto &outcome) noexcept {
     scores[outcome.index] += outcome.value;
     ++visits[outcome.index];
   }

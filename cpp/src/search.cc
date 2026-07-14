@@ -298,21 +298,24 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
     }
 #ifndef NO_EXP3
     else if (name == "exp3") {
-      Exp3::Bandit::Params params{.gamma = f1,
-                                  .one_minus_gamma = (1 - f1),
-                                  .alpha = alpha,
-                                  .one_minus_alpha = (1 - alpha)};
+      Exp3::Bandit::Params params{
+          .gamma = f1, .alpha = alpha, .one_minus_alpha = (1 - alpha)};
       return parse_matrix_ucb_and_search(dur, params,
                                          both<Exp3::JointBandit>(heap_variant));
+    }
+#endif
+#ifndef NO_EXP3_IX
+    else if (name == "exp3ix") {
+      Exp3IX::Bandit::Params params{.gamma = f1, .alpha = alpha};
+      return parse_matrix_ucb_and_search(
+          dur, params, both<Exp3IX::JointBandit>(heap_variant));
     }
 #endif
 #ifndef NO_PEXP3
     else if (name == "pexp3") {
       check_for_priors();
-      PExp3::Bandit::Params params{.gamma = f1,
-                                   .one_minus_gamma = (1 - f1),
-                                   .alpha = alpha,
-                                   .one_minus_alpha = (1 - alpha)};
+      PExp3::Bandit::Params params{
+          .gamma = f1, .alpha = alpha, .one_minus_alpha = (1 - alpha)};
       return parse_matrix_ucb_and_search(
           dur, params, both<PExp3::JointBandit>(heap_variant));
     }

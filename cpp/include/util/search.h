@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nn/battle/network.h>
+#include <search/bandit/exp3-ix.h>
 #include <search/bandit/exp3.h>
 #include <search/bandit/pexp3.h>
 #include <search/bandit/pucb.h>
@@ -21,8 +22,8 @@ struct Heap {
       std::variant<std::monostate, MCTS::Node<T>..., MCTS::Table<T>...>;
 
   using BanditVariant =
-      BanditVariantT<Exp3::JointBandit, PExp3::JointBandit, UCB::JointBandit,
-                     PUCB::JointBandit, UCB1::JointBandit>;
+      BanditVariantT<Exp3::JointBandit, Exp3IX::JointBandit, PExp3::JointBandit,
+                     UCB::JointBandit, PUCB::JointBandit, UCB1::JointBandit>;
 
   BanditVariant data;
 
