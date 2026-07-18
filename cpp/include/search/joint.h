@@ -14,6 +14,8 @@ template <typename Bandit> struct Joint {
 
   Bandit p1;
   Bandit p2;
+  float values;
+  uint32_t visits;
 
   void init(const auto m, const auto n) noexcept {
     p1.init(m);
@@ -31,6 +33,8 @@ template <typename Bandit> struct Joint {
   void update(const JointOutcome &outcome) noexcept {
     p1.update(outcome.p1);
     p2.update(outcome.p2);
+    values += outcome.p1.value;
+    ++visits;
   }
 
   void softmax_logits(const Params &params, const float *p1_priors,

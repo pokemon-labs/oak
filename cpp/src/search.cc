@@ -15,8 +15,8 @@
 // #define NO_FLAG
 
 // evals
-// #define NO_MONTE_CARLO
-// #define NO_POKE_ENGINE
+#define NO_MONTE_CARLO
+#define NO_POKE_ENGINE
 // #define NO_NETWORK
 
 // bandits
@@ -26,11 +26,11 @@
 // #define NO_EXP3
 // #define NO_PEXP3
 // matrix ucb
-// #define NO_MATRIX_UCB
+#define NO_MATRIX_UCB
 
 // heap
 // #define NO_NODE
-// #define NO_TABLE
+#define NO_TABLE
 
 namespace RuntimeSearch {
 
@@ -144,21 +144,31 @@ void Agent::initialize_network(const pkmn_gen1_battle &b) {
 MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
                  Agent &agent, MCTS::Output output, bool *const flag) {
 
+  const auto parse_value_propagation = [&](const auto dur, const auto &params,
+                                           auto &heap, auto &model) {
+    if (agent.propogate_average) {
+      MCTS::Search<MCTS::avg_search> search{};
+      return search.run(device, dur, params, heap, model, input, output);
+    } else {
+      MCTS::Search<MCTS::default_search> search{};
+      return search.run(device, dur, params, heap, model, input, output);
+    }
+  };
+
   const auto parse_eval_and_search = [&](const auto dur, const auto &params,
                                          auto &heap) {
-    MCTS::Search s{};
     if (false) {
     }
 #ifndef NO_MONTE_CARLO
     else if (agent.is_monte_carlo()) {
       MCTS::MonteCarlo model{};
-      return s.run(device, dur, params, heap, model, input, output);
+      return parse_value_propagation(dur, params, heap, model);
     }
 #endif
 #ifndef NO_POKE_ENGINE
     else if (agent.is_foul_play()) {
       PokeEngine::Eval model{};
-      return s.run(device, dur, params, heap, model, input, output);
+      return parse_value_propagation(dur, params, heap, model);
     }
 #endif
     else {
@@ -167,19 +177,19 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
       }
       if (auto network =
               dynamic_cast<NN::Battle::Network *>(agent.network_ptr.get())) {
-        return s.run(device, dur, params, heap, *network, input, output);
+        return parse_value_propagation(dur, params, heap, *network);
       } else if (auto network = dynamic_cast<NN::Battle::NetworkClamped *>(
                      agent.network_ptr.get())) {
-        return s.run(device, dur, params, heap, *network, input, output);
+        return parse_value_propagation(dur, params, heap, *network);
       } else if (auto network = dynamic_cast<NN::Battle::NetworkScaled *>(
                      agent.network_ptr.get())) {
-        return s.run(device, dur, params, heap, *network, input, output);
+        return parse_value_propagation(dur, params, heap, *network);
       } else {
         const auto [id, hd, vd, pd] = agent.network_ptr->shape();
         auto q_network_ptr = NN::Battle::visit_quantized_network(
             id, hd, vd, pd,
             [&](auto &net) {
-              output = s.run(device, dur, params, heap, net, input, output);
+              return parse_value_propagation(dur, params, heap, net);
             },
             std::move(agent.network_ptr));
         if (q_network_ptr) {

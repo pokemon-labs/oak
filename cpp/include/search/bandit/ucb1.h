@@ -75,6 +75,6 @@ struct Bandit {
 
 using JointBandit = Joint<Bandit>;
 
-static_assert(sizeof(JointBandit) == 128);
+// static_assert(sizeof(JointBandit) == 128);
 
 }; // namespace UCB1

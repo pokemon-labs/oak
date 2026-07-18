@@ -116,19 +116,23 @@ template <typename BanditParams> struct MatrixUCBParams {
 struct SearchOptions {
   size_t root_rolls;
   size_t other_rolls;
+  bool propogate_average;
   bool debug_print;
   // dependent
   bool rolls_same;
   bool clamping;
 
   constexpr SearchOptions(size_t root_rolls = 39, size_t other_rolls = 39,
+                          bool propogate_average = false,
                           bool debug_print = false)
       : root_rolls{root_rolls}, other_rolls{other_rolls},
-        debug_print{debug_print}, rolls_same{root_rolls == other_rolls},
+        propogate_average{propogate_average}, debug_print{debug_print},
+        rolls_same{root_rolls == other_rolls},
         clamping{(root_rolls != 39) || (other_rolls != 39)} {}
 };
 
-constexpr SearchOptions default_search{3, 1};
+constexpr SearchOptions default_search{3, 1, false};
+constexpr SearchOptions avg_search{3, 1, true};
 
 template <SearchOptions Options = default_search> struct Search {
 
@@ -385,7 +389,12 @@ template <SearchOptions Options = default_search> struct Search {
         output.value_matrix[outcome.p1.index][outcome.p2.index] += value.first;
       }
 
-      return value;
+      if (Options.propogate_average) {
+        const auto avg = stats.values / stats.visits;
+        return {avg, 1 - avg};
+      } else {
+        return value;
+      }
     }
 
     total_depth += depth;

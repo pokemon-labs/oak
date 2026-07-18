@@ -160,7 +160,8 @@ void thread_fn(const ProgramArgs *args_ptr) {
             args.p1_matrix_ucb.or_else([&] { return args.matrix_ucb; })
                 .value_or(""),
         .discrete = args.use_discrete || args.p1_use_discrete,
-        .table = args.p1_use_table};
+        .table = args.p1_use_table,
+        .propogate_average = args.use_average};
     auto p1_agent = RuntimeSearch::Agent{p1_agent_params};
     auto p1_agent_after = RuntimeSearch::Agent{p1_agent_params};
     p1_agent_after.budget = args.p1_budget_after.value_or("0");
@@ -181,7 +182,8 @@ void thread_fn(const ProgramArgs *args_ptr) {
             args.p2_matrix_ucb.or_else([&] { return args.matrix_ucb; })
                 .value_or(""),
         .discrete = args.use_discrete || args.p2_use_discrete,
-        .table = args.p2_use_table};
+        .table = args.p2_use_table,
+        .propogate_average = args.use_average};
     auto p2_agent = RuntimeSearch::Agent{p2_agent_params};
     auto p2_agent_after = RuntimeSearch::Agent{p2_agent_params};
     p2_agent_after.budget = args.p2_budget_after.value_or("0");

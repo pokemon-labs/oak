@@ -41,6 +41,9 @@ struct TeamBuildingArgs : public argparse::Args {
                                                                                \
     bool &A##use_table =                                                       \
         flag(B "use-table", "Use a transposition table instead of a tree");    \
+    bool &A##use_average =                                                     \
+        flag(B "use-average",                                                  \
+             "Propagate average value of parent instead of leaf value");       \
   };
 
 #define MAKE_AGENT_POLICY_ARGS(NAME, BASE, WRAPPER, A, B)                      \

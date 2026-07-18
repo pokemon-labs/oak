@@ -38,6 +38,7 @@ struct AgentParams {
   std::string matrix_ucb;
   bool discrete;
   bool table;
+  bool propogate_average;
 
   constexpr bool operator==(const AgentParams &) const = default;
 };

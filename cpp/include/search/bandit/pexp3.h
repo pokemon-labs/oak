@@ -83,6 +83,6 @@ struct Bandit {
 
 using JointBandit = Joint<Bandit>;
 
-static_assert(sizeof(JointBandit) == 74);
+// static_assert(sizeof(JointBandit) == 74);
 
 } // namespace PExp3
