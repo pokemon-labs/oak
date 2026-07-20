@@ -58,7 +58,8 @@ struct Agent : AgentParams {
            eval == "monte-carlo";
   }
   bool is_foul_play() const { return eval == "fp"; }
-  bool is_network() const { return !is_monte_carlo() && !is_foul_play(); }
+  bool is_foul_play_2() const { return eval == "fp2"; }
+  bool is_network() const { return !is_monte_carlo() && !is_foul_play() && !is_foul_play_2(); }
 
   void initialize_network(const pkmn_gen1_battle &b);
 };

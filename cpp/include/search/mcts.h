@@ -40,6 +40,10 @@ inline constexpr bool is_poke_engine =
     std::is_same_v<PokeEngine::Eval, std::remove_cvref_t<T>>;
 
 template <typename T>
+inline constexpr bool is_poke_engine_2 =
+    std::is_same_v<PokeEngine2::Eval, std::remove_cvref_t<T>>;
+
+template <typename T>
 inline constexpr bool is_monte_carlo =
     std::is_same_v<MCTS::MonteCarlo, std::remove_cvref_t<T>>;
 
@@ -170,6 +174,9 @@ template <SearchOptions Options = default_search> struct Search {
 
     if constexpr (is_poke_engine<decltype(eval)>) {
       eval.get_root_score(input.battle);
+    }
+    if constexpr (is_poke_engine_2<decltype(eval)>) {
+      eval.get_root_score(input.battle, input.durations);
     }
 
     auto &stats = [&]() -> auto & {
@@ -422,6 +429,8 @@ template <SearchOptions Options = default_search> struct Search {
             }
           } else if constexpr (is_poke_engine<T>) {
             value = eval.evaluate(battle);
+          } else if constexpr (is_poke_engine_2<T>) {
+            value = eval.evaluate(battle, durations());
           } else {
             static_assert(!std::is_same_v<T, T>);
           }

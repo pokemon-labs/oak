@@ -161,6 +161,12 @@ MCTS::Output run(mt19937 &device, const MCTS::Input &input, Heap &heap_variant,
       return s.run(device, dur, params, heap, model, input, output);
     }
 #endif
+#ifndef NO_POKE_ENGINE_2
+    else if (agent.is_foul_play_2()) {
+      PokeEngine2::Eval model{};
+      return s.run(device, dur, params, heap, model, input, output);
+    }
+#endif
     else {
       if (!agent.network_ptr) {
         agent.initialize_network(input.battle);
