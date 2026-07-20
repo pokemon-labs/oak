@@ -4,9 +4,8 @@
 #include <cstdint>
 #include <type_traits>
 
-namespace PKMN {
+namespace PKMN::Data {
 
-namespace Data {
 enum class Status : std::underlying_type_t<std::byte> {
   None = 0b00000000,
   Poison = 0b00001000,
@@ -43,6 +42,4 @@ constexpr Status rest(const auto n) {
   assert((n & 3) == n);
   return static_cast<Status>(0b10000000 | n);
 }
-} // namespace Data
-
-} // namespace PKMN
+} // namespace PKMN::Data

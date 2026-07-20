@@ -11,9 +11,7 @@
 #include <cstddef>
 #include <type_traits>
 
-namespace PKMN {
-
-namespace Init {
+namespace PKMN::Init {
 
 using PKMN::Data::Move;
 using PKMN::Data::Species;
@@ -165,6 +163,4 @@ inline void init_sleeps(const auto &sets, PKMN::Duration &duration) {
   }
 }
 
-} // namespace Init
-
-} // namespace PKMN
+} // namespace PKMN::Init
