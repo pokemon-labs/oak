@@ -10,27 +10,27 @@
 #include <thread>
 
 // budget
-// #define NO_ITERATION
+#define NO_ITERATION
 // #define NO_DURATION
-// #define NO_FLAG
+#define NO_FLAG
 
 // evals
-// #define NO_MONTE_CARLO
+#define NO_MONTE_CARLO
 // #define NO_POKE_ENGINE
-// #define NO_NETWORK
+#define NO_NETWORK
 
 // bandits
 // #define NO_UCB
 // #define NO_UCB1
 // #define NO_PUCB
-// #define NO_EXP3
-// #define NO_PEXP3
+#define NO_EXP3
+#define NO_PEXP3
 // matrix ucb
-// #define NO_MATRIX_UCB
+#define NO_MATRIX_UCB
 
 // heap
 // #define NO_NODE
-// #define NO_TABLE
+#define NO_TABLE
 
 namespace RuntimeSearch {
 

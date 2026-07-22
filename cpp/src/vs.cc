@@ -253,8 +253,8 @@ void thread_fn(const ProgramArgs *args_ptr) {
       if (p1_choices.size() > 1) {
         RuntimeSearch::Heap heap{};
         p1_output = RuntimeSearch::run(device, input, heap, p1_agent);
-        p1_output =
-            RuntimeSearch::run(device, input, heap, p1_agent_after, p1_output);
+        // p1_output =
+        //     RuntimeSearch::run(device, input, heap, p1_agent_after, p1_output);
         p1_index = process_and_sample(device, p1_output.p1, p1_policy_options);
         if (print_search_outputs) {
           print("P1:");
@@ -269,8 +269,8 @@ void thread_fn(const ProgramArgs *args_ptr) {
         } else {
           RuntimeSearch::Heap heap{};
           p2_output = RuntimeSearch::run(device, input, heap, p2_agent);
-          p2_output = RuntimeSearch::run(device, input, heap, p2_agent_after,
-                                         p2_output);
+          // p2_output = RuntimeSearch::run(device, input, heap, p2_agent_after,
+          //                                p2_output);
           if (print_search_outputs) {
             print("P2:");
             std::cout << MCTS::output_string(p2_output, input.battle, p1_labels,

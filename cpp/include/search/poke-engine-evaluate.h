@@ -326,14 +326,15 @@ inline float evaluate_status(const PKMN::Pokemon &pokemon,
   }
   default: {
     if (Data::is_sleep(pokemon.status)) {
-      // if (Data::self(pokemon.status)) {
-      //   auto remaining = static_cast<uint8_t>(pokemon.status) & 7;
-      //   return -7.0f * remaining;
-      // } else {
-        auto remaining = 7 - sleep;
+      if (Data::self(pokemon.status)) {
+        const auto remaining = static_cast<uint8_t>(pokemon.status) & 7;
+        // std::cout << (int)pokemon.status << " " << (int)remaining << std::endl;
+        return -5.0f * remaining;
+      } else {
+        const auto remaining = 7 - sleep;
         assert(remaining >= 0);
-        return -7.0f * remaining;
-      // }
+        return -10.0f * remaining;
+      }
     } else {
       return 0;
     }
