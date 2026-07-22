@@ -240,7 +240,7 @@ constexpr float POKEMON_BOOST_MULTIPLIER_NEG_4 = -3.0f;
 constexpr float POKEMON_BOOST_MULTIPLIER_NEG_5 = -3.15f;
 constexpr float POKEMON_BOOST_MULTIPLIER_NEG_6 = -3.3f;
 
-constexpr float POKEMON_FROZEN = 20.0f; // positive
+constexpr float POKEMON_FROZEN = 50.0f; // positive
 // constexpr float POKEMON_ASLEEP = -25.0f;
 constexpr float POKEMON_PARALYZED = -25.0f;
 // constexpr float POKEMON_TOXIC = -30;
@@ -329,11 +329,11 @@ inline float evaluate_status(const PKMN::Pokemon &pokemon,
       if (Data::self(pokemon.status)) {
         const auto remaining = static_cast<uint8_t>(pokemon.status) & 7;
         // std::cout << (int)pokemon.status << " " << (int)remaining << std::endl;
-        return -5.0f * remaining;
+        return -20.0f * remaining;
       } else {
         const auto remaining = 7 - sleep;
         assert(remaining >= 0);
-        return -10.0f * remaining;
+        return -7.0f * remaining;
       }
     } else {
       return 0;
