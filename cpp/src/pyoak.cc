@@ -411,6 +411,78 @@ PYBIND11_MODULE(pyoak, m) {
       .def(py::pickle([](const BattleView &b) { return b.bytes(); },
                       [](py::bytes b) { return BattleView(b); }));
 
+  py::class_<ActionProxy>(
+      m, "Action",
+      "Per-player packed chance-action rolls (64 bits). All fields are\n"
+      "the roll that will be *returned* for that RNG event; 0 means unset.")
+      .def_property("damage", &ActionProxy::get_damage,
+                    &ActionProxy::set_damage,
+                    "Damage roll to return (217-255).")
+      .def_property("hit", &ActionProxy::get_hit, &ActionProxy::set_hit,
+                    "Accuracy roll (1=miss, 2=hit).")
+      .def_property("critical_hit", &ActionProxy::get_critical_hit,
+                    &ActionProxy::set_critical_hit,
+                    "Critical hit roll (1=no, 2=yes).")
+      .def_property("secondary_chance", &ActionProxy::get_secondary_chance,
+                    &ActionProxy::set_secondary_chance,
+                    "Secondary effect roll (1=no-proc, 2=proc).")
+      .def_property("speed_tie", &ActionProxy::get_speed_tie,
+                    &ActionProxy::set_speed_tie,
+                    "Speed tie winner (1=P1, 2=P2). Must match on both "
+                    "players' Action.")
+      .def_property("confused", &ActionProxy::get_confused,
+                    &ActionProxy::set_confused,
+                    "Confusion self-hit roll (1=no-proc, 2=proc).")
+      .def_property("paralyzed", &ActionProxy::get_paralyzed,
+                    &ActionProxy::set_paralyzed,
+                    "Full paralysis roll (1=no-proc, 2=proc).")
+      .def_property("duration", &ActionProxy::get_duration,
+                    &ActionProxy::set_duration,
+                    "Roll for effect duration (incl. binding moves).")
+      .def_property("durations_raw", &ActionProxy::get_durations_raw,
+                    &ActionProxy::set_durations_raw,
+                    "Raw 16-bit packed duration-tracking sub-field "
+                    "(bits 24:40); not yet broken out further.")
+      .def_property("move_slot", &ActionProxy::get_move_slot,
+                    &ActionProxy::set_move_slot,
+                    "Move slot roll (1-4, invalid values ignored).")
+      .def_property("multi_hit_slot", &ActionProxy::get_multi_hit_slot,
+                    &ActionProxy::set_multi_hit_slot,
+                    "Multi-hit move distribution roll (2-5).")
+      .def_property("psywave", &ActionProxy::get_psywave,
+                    &ActionProxy::set_psywave,
+                    "One greater than the Psywave damage roll.")
+      .def_property("metronome", &ActionProxy::get_metronome,
+                    &ActionProxy::set_metronome,
+                    "Move to return for Metronome.")
+      .def_property("bits", &ActionProxy::get_bits, &ActionProxy::set_bits,
+                    "Raw uint64 — all 64 bits at once.")
+      .def("__repr__", [](const ActionProxy &a) {
+        return "<Action 0x" + [&] {
+          char buf[17];
+          std::snprintf(buf, sizeof(buf), "%016llx",
+                        (unsigned long long)a.get_bits());
+          return std::string(buf);
+        }() + ">";
+      });
+
+  py::class_<ActionsView>(m, "Actions",
+                          "16-byte packed chance actions for both sides.\n\n"
+                          "  a = oak.Actions(action_bytes)  # from bytes\n"
+                          "  a = oak.Actions()              # zeroed\n"
+                          "  a.get(0).damage = 236\n"
+                          "  action_bytes = a.bytes()")
+      .def(py::init<>(), "Construct zeroed Actions.")
+      .def(py::init<py::bytes>(), py::arg("data"),
+           "Construct from 16 raw bytes.")
+      .def("get", &ActionsView::get, py::arg("side"), "Action for side 0 or 1.",
+           py::return_value_policy::reference_internal)
+      .def("bytes", &ActionsView::bytes,
+           "Return current (possibly mutated) 16-byte representation.")
+      .def("__repr__", [](const ActionsView &) { return "<Actions>"; })
+      .def(py::pickle([](const ActionsView &a) { return a.bytes(); },
+                      [](py::bytes b) { return ActionsView(b); }));
+
   py::class_<PokemonSet>(m, "Set")
       .def(py::init<>(), "Construct zeroed Set.")
       .def_readwrite("species", &PokemonSet::species)
@@ -487,6 +559,22 @@ PYBIND11_MODULE(pyoak, m) {
         return result;
       },
       py::arg("battle"), py::arg("durations"), py::arg("c1"), py::arg("c2"));
+
+  m.def(
+      "update",
+      [](BattleView &battle, DurationsView &durations,
+         const ActionsView &actions, uint8_t c1, uint8_t c2) {
+        auto options = PKMN::options();
+        pkmn_gen1_chance_options chance_options{};
+        chance_options.durations = durations.raw;
+        chance_options.actions = actions.raw;
+        PKMN::set(options, chance_options);
+        auto result = PKMN::update(battle.raw, c1, c2, options);
+        durations.raw = PKMN::durations(options);
+        return result;
+      },
+      py::arg("battle"), py::arg("durations"), py::arg("actions"),
+      py::arg("c1"), py::arg("c2"));
 
   m.def(
       "battle_string",
