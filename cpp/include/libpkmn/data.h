@@ -318,6 +318,11 @@ struct alignas(1) Durations {
   constexpr const Duration &get(auto i) const noexcept { return durations[i]; }
 };
 
+struct alignas(1) Overrides {
+  pkmn_gen1_chance_actions actions;
+  pkmn_gen1_chance_durations durations;
+}
+
 #pragma pack(pop)
 
 inline PKMN::Battle &view(pkmn_gen1_battle &battle) noexcept {
@@ -335,6 +340,15 @@ inline PKMN::Durations &view(pkmn_gen1_chance_durations &durations) noexcept {
 inline const PKMN::Durations &
 view(const pkmn_gen1_chance_durations &durations) noexcept {
   return *reinterpret_cast<const PKMN::Durations *>(&durations);
+}
+
+inline PKMN::Overrides &view(pkmn_gen1_calc_overrides &overrides) noexcept {
+  return *reinterpret_cast<PKMN::Overrides *>(&overrides);
+}
+
+inline const PKMN::Overrides &
+view(const pkmn_gen1_calc_overrides &overrides) noexcept {
+  return *reinterpret_cast<const PKMN::Overrides *>(&overrides);
 }
 
 constexpr inline auto cast(const pkmn_gen1_battle &battle) noexcept {
@@ -355,5 +369,6 @@ static_assert(sizeof(MoveSlot) == 2);
 static_assert(sizeof(Boosts) == 4);
 static_assert(sizeof(ActivePokemon) == Layout::Sizes::ActivePokemon);
 static_assert(sizeof(Durations) == Layout::Sizes::Durations);
+static_assert(sizeof(Overrides) == sizeof(pkmn_gen1_calc_overrides));
 
 } // namespace PKMN
