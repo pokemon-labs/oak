@@ -30,6 +30,15 @@
 
 #include <py/libpkmn/data.h>
 
+void raw_print(auto& data) {
+  constexpr auto x = sizeof(data);
+  auto& y = *reinterpret_cast<std::array<uint8_t, x>*>(&data);
+  for (auto z : y) {
+    std::cout << (int)z << ' ';
+  }
+  std::cout << std::endl;
+}
+
 namespace Py::PKMN {
 
 namespace py = pybind11;
@@ -567,8 +576,15 @@ PYBIND11_MODULE(pyoak, m) {
         auto options = PKMN::options();
         pkmn_gen1_chance_options chance_options{};
         chance_options.durations = durations.raw;
-        chance_options.actions = actions.raw;
-        PKMN::set(options, chance_options);
+        // PKMN::set(options, chance_options);
+        pkmn_gen1_calc_options calc_options{};
+        PKMN::view(calc_options.overrides).actions = actions.raw;
+        // PKMN::set(options, calc_options);
+        pkmn_gen1_battle_options_set(&options, nullptr, &chance_options, &calc_options);
+        std::cout << "calc_options ";
+        raw_print(calc_options);
+        std::cout << "options ";
+        raw_print(options);
         auto result = PKMN::update(battle.raw, c1, c2, options);
         durations.raw = PKMN::durations(options);
         return result;
