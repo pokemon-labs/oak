@@ -3,7 +3,7 @@ clang-format -i \
     cpp/include/libpkmn/*.h cpp/include/libpkmn/data/*.h \
     cpp/include/search/*.h cpp/include/search/bandit/*.h cpp/include/search/util/*.h \
     cpp/include/train/battle/*.h cpp/include/train/build/*.h \
-    cpp/include/py/battle/*.h cpp/include/py/build/*.h \
+    cpp/include/py/battle/*.h cpp/include/py/build/*.h cpp/include/py/libpkmn/*.h cpp/include/py/search/*.h \
     cpp/include/nn/*.h cpp/include/nn/battle/*.h cpp/include/nn/build/*.h cpp/include/nn/battle/quantized/*.h\
     cpp/include/encode/battle/*.h cpp/include/encode/build/*.h \
     cpp/include/format/*.h cpp/include/format/cart/*.h cpp/include/format/ou/*.h  cpp/include/format/random-battles/*.h \

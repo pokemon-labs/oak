@@ -14,164 +14,181 @@ using PKMN::Data::Move;
 using PKMN::Data::Species;
 using PKMN::Data::Type;
 
-namespace Stats {
-constexpr float max_stat_value = 999;
-constexpr float max_hp_value = PKMN::Init::compute_stat(
-    get_species_data(Species::Chansey).base_stats.hp, true);
-constexpr auto n_dim = 5;
-constexpr float *write(const PKMN::Stats &stats, float *t) {
-  t[0] = stats.hp / max_hp_value;
-  t[1] = stats.atk / max_stat_value;
-  t[2] = stats.def / max_stat_value;
-  t[3] = stats.spe / max_stat_value;
-  t[4] = stats.spc / max_stat_value;
-  return t + n_dim;
+namespace Status {
+constexpr auto get_status_index(auto status, uint8_t sleeps = 0) {
+  // brn, par, psn(vol encodes tox), frz
+  if (status == PKMN::Data::Status::None) {
+    return 0;
+  }
+  if (!is_sleep(status)) {
+    const auto n = std::countr_zero(static_cast<uint8_t>(status)) - 2;
+    assert(n >= 1 && n <= 4);
+    return n;
+  } else {
+    if (!self(status)) {
+      assert(sleeps > 0);
+      return 4 + sleeps;
+    } else {
+      const auto s = static_cast<uint8_t>(status) & 7;
+      assert(s > 0 && s <= 3);
+      return 15 - s;
+    }
+  }
 }
-constexpr void write(const PKMN::Stats &stats, float *&t, uint16_t *&index,
-                     uint16_t &offset) {
-  *t++ = stats.hp / max_hp_value;
-  *index++ = offset + 0;
-  *t++ = stats.atk / max_stat_value;
-  *index++ = offset + 1;
-  *t++ = stats.def / max_stat_value;
-  *index++ = offset + 2;
-  *t++ = stats.spe / max_stat_value;
-  *index++ = offset + 3;
-  *t++ = stats.spc / max_stat_value;
-  *index++ = offset + 4;
-  offset += n_dim;
+static_assert(get_status_index(PKMN::Data::Status::None) == 0);
+static_assert(get_status_index(PKMN::Data::Status::Poison) == 1);
+static_assert(get_status_index(PKMN::Data::Status::Toxic) == 1);
+static_assert(get_status_index(PKMN::Data::Status::Burn) == 2);
+static_assert(get_status_index(PKMN::Data::Status::Freeze) == 3);
+static_assert(get_status_index(PKMN::Data::Status::Paralysis) == 4);
+// further down corresponds to more likely to wake up
+static_assert(get_status_index(PKMN::Data::Status::Sleep1, 1) == 5);
+static_assert(get_status_index(PKMN::Data::Status::Sleep1, 2) == 6);
+static_assert(get_status_index(PKMN::Data::Status::Sleep1, 3) == 7);
+static_assert(get_status_index(PKMN::Data::Status::Sleep1, 4) == 8);
+static_assert(get_status_index(PKMN::Data::Status::Sleep1, 5) == 9);
+static_assert(get_status_index(PKMN::Data::Status::Sleep1, 6) == 10);
+static_assert(get_status_index(PKMN::Data::Status::Sleep1, 7) == 11);
+static_assert(get_status_index(PKMN::Data::Status::Rest3, 1) == 12);
+static_assert(get_status_index(PKMN::Data::Status::Rest2, 2) == 13);
+static_assert(get_status_index(PKMN::Data::Status::Rest1, 3) == 14);
+constexpr auto n_dim = 15;
+} // namespace Status
+
+namespace Pokemon {
+constexpr auto n_dim = 151 + Status::n_dim + 1;
+constexpr float *write(const PKMN::Pokemon &pokemon, uint8_t sleep, float *t) {
+  auto species = static_cast<uint8_t>(pokemon.species);
+  assert(species > 0);
+  assert(species <= 151);
+  t[species - 1] = 1.0;
+  t += 151;
+  t[Status::get_status_index(pokemon.status, sleep)] = 1.0;
+  t += Status::n_dim;
+  t[0] = pokemon.hp / (float)pokemon.stats.hp;
+  t += 1;
+  return t;
+}
+constexpr void write(const PKMN::Pokemon &pokemon, uint8_t sleep, float *&t,
+                     uint16_t *&index, uint16_t &offset) {
+  auto species = static_cast<uint8_t>(pokemon.species);
+  *t++ = 1.0;
+  *index++ = offset + (species - 1);
+  offset += 151;
+  *t++ = 1.0;
+  *index++ = offset + Status::get_status_index(pokemon.status, sleep);
+  offset += Status::n_dim;
+  *t++ = pokemon.hp / (float)pokemon.stats.hp;
+  *index++ = offset;
+  offset += 1;
+}
+} // namespace Pokemon
+
+inline constexpr uint8_t ceil_log2_u8(uint8_t x) {
+  return (uint8_t)(31 - __builtin_clz((2 * x + 1)));
 }
 
-constexpr auto read(const float *t) {
-  PKMN::Stats stats{};
-  stats.hp = t[0] * max_hp_value;
-  stats.atk = t[1] * max_stat_value;
-  stats.def = t[2] * max_stat_value;
-  stats.spe = t[3] * max_stat_value;
-  stats.spc = t[4] * max_stat_value;
-  return stats;
+inline consteval bool is_bucket_step(const auto i) {
+  return (ceil_log2_u8(i) + 1) == ceil_log2_u8(i + 1);
 }
 
-inline consteval auto get_dim_labels() {
-  return std::array<std::array<char, 4>, n_dim>{
-      {"HP", "ATK", "DEF", "SPE", "SPC"}};
-}
-constexpr auto dim_labels = get_dim_labels();
-} // namespace Stats
+// This determines all values since its an increasing function
+static_assert(ceil_log2_u8(0) == 0);
+static_assert(is_bucket_step(0));
+static_assert(is_bucket_step(1));
+static_assert(is_bucket_step(3));
+static_assert(is_bucket_step(7));
+static_assert(is_bucket_step(15));
+static_assert(is_bucket_step(31));
+static_assert(ceil_log2_u8(61) == 6);
 
-namespace MoveSlots {
-constexpr auto n_dim = static_cast<uint8_t>(Move::Struggle) - 1;
-constexpr float *write(const std::array<PKMN::MoveSlot, 4> &move_slots,
-                       float *t) {
-  for (const auto [id, pp] : move_slots) {
-    if (id != Move::Struggle && id != Move::None) {
-      t[static_cast<uint8_t>(id) - 1] = static_cast<bool>(pp);
+namespace Moves {
+constexpr auto n_moves = static_cast<uint8_t>(Move::Struggle) - 1;
+constexpr auto n_pp = 6; // 7 buckets when we allow for 0pp but we don't encode
+                         // anything in that case
+constexpr auto n_dim = n_moves * n_pp;
+static_assert(ceil_log2_u8(61) == 6);
+constexpr float *write(const std::array<PKMN::MoveSlot, 4> &moves, float *t) {
+  for (auto [id, pp] : moves) {
+    if (id != Move::Struggle && id != Move::None && static_cast<bool>(pp)) {
+      auto p = ceil_log2_u8(pp) - 1; // no 0 pp
+      assert(p >= 0);
+      assert(p < n_pp);
+      auto i = (static_cast<uint16_t>(id) - 1) * n_pp + p;
+      t[i] = 1.0;
     }
   }
   return t + n_dim;
 }
-constexpr void write(const std::array<PKMN::MoveSlot, 4> &move_slots, float *&t,
-                     uint16_t *&index, uint16_t &offset) {
-  for (const auto [id, pp] : move_slots) {
+constexpr uint16_t write(const std::array<PKMN::MoveSlot, 4> &moves, float *&t,
+                         uint16_t *&index, uint16_t &offset) {
+  for (const auto [id, pp] : moves) {
     if (id != Move::Struggle && id != Move::None && static_cast<bool>(pp)) {
-      *index++ = offset + static_cast<uint8_t>(id) - 1;
+      auto p = ceil_log2_u8(pp) - 1;
+      assert(p >= 0);
+      assert(p < n_pp);
+      auto i = (static_cast<uint16_t>(id) - 1) * n_pp + p;
+      *index++ = offset + i;
       *t++ = 1.0;
     }
   }
   offset += n_dim;
 }
-
-constexpr auto read(const float *t) {
-  std::array<PKMN::MoveSlot, 4> move_slots{};
-  auto s = 0;
-  for (uint8_t i = 0; i < n_dim; ++i) {
-    if (t[i] > 0) {
-      move_slots[s++] = {static_cast<PKMN::Data::Move>(i + 1), 1};
-    }
-  }
-  return move_slots;
-}
-
 inline consteval auto get_dim_labels() {
   std::array<std::array<char, 13>, n_dim> result{};
-  for (auto i = 0; i < MoveSlots::n_dim; ++i) {
-    result[i] = PKMN::Data::MOVE_CHAR_ARRAY[i + 1];
+  for (auto i = 0; i < n_moves; ++i) {
+    for (auto p = 0; p < n_pp; ++p) {
+      auto index = i * n_pp + p;
+      result[index] = PKMN::Data::MOVE_CHAR_ARRAY[i + 1];
+      result[index][11] = '0' + (p + 1); // one before last cus null terminated?
+    }
   }
   return result;
 }
 constexpr auto dim_labels = get_dim_labels();
-} // namespace MoveSlots
+} // namespace Moves
 
-namespace Status {
-constexpr auto get_status_index(auto status, uint8_t sleeps) {
-  // brn, par, psn(vol encodes tox), frz
-  assert(static_cast<bool>(status));
-  if (!is_sleep(status)) {
-    const auto n = std::countr_zero(static_cast<uint8_t>(status)) - 3;
-    assert(n >= 0 && n <= 3);
-    return n;
-  } else {
-    if (!self(status)) {
-      assert(sleeps > 0);
-      return 3 + sleeps;
-    } else {
-      const auto s = static_cast<uint8_t>(status) & 7;
-      assert(s > 0 && s <= 3);
-      return 14 - s;
-    }
-  }
-}
-
-static_assert(get_status_index(PKMN::Data::Status::Poison, 0) == 0);
-static_assert(get_status_index(PKMN::Data::Status::Burn, 0) == 1);
-static_assert(get_status_index(PKMN::Data::Status::Freeze, 0) == 2);
-static_assert(get_status_index(PKMN::Data::Status::Paralysis, 0) == 3);
-static_assert(get_status_index(PKMN::Data::Status::Toxic, 0) == 0);
-// further down corresponds to more likely to wake up
-static_assert(get_status_index(PKMN::Data::Status::Sleep7, 1) == 4);
-static_assert(get_status_index(PKMN::Data::Status::Sleep6, 2) == 5);
-static_assert(get_status_index(PKMN::Data::Status::Sleep5, 3) == 6);
-static_assert(get_status_index(PKMN::Data::Status::Sleep4, 4) == 7);
-static_assert(get_status_index(PKMN::Data::Status::Sleep3, 5) == 8);
-static_assert(get_status_index(PKMN::Data::Status::Sleep2, 6) == 9);
-static_assert(get_status_index(PKMN::Data::Status::Sleep1, 7) == 10);
-static_assert(get_status_index(PKMN::Data::Status::Rest3, 1) == 11);
-static_assert(get_status_index(PKMN::Data::Status::Rest2, 2) == 12);
-static_assert(get_status_index(PKMN::Data::Status::Rest1, 3) == 13);
-
-// toxic and poison get the same status index, toxic also has a vol flag and a
-// counter
-constexpr auto n_dim = 14;
-
-constexpr float *write(const auto status, const auto sleep, float *t) {
-  if (static_cast<bool>(status)) {
-    t[get_status_index(status, sleep)] = 1;
-  }
+namespace Stats {
+constexpr float max_stat_value = 999;
+constexpr float max_hp_value = PKMN::Init::compute_stat(
+    get_species_data(Species::Chansey).base_stats.hp, true);
+constexpr auto n_dim = 4;
+constexpr float *write(const PKMN::Stats &stats, float *t) {
+  t[0] = std::min(1.0f, stats.atk / max_stat_value);
+  t[1] = std::min(1.0f, stats.def / max_stat_value);
+  t[2] = std::min(1.0f, stats.spe / max_stat_value);
+  t[3] = std::min(1.0f, stats.spc / max_stat_value);
+  // t[4] = stats.hp / max_hp_value;
   return t + n_dim;
 }
-constexpr void write(const auto status, const auto sleep, float *&t,
-                     uint16_t *&index, uint16_t &offset) {
-  if (static_cast<bool>(status)) {
-    *t++ = 1.0f;
-    *index++ = offset + get_status_index(status, sleep);
-  }
+constexpr void write(const PKMN::Stats &stats, float *&t, uint16_t *&index,
+                     uint16_t &offset) {
+  *t++ = std::min(1.0f, stats.atk / max_stat_value);
+  *index++ = offset + 0;
+  *t++ = std::min(1.0f, stats.def / max_stat_value);
+  *index++ = offset + 1;
+  *t++ = std::min(1.0f, stats.spe / max_stat_value);
+  *index++ = offset + 2;
+  *t++ = std::min(1.0f, stats.spc / max_stat_value);
+  *index++ = offset + 3;
+  // *t++ = stats.hp / max_hp_value;
+  // *index++ = offset + 4;
   offset += n_dim;
 }
-
 inline consteval auto get_dim_labels() {
-  return std::array<std::array<char, 5>, n_dim>{
-      {"PSN", "BRN", "FRZ", "PAR", "SLP1", "SLP2", "SLP3", "SLP4", "SLP5",
-       "SLP6", "SLP7", "RST1", "RST2", "RST3"}};
+  return std::array<std::array<char, 4>, n_dim>{{"ATK", "DEF", "SPE", "SPC"}};
 }
 constexpr auto dim_labels = get_dim_labels();
-} // namespace Status
+} // namespace Stats
 
 namespace Types {
-constexpr auto n_dim = 15;
+constexpr auto n_dim = static_cast<uint8_t>(Type::Dragon) + 1;
+static_assert(n_dim == 15);
 constexpr float *write(const uint8_t types, float *t) {
   const uint8_t type_1 = types % 16;
   const uint8_t type_2 = types / 16;
-  assert(type_1 < n_dim && type_2 < n_dim);
+  assert(type_1 < n_dim);
+  assert(type_2 < n_dim);
   t[type_1] = 1;
   t[type_2] = 1;
   return t + n_dim;
@@ -180,122 +197,22 @@ constexpr void write(const uint8_t types, float *&t, uint16_t *&index,
                      uint16_t &offset) {
   const uint8_t type_1 = types % 16;
   const uint8_t type_2 = types / 16;
-  assert(type_1 < n_dim && type_2 < n_dim);
-
+  assert(type_1 < n_dim);
+  assert(type_2 < n_dim);
   *t++ = 1.0f;
   *index++ = offset + type_1;
-
   if (type_2 != type_1) {
     *t++ = 1.0f;
     *index++ = offset + type_2;
   }
-
   offset += n_dim;
 }
 } // namespace Types
 
-namespace Pokemon {
-constexpr auto n_dim =
-    Stats::n_dim + MoveSlots::n_dim + Status::n_dim + Types::n_dim;
-
-constexpr void write(const PKMN::Pokemon &pokemon, auto sleep, float *t) {
-  t = Stats::write(pokemon.stats, t);
-  t = MoveSlots::write(pokemon.moves, t);
-  t = Status::write(pokemon.status, sleep, t);
-  t = Types::write(pokemon.types, t);
-}
-
-constexpr void write(const PKMN::Pokemon &pokemon, auto sleep, float *&t,
-                     uint16_t *&index, uint16_t offset = 0) {
-  Stats::write(pokemon.stats, t, index, offset);
-  MoveSlots::write(pokemon.moves, t, index, offset);
-  Status::write(pokemon.status, sleep, t, index, offset);
-  Types::write(pokemon.types, t, index, offset);
-}
-
-inline consteval auto get_dim_labels() {
-  std::array<std::array<char, 13>, n_dim> result{};
-  const auto copy = [](const auto &src, auto &dest) {
-    for (auto i = 0; i < src.size(); ++i) {
-      dest[i] = src[i];
-    }
-  };
-  auto index = 0;
-  for (auto i = 0; i < Stats::n_dim; ++i) {
-    copy(Stats::dim_labels[i], result[index + i]);
-  }
-  index += Stats::n_dim;
-  for (auto i = 0; i < MoveSlots::n_dim; ++i) {
-    copy(MoveSlots::dim_labels[i], result[index + i]);
-  }
-  index += MoveSlots::n_dim;
-  for (auto i = 0; i < Status::n_dim; ++i) {
-    copy(Status::dim_labels[i], result[index + i]);
-  }
-  index += Status::n_dim;
-  for (auto i = 0; i < Types::n_dim; ++i) {
-    copy(PKMN::Data::TYPE_CHAR_ARRAY[i], result[index + i]);
-  }
-  return result;
-}
-
-constexpr auto dim_labels = get_dim_labels();
-
-} // namespace Pokemon
-
-namespace Boosts {
-
-constexpr auto n_dim = 6;
-constexpr float scale = 1 / 4.0;
-constexpr float scale_acceva = 1 / 3.0;
-constexpr float *write(const PKMN::ActivePokemon &active, float *t) {
-  const auto get_multiplier = [](auto index) -> float {
-    const auto x = PKMN::Data::boosts[index + 6];
-    return (float)x[0] / x[1];
-  };
-
-  t[0] = get_multiplier(active.boosts.atk()) * scale;
-  t[1] = get_multiplier(active.boosts.def()) * scale;
-  t[2] = get_multiplier(active.boosts.spe()) * scale;
-  t[3] = get_multiplier(active.boosts.spc()) * scale;
-  t[4] = get_multiplier(active.boosts.acc()) * scale_acceva;
-  t[5] = get_multiplier(active.boosts.eva()) * scale_acceva;
-  return t + n_dim;
-}
-constexpr void write(const PKMN::ActivePokemon &active, float *&t,
-                     uint16_t *&index, uint16_t &offset) {
-  const auto get_multiplier = [](auto i) -> float {
-    const auto x = PKMN::Data::boosts[i + 6];
-    return (float)x[0] / x[1];
-  };
-
-  *t++ = get_multiplier(active.boosts.atk()) * scale;
-  *index++ = offset + 0;
-  *t++ = get_multiplier(active.boosts.def()) * scale;
-  *index++ = offset + 1;
-  *t++ = get_multiplier(active.boosts.spe()) * scale;
-  *index++ = offset + 2;
-  *t++ = get_multiplier(active.boosts.spc()) * scale;
-  *index++ = offset + 3;
-  *t++ = get_multiplier(active.boosts.acc()) * scale_acceva;
-  *index++ = offset + 4;
-  *t++ = get_multiplier(active.boosts.eva()) * scale_acceva;
-  *index++ = offset + 5;
-
-  offset += n_dim;
-}
-
-inline consteval auto get_dim_labels() {
-  return std::array<std::array<char, 4>, n_dim>{
-      {"atk", "def", "spe", "spc", "acc", "eva"}};
-}
-constexpr auto dim_labels = get_dim_labels();
-} // namespace Boosts
-
 namespace Volatiles {
-constexpr auto n_dim = 19;
+constexpr auto n_dim = 18;
 constexpr float *write(const PKMN::Volatiles &vol, float *t) {
-  constexpr float chansey_sub = 706 / 4 + 1;
+  constexpr float chansey_sub = Stats::max_hp_value / 4 + 1;
   // See data layout in extern/engine/src/lib/gen1/readme.md
   // hidden data is replaced with normalized durations
   t[0] = vol.bide();
@@ -316,17 +233,17 @@ constexpr float *write(const PKMN::Volatiles &vol, float *t) {
   t[15] = vol.transform();
   // confusion_left
   // attacks (thrashing/binding) left
-  t[16] = vol.state() / (float)std::numeric_limits<uint16_t>::max();
-  t[17] = vol.substitute_hp() / chansey_sub;
+  // state = (bide damage and rage accuracy)
+  t[16] = vol.substitute_hp() / chansey_sub;
   // transform id
   // disable left
   // disable move slot; just zero out the move encoding
-  t[18] = vol.toxic_counter() / 16.0;
+  t[17] = vol.toxic_counter() / 16.0;
   return t + n_dim;
 }
 constexpr void write(const PKMN::Volatiles &vol, float *&t, uint16_t *&index,
                      uint16_t &offset) {
-  constexpr float chansey_sub = 706 / 4 + 1;
+  constexpr float chansey_sub = Stats::max_hp_value / 4 + 1;
   const float vals[n_dim] = {static_cast<float>(vol.bide()),
                              static_cast<float>(vol.thrashing()),
                              static_cast<float>(vol.charging()),
@@ -343,11 +260,11 @@ constexpr void write(const PKMN::Volatiles &vol, float *&t, uint16_t *&index,
                              static_cast<float>(vol.light_screen()),
                              static_cast<float>(vol.reflect()),
                              static_cast<float>(vol.transform()),
-                             vol.state() /
-                                 (float)std::numeric_limits<uint16_t>::max(),
                              vol.substitute_hp() / chansey_sub,
                              vol.toxic_counter() / 16.0f};
   for (uint16_t i = 0; i < n_dim; ++i) {
+    assert(vals[i] >= 0.0);
+    assert(vals[i] <= 1.0);
     if (vals[i] != 0.0f) {
       *t++ = vals[i];
       *index++ = offset + i;
@@ -355,12 +272,11 @@ constexpr void write(const PKMN::Volatiles &vol, float *&t, uint16_t *&index,
   }
   offset += n_dim;
 }
-
 inline consteval auto get_dim_labels() {
   return std::array<std::array<char, 13>, n_dim>{
       {"bide", "thrashing", "charging", "binding", "invulner", "confusion",
        "mist", "focus_energy", "substitute", "recharging", "rage", "leech_seed",
-       "toxic", "light_screen", "reflect", "transform", "state", "sub_hp"}};
+       "toxic", "light_screen", "reflect", "transform", "sub_hp"}};
 }
 constexpr auto dim_labels = get_dim_labels();
 } // namespace Volatiles
@@ -458,22 +374,13 @@ constexpr auto dim_labels = get_dim_labels();
 } // namespace Duration
 
 namespace Active {
-
-constexpr auto n_dim = Stats::n_dim + Types::n_dim + Boosts::n_dim +
-                       Volatiles::n_dim + MoveSlots::n_dim + Duration::n_dim;
-
+constexpr auto n_dim =
+    Stats::n_dim + Types::n_dim + Volatiles::n_dim + Duration::n_dim;
 constexpr float *write(const PKMN::ActivePokemon &active,
                        const PKMN::Duration &duration, float *t) {
   t = Stats::write(active.stats, t);
   t = Types::write(active.types, t);
-  t = Boosts::write(active, t);
   t = Volatiles::write(active.volatiles, t);
-  t = MoveSlots::write(active.moves, t);
-  // disable
-  if (const auto slot = active.volatiles.disable_move()) {
-    t[static_cast<uint8_t>(active.moves[slot - 1].id)] =
-        0; // TODO check with pre
-  }
   t = Duration::write(duration, t);
   return t;
 }
@@ -482,12 +389,9 @@ constexpr void write(const PKMN::ActivePokemon &active,
                      uint16_t *&index, uint16_t &offset) {
   Stats::write(active.stats, t, index, offset);
   Types::write(active.types, t, index, offset);
-  Boosts::write(active, t, index, offset);
   Volatiles::write(active.volatiles, t, index, offset);
-  MoveSlots::write(active.moves, t, index, offset);
   Duration::write(duration, t, index, offset);
 }
-
 inline consteval auto get_dim_labels() {
   std::array<std::array<char, 13>, n_dim> result{};
 
@@ -496,80 +400,26 @@ inline consteval auto get_dim_labels() {
       dest[i] = src[i];
     }
   };
-
   auto index = 0;
   for (auto i = 0; i < Stats::n_dim; ++i) {
     copy(Stats::dim_labels[i], result[index + i]);
   }
   index += Stats::n_dim;
-
   for (auto i = 0; i < Types::n_dim; ++i) {
     copy(PKMN::Data::TYPE_CHAR_ARRAY[i], result[index + i]);
   }
   index += Types::n_dim;
-
-  for (auto i = 0; i < Boosts::n_dim; ++i) {
-    copy(Boosts::dim_labels[i], result[index + i]);
-  }
-  index += Boosts::n_dim;
-
   for (auto i = 0; i < Volatiles::n_dim; ++i) {
     copy(Volatiles::dim_labels[i], result[index + i]);
   }
   index += Volatiles::n_dim;
-
-  for (auto i = 0; i < MoveSlots::n_dim; ++i) {
-    copy(MoveSlots::dim_labels[i], result[index + i]);
-  }
-  index += MoveSlots::n_dim;
-
   for (auto i = 0; i < Duration::n_dim; ++i) {
     copy(Duration::dim_labels[i], result[index + i]);
   }
   index += Duration::n_dim;
-
   return result;
 }
 constexpr auto dim_labels = get_dim_labels();
 } // namespace Active
-
-namespace ActivePokemon {
-constexpr auto n_dim = Active::n_dim + Pokemon::n_dim;
-constexpr void write(const PKMN::Pokemon &pokemon,
-                     const PKMN::ActivePokemon &active,
-                     const PKMN::Duration &duration, float *t) {
-  t = Active::write(active, duration, t);
-  Pokemon::write(pokemon, duration.sleep(0), t);
-}
-constexpr void write(const PKMN::Pokemon &pokemon,
-                     const PKMN::ActivePokemon &active,
-                     const PKMN::Duration &duration, float *&t,
-                     uint16_t *&index) {
-  uint16_t offset = 0;
-  Active::write(active, duration, t, index, offset);
-  Pokemon::write(pokemon, duration.sleep(0), t, index, offset);
-}
-
-inline consteval auto get_dim_labels() {
-  std::array<std::array<char, 13>, n_dim> result{};
-  const auto copy = [](const auto &src, auto &dest) {
-    for (auto i = 0; i < src.size(); ++i) {
-      dest[i] = src[i];
-    }
-  };
-  auto index = 0;
-  for (auto i = 0; i < Active::n_dim; ++i) {
-    copy(Active::dim_labels[i], result[index + i]);
-  }
-  index += Active::n_dim;
-
-  for (auto i = 0; i < Pokemon::n_dim; ++i) {
-    copy(Pokemon::dim_labels[i], result[index + i]);
-  }
-  index += Pokemon::n_dim;
-  return result;
-}
-constexpr auto dim_labels = get_dim_labels();
-} // namespace ActivePokemon
 
 } // namespace Encode::Battle

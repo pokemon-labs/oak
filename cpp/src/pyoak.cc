@@ -7,6 +7,7 @@
 #include <libpkmn/init.h>
 #include <libpkmn/layout.h>
 #include <libpkmn/strings.h>
+#include <py/search/data.h>
 #include <util/load-teams.h>
 #include <util/parse.h>
 

@@ -17,6 +17,7 @@ template <typename... Layers> struct FeedForwardNetwork {
                 "FeedForwardNetwork requires more than 1 layer.");
 
   template <size_t I> auto &layer() { return std::get<I>(layers); }
+  template <size_t I> const auto &layer() const { return std::get<I>(layers); }
 
   bool read_parameters(std::istream &stream) {
     bool ok = true;

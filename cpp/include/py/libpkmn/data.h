@@ -2,10 +2,10 @@
 
 #include <libpkmn/data.h>
 
-#include <string>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <stdexcept>
+#include <string>
 
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
@@ -59,12 +59,12 @@ struct MoveSlotProxy {
 };
 
 struct MoveDetailsProxy {
-  ::PKMN::MoveDetails* p;
+  ::PKMN::MoveDetails *p;
 
-  uint8_t get_index() const {return p->index;}
-  void set_index(uint8_t val) {p->index = val;}
-  uint8_t get_counterable() const {return p->counterable;}
-  void set_counterable(uint8_t val) {p->counterable = val;}
+  uint8_t get_index() const { return p->index; }
+  void set_index(uint8_t val) { p->index = val; }
+  uint8_t get_counterable() const { return p->counterable; }
+  void set_counterable(uint8_t val) { p->counterable = val; }
 };
 
 struct BoostsProxy {
@@ -468,4 +468,4 @@ struct ActionsView {
   }
 };
 
-}
+} // namespace Py::PKMN

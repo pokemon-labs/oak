@@ -19,7 +19,12 @@
 #include "../extern/lrsnash/src/lib.h"
 
 namespace MCTS {
-struct MonteCarlo {};
+struct MonteCarlo {
+  bool forbid_switches;
+  bool forbid_status;
+  MonteCarlo(bool forbid_switches = false, bool forbid_status = false)
+      : forbid_switches{forbid_switches}, forbid_status{forbid_status} {}
+};
 } // namespace MCTS
 
 namespace TypeTraits {

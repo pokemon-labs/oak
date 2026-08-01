@@ -139,6 +139,10 @@ struct alignas(1) Volatiles {
     bits |= (static_cast<uint64_t>(val) & 0b111) << 21;
   }
   constexpr uint16_t state() const { return (bits >> 24) & 0xFFFF; }
+  constexpr void set_state(uint16_t val) {
+    bits &= ~(uint64_t{0xFFFF} << 24);
+    bits |= (static_cast<uint64_t>(val) & 0xFFFF) << 24;
+  }
   constexpr uint8_t substitute_hp() const { return (bits >> 40) & 0xFF; }
   constexpr uint8_t transform_species() const { return (bits >> 48) & 0xF; }
   constexpr uint8_t disable_left() const { return (bits >> 52) & 0xF; }
@@ -318,10 +322,15 @@ struct alignas(1) Durations {
   constexpr const Duration &get(auto i) const noexcept { return durations[i]; }
 };
 
+// TODO we should probably expose all pkmn.h data to python
+namespace Chance {
+struct Actions {};
+} // namespace Chance
+
 struct alignas(1) Overrides {
   pkmn_gen1_chance_actions actions;
   pkmn_gen1_chance_durations durations;
-}
+};
 
 #pragma pack(pop)
 

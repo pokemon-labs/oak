@@ -95,9 +95,12 @@ target_link_libraries(pyoaktrain PRIVATE libpkmn_chance pybind11::module eigen)
 set_target_properties(pyoaktrain PROPERTIES PREFIX "" SUFFIX ".so")
 set_target_properties(pyoaktrain PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# TODO revert this back to main maybe?
 add_library(pyoaksearch SHARED src/pyoaksearch.cc)
-target_link_libraries(pyoaksearch PRIVATE search_lib pybind11::module)
+target_include_directories(pyoaksearch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(pyoaksearch PRIVATE pybind11::module eigen)
 set_target_properties(pyoaksearch PROPERTIES PREFIX "" SUFFIX ".so")
+set_target_properties(pyoaksearch PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(pyoaklog SHARED src/pyoaklog.cc)
 target_include_directories(pyoaklog PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
