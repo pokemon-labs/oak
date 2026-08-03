@@ -27,8 +27,10 @@ struct Eval {
 
 class Network : private Eval {
 public:
-  Network()
-      : Eval(std::in_place_type<std::shared_ptr<NN::Battle::NetworkBase>>) {}
+  using NetworkPtr = std::shared_ptr<NN::Battle::NetworkBase>;
+  Network() : Eval(std::in_place_type<NetworkPtr>) {}
+  auto &get() { return std::get<NetworkPtr>(this->data); }
+  const auto &get() const { return std::get<NetworkPtr>(this->data); }
 
   bool read_parameters(const std::string &path) {
     auto [file, fd] = FileLock::try_open_file(path);
@@ -192,17 +194,23 @@ class Flag : private Budget {
   bool &value() { return *std::get<bool *>(this->data); }
 };
 
-template <typename T> class SideCacheImpl {};
-
 class SideCache {
-  template <typename... T> using VariantT = std::variant<SideCacheImpl<T>...>;
+public:
+  template <typename T> using Cache = NN::Battle::SideCache<T>;
+  template <typename... T> using VariantT = std::variant<Cache<T>...>;
   using Variant = VariantT<float, uint8_t>;
   Variant data;
 
-  bool is_quantized() const {
-    return std::get_if<SideCacheImpl<uint8_t>>(&data);
+  bool is_quantized() const { return std::get_if<Cache<uint8_t>>(&data); }
+  bool quantize(const Network &network) {
+    if (!this->is_quantized()) {
+      const auto &net = network.get();
+      auto quantized = NN::Battle::quantize_cache(
+          std::get<Cache<float>>(data), net->pokemon_out_dim(),
+          net->active_out_dim(), net->moves_out_dim());
+      data = std::move(quantized);
+    }
   }
-  bool quantize() { return false; }
 };
 
 } // namespace Py::Search

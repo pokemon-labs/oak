@@ -45,7 +45,8 @@ template <typename... Layers> struct FeedForwardNetwork {
   }
 
   template <Activation First, Activation... Rest>
-  void propagate(const float *input, const auto *index, float *output, auto n) {
+  void propagate(const float *input, const auto *index, float *output,
+                 uint16_t n) {
     static_assert((sizeof...(Rest) + 1) == NumLayers);
     layer<0>().template propagate<First>(input, index, buffer_a.data(), n);
     propagate_impl<1, First, Rest...>(output);

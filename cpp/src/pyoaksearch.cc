@@ -95,10 +95,26 @@ PYBIND11_MODULE(pyoaksearch, m) {
 
   // Eval
   py::class_<Py::Search::Eval>(m, "Eval");
-  py::class_<Py::Search::Network>(m, "Network").def(py::init<>());
   py::class_<Py::Search::PokeEngine>(m, "PokeEngine").def(py::init<>());
   py::class_<Py::Search::MonteCarlo>(m, "MonteCarlo").def(py::init<>());
-
+  py::class_<Py::Search::Network>(m, "Network").def(py::init<>());
+  py::class_<Py::Search::SideCache>(m, "SideCache")
+      .def(py::init<>())
+      .def(
+          "precompute",
+          [](Py::Search::SideCache &cache, Py::Search::Network &network,
+             const Py::PKMN::SideProxy &side, int index) {
+            const auto foo = [&](auto &net) {
+              if (std::holds_alternative<NN::Battle::SideCache<float>>(
+                      cache.data)) {
+                auto &c = std::get<NN::Battle::SideCache<float>>(cache.data);
+                c.precompute(net, *side.p, index);
+              } else {
+              }
+            };
+            NN::Battle::visit_network(network.get(), foo);
+          },
+          py::arg("network"), py::arg("side"), py::arg("index"));
   // Budget
   py::class_<Py::Search::Budget>(m, "Budget");
   // .def(py::init([](py::object obj) {

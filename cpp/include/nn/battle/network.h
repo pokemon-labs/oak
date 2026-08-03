@@ -11,6 +11,12 @@
 
 namespace NN::Battle {
 
+enum class Embedding {
+  Pokemon,
+  Active,
+  Moves,
+};
+
 inline constexpr float sigmoid(const float x) { return 1 / (1 + std::exp(-x)); }
 
 struct NetworkBase {
@@ -64,6 +70,32 @@ public:
       return &main_net;
     } else {
       return nullptr;
+    }
+  }
+
+  template <Embedding emb, typename T>
+  void propagate_embedding(float *input, uint16_t *indices, T *embedding,
+                           uint16_t n) {
+    static thread_local std::vector<float> temp;
+    const auto go = [&](EmbeddingNet &net) {
+      if constexpr (std::is_integral_v<T>) {
+        const auto dim = net.layer<1>().out_dim;
+        temp.reserve(dim);
+        net.propagate<activation, activation>(input, indices, temp.data(), n);
+        std::transform(temp.begin(), temp.begin() + dim, embedding,
+                       [](const auto f) { return static_cast<T>(127 * f); });
+      } else {
+        net.propagate<activation, activation>(input, indices, embedding, n);
+      }
+    };
+    if constexpr (emb == Embedding::Pokemon) {
+      go(pokemon_net);
+    } else if constexpr (emb == Embedding::Active) {
+      go(active_net);
+    } else if constexpr (emb == Embedding::Moves) {
+      go(moves_net);
+    } else {
+      static_assert(emb != emb);
     }
   }
 };
@@ -190,7 +222,7 @@ inline auto visit_quantized_network(int in, int hidden, int value_hidden,
   }
 }
 
-void visit_network(const auto &F, std::shared_ptr<NetworkBase> network) {
+void visit_network(std::shared_ptr<NetworkBase> network, const auto &F) {
 
   if (!network) {
     throw std::runtime_error{"Attempting to use uninitialized network."};
@@ -199,6 +231,7 @@ void visit_network(const auto &F, std::shared_ptr<NetworkBase> network) {
   if (auto net = std::dynamic_pointer_cast<Network>(network)) {
     F(*net);
   } else if (auto net = std::dynamic_pointer_cast<NetworkClamped>(network)) {
+    F(*net);
   } else if (network->main_net_float() == nullptr) {
     // quantized
     const auto [i, h, v, p] = network->shape();

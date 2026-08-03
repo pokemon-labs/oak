@@ -69,18 +69,15 @@ constexpr float *write(const PKMN::Pokemon &pokemon, uint8_t sleep, float *t) {
   t += 1;
   return t;
 }
-constexpr void write(const PKMN::Pokemon &pokemon, uint8_t sleep, float *&t,
-                     uint16_t *&index, uint16_t &offset) {
+constexpr void write(const PKMN::Pokemon &pokemon, uint8_t sleep, float *t,
+                     uint16_t *index) {
   auto species = static_cast<uint8_t>(pokemon.species);
   *t++ = 1.0;
-  *index++ = offset + (species - 1);
-  offset += 151;
+  *index++ = species - 1;
   *t++ = 1.0;
-  *index++ = offset + Status::get_status_index(pokemon.status, sleep);
-  offset += Status::n_dim;
+  *index++ = 151 + Status::get_status_index(pokemon.status, sleep);
   *t++ = pokemon.hp / (float)pokemon.stats.hp;
-  *index++ = offset;
-  offset += 1;
+  *index++ = 151 + Status::n_dim;
 }
 } // namespace Pokemon
 
@@ -120,19 +117,21 @@ constexpr float *write(const std::array<PKMN::MoveSlot, 4> &moves, float *t) {
   }
   return t + n_dim;
 }
-constexpr uint16_t write(const std::array<PKMN::MoveSlot, 4> &moves, float *&t,
-                         uint16_t *&index, uint16_t &offset) {
+constexpr auto write(const std::array<PKMN::MoveSlot, 4> &moves, float *t,
+                     uint16_t *index) {
+  auto n = 0;
   for (const auto [id, pp] : moves) {
     if (id != Move::Struggle && id != Move::None && static_cast<bool>(pp)) {
       auto p = ceil_log2_u8(pp) - 1;
       assert(p >= 0);
       assert(p < n_pp);
       auto i = (static_cast<uint16_t>(id) - 1) * n_pp + p;
-      *index++ = offset + i;
+      *index++ = i;
       *t++ = 1.0;
+      ++n;
     }
   }
-  offset += n_dim;
+  return n;
 }
 inline consteval auto get_dim_labels() {
   std::array<std::array<char, 13>, n_dim> result{};
