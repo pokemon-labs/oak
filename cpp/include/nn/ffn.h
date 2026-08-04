@@ -37,6 +37,20 @@ template <typename... Layers> struct FeedForwardNetwork {
     return true;
   }
 
+  template <typename... Dims> void resize(Dims... dims) {
+    static_assert(sizeof...(Dims) == NumLayers + 1,
+                  "resize() requires NumLayers + 1 dimensions (in, ..., out)");
+    const std::array<uint32_t, NumLayers + 1> d{static_cast<uint32_t>(dims)...};
+    size_t max_out = 0;
+    [&]<size_t... I>(std::index_sequence<I...>) {
+      ((this->template layer<I>().resize(d[I], d[I + 1]),
+        max_out = std::max(max_out, size_t(d[I + 1]))),
+       ...);
+    }(std::make_index_sequence<NumLayers>{});
+    buffer_a.resize(max_out);
+    buffer_b.resize(max_out);
+  }
+
   template <Activation First, Activation... Rest>
   void propagate(const float *input, float *output) {
     static_assert((sizeof...(Rest) + 1) == NumLayers);

@@ -41,7 +41,7 @@ consteval bool check_buckets() {
     get_entry(pokemon, sleep);
   }
 
-  for (auto k = 15; k < 30; ++k) {
+  for (auto k = 0; k < 15; ++k) {
     if (count[k] != 1) {
       return false;
     }
@@ -143,13 +143,21 @@ PYBIND11_MODULE(pyoaksearch, m) {
           [](Network &net, uint32_t ph, uint32_t po, uint32_t ah, uint32_t ao,
              uint32_t mh, uint32_t mo, uint32_t h, uint32_t value,
              uint32_t policy) {
-            auto &network = net.get();
+            auto network = net.get();
             network->resize(ph, po, ah, ao, mh, mo, h, value, policy);
           },
           py::arg("pokemon_hidden"), py::arg("pokemon_out"),
           py::arg("active_hidden"), py::arg("active_out"),
           py::arg("moves_hidden"), py::arg("moves_out"), py::arg("main_hidden"),
-          py::arg("value_hidden"), py::arg("policy_hidden"));
+          py::arg("value_hidden"), py::arg("policy_hidden"))
+      .def(
+          "initialize",
+          [](Network &net, uint64_t seed) {
+            auto network = net.get();
+            mt19937 device{seed};
+            network->initialize(device);
+          },
+          py::arg("seed"));
   py::class_<SideCache>(m, "SideCache")
       .def(py::init<>())
       .def(

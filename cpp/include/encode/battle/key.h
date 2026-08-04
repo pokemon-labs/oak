@@ -3,17 +3,21 @@
 #include <encode/battle/battle.h>
 
 namespace Encode::Battle::Key {
-
+// there are 51 hp buckets "technically" but we use this calculation for the
+// number of embeddings and we don't use an embedding for hp=0
 constexpr auto n_hp = 50;
 constexpr auto n_status = Status::n_dim;
 constexpr auto n_pokemon = n_hp * n_status;
 
 constexpr uint8_t hp48(uint16_t hp, uint16_t maxhp) {
+  assert(hp != 0);
   return static_cast<uint8_t>(1 + (uint32_t(hp - 1) * 49) / (maxhp - 1));
 }
 
 constexpr auto get_key(const PKMN::Pokemon &pokemon, uint8_t sleep) {
-  uint16_t key = hp48(pokemon.hp, pokemon.stats.hp) * Status::n_dim +
+  auto bucket = hp48(pokemon.hp, pokemon.stats.hp);
+  assert(bucket != 0);
+  uint16_t key = (bucket - 1) * Status::n_dim +
                  Status::get_status_index(pokemon.status, sleep);
   return key;
 }

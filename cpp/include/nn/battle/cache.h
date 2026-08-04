@@ -108,19 +108,13 @@ template <typename T> struct SideCache {
       // const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
       const auto key =
           Encode::Battle::Status::get_status_index(pokemon.status, sleep) +
-          bucket * Encode::Battle::Status::n_dim;
+          (bucket - 1) * Encode::Battle::Status::n_dim;
       auto &u = pokemon_data[key];
       u.reset(new T[dim]);
       auto *embedding = u.get();
       assert(embedding != nullptr);
       network.template propagate_embedding<Embedding_::Pokemon, T>(
           input, indices, embedding, 3);
-      // std::cout << "dim: " << dim << " ";
-      // for (auto i = 0; i < dim; ++i) {
-      //   std::cout << (float)embedding[i] << ' ';
-      // }
-      // std::cout << '\n';
-      std::cout << (int)key << ' ';
     };
 
     using PKMN::Data::Status;
@@ -131,7 +125,7 @@ template <typename T> struct SideCache {
 
     for (auto bucket = 1; bucket <= 50; ++bucket) {
       // TODO
-      // pokemon.hp = pokemon.stats.hp * bucket / 50;
+      pokemon.hp = pokemon.stats.hp * bucket / 50;
       // non slept status conditions
       for (const auto status : status_array) {
         pokemon.status = status;

@@ -40,6 +40,23 @@ struct MainNet {
     p2_policy_fc3.initialize(device);
   }
 
+  void resize(uint32_t in, uint32_t hidden, uint32_t policy_hidden,
+              uint32_t value_hidden) {
+    fc0.resize(in, hidden);
+    fc1.resize(hidden, hidden);
+    value_fc2.resize(hidden, value_hidden);
+    value_fc3.resize(value_hidden, 1);
+    p1_policy_fc2.resize(hidden, policy_hidden);
+    p1_policy_fc3.resize(policy_hidden, Encode::Battle::Policy::n_dim);
+    p2_policy_fc2.resize(hidden, policy_hidden);
+    p2_policy_fc3.resize(policy_hidden, Encode::Battle::Policy::n_dim);
+    buffer0.resize(hidden);
+    buffer1.resize(hidden);
+    value_buffer.resize(value_hidden);
+    p1_policy_buffer.resize(policy_hidden);
+    p2_policy_buffer.resize(policy_hidden);
+  }
+
   std::tuple<int, int, int, int> shape() const noexcept {
     return {fc0.in_dim, fc0.out_dim, value_fc2.out_dim, p1_policy_fc2.out_dim};
   }

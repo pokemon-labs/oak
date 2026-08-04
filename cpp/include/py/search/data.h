@@ -30,7 +30,9 @@ struct Eval {
 class Network : private Eval {
 public:
   using NetworkPtr = std::shared_ptr<NN::Battle::NetworkBase>;
-  Network() : Eval(std::in_place_type<NetworkPtr>) {}
+  Network()
+      : Eval(std::in_place_type<NetworkPtr>,
+             std::make_shared<NN::Battle::Network>()) {}
   auto &get() { return std::get<NetworkPtr>(this->data); }
   const auto &get() const { return std::get<NetworkPtr>(this->data); }
 
@@ -65,7 +67,7 @@ public:
       throw std::runtime_error{"Agent: could not parse header at: " + path};
       return false;
     }
-  } 
+  }
 
   bool quantize() { return false; }
   bool is_quantized() const { return false; }

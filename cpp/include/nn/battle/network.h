@@ -54,20 +54,10 @@ struct NetworkBase {
   void resize(uint32_t ph, uint32_t po, uint32_t ah, uint32_t ao, uint32_t mh,
               uint32_t mo, uint32_t h, uint32_t value, uint32_t policy) {
     if (auto *main = main_net_float()) {
-      pokemon_net.layer<0>().resize(Encode::Battle::Pokemon::n_dim, ph);
-      pokemon_net.layer<1>().resize(ph, po);
-      active_net.layer<0>().resize(Encode::Battle::Active::n_dim, ah);
-      active_net.layer<1>().resize(ah, ao);
-      moves_net.layer<0>().resize(Encode::Battle::Moves::n_dim, mh);
-      moves_net.layer<1>().resize(mh, mo);
-      main->fc0.resize(2 * side_embedding_dim(), h);
-      main->fc1.resize(h, h);
-      main->value_fc2.resize(h, value);
-      main->value_fc3.resize(value, 1);
-      main->p1_policy_fc2.resize(h, policy);
-      main->p1_policy_fc3.resize(policy, Encode::Battle::Policy::n_dim);
-      main->p2_policy_fc2.resize(h, policy);
-      main->p2_policy_fc3.resize(policy, Encode::Battle::Policy::n_dim);
+      pokemon_net.resize(Encode::Battle::Pokemon::n_dim, ph, po);
+      active_net.resize(Encode::Battle::Active::n_dim, ah, ao);
+      moves_net.resize(Encode::Battle::Moves::n_dim, mh, mo);
+      main->resize(2 * side_embedding_dim(), h, value, policy);
     } else {
       throw std::runtime_error{"Attempting to resize quantized network"};
     }
