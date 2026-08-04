@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <thread>
+#include <variant>
 
 namespace Py::Search {
 
