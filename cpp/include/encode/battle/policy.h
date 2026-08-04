@@ -6,20 +6,6 @@
 
 #include <cassert>
 
-/*
-
-Actions in battle are encoded as either a move or a species. All moves are
-encoded except for None and Struggle. The latter is because Struggle is only
-possible when theres one move, so no policy inference is needed.
-
-The rest is self explanatory. Moves are encoded as themselves, and switches as
-the incoming Pokemon's species.
-
-inline This encoding keeps the number of logits small (n_dim) and only 9 actions
-max are legal, so we don't have to compute the entire logit layer.
-
-*/
-
 namespace Encode::Battle::Policy {
 
 static constexpr int n_dim =

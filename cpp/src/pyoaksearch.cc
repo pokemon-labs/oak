@@ -14,6 +14,43 @@
 
 #include <py/search/data.h>
 
+consteval bool check_buckets() {
+  using PKMN::Data::Status;
+  constexpr std::array<Status, 8> status_array{
+      Status::None,      Status::Poison, Status::Burn,  Status::Freeze,
+      Status::Paralysis, Status::Rest1,  Status::Rest2, Status::Rest3};
+  PKMN::Pokemon pokemon{};
+  pokemon.stats.hp = 714;
+  // std::unordered_map<int, int> count{};
+  std::array<int, 1000> count{};
+  // TODO
+  const auto get_entry = [&count](const auto &pokemon, auto sleep) {
+    const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
+    count[key] += 1;
+  };
+
+  pokemon.hp = 1;
+  // non slept status conditions
+  for (const auto status : status_array) {
+    pokemon.status = status;
+    get_entry(pokemon, 0);
+  }
+  // slept
+  pokemon.status = Status::Sleep1;
+  for (auto sleep = 1; sleep <= 7; ++sleep) {
+    get_entry(pokemon, sleep);
+  }
+
+  for (auto k = 15; k < 30; ++k) {
+    if (count[k] != 1) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static_assert(check_buckets());
+
 namespace Py::Search {
 
 namespace py = pybind11;
@@ -100,7 +137,19 @@ PYBIND11_MODULE(pyoaksearch, m) {
   py::class_<Network>(m, "Network")
       .def(py::init<>())
       .def("read_parameters", &Network::read_parameters, py::arg("path"))
-      .def("zero_initialize", &Network::zero_initialize);
+      .def("zero_initialize", &Network::zero_initialize)
+      .def(
+          "resize",
+          [](Network &net, uint32_t ph, uint32_t po, uint32_t ah, uint32_t ao,
+             uint32_t mh, uint32_t mo, uint32_t h, uint32_t value,
+             uint32_t policy) {
+            auto &network = net.get();
+            network->resize(ph, po, ah, ao, mh, mo, h, value, policy);
+          },
+          py::arg("pokemon_hidden"), py::arg("pokemon_out"),
+          py::arg("active_hidden"), py::arg("active_out"),
+          py::arg("moves_hidden"), py::arg("moves_out"), py::arg("main_hidden"),
+          py::arg("value_hidden"), py::arg("policy_hidden"));
   py::class_<SideCache>(m, "SideCache")
       .def(py::init<>())
       .def(

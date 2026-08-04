@@ -29,6 +29,17 @@ struct MainNet {
   std::vector<float> p1_policy_buffer;
   std::vector<float> p2_policy_buffer;
 
+  void initialize(auto &device) {
+    fc0.initialize(device);
+    fc1.initialize(device);
+    value_fc2.initialize(device);
+    value_fc3.initialize(device);
+    p1_policy_fc2.initialize(device);
+    p1_policy_fc3.initialize(device);
+    p2_policy_fc2.initialize(device);
+    p2_policy_fc3.initialize(device);
+  }
+
   std::tuple<int, int, int, int> shape() const noexcept {
     return {fc0.in_dim, fc0.out_dim, value_fc2.out_dim, p1_policy_fc2.out_dim};
   }

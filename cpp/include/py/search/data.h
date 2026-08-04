@@ -64,7 +64,7 @@ public:
       throw std::runtime_error{"Agent: could not parse header at: " + path};
       return false;
     }
-  }
+  } 
 
   bool quantize() { return false; }
   bool is_quantized() const { return false; }
@@ -192,7 +192,7 @@ struct Budget {
   Variant data;
 };
 
-class Flag : private Budget {
+class Flag : public Budget {
   Flag() : Budget{} {}
   bool &value() { return *std::get<bool *>(this->data); }
 };

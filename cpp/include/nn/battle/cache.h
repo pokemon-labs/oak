@@ -89,8 +89,6 @@ template <typename T> struct SideCache {
   Side<ActiveMovesCache> active_moves_cache;
   Side<PokemonCache> pokemon_cache;
   Side<PokemonMovesCache> pokemon_moves_cache;
-  // work shit
-  std::vector<float> embedding;
 
   void precompute(auto &network, const PKMN::Side &side, auto index) {
     auto pokemon = side.pokemon[index];
@@ -100,13 +98,17 @@ template <typename T> struct SideCache {
     const auto dim = network.pokemon_net.template layer<1>().out_dim;
     // pokemon
     const auto get_entry = [&pokemon_data, &network, dim](const auto &pokemon,
+                                                          const auto bucket,
                                                           const auto sleep) {
       std::array<uint16_t, Encode::Battle::Pokemon::n_dim> encoding_indices{};
       std::array<float, Encode::Battle::Pokemon::n_dim> encoding_input{};
       float *input = encoding_input.data();
       uint16_t *indices = encoding_indices.data();
       Encode::Battle::Pokemon::write(pokemon, sleep, input, indices);
-      const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
+      // const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
+      const auto key =
+          Encode::Battle::Status::get_status_index(pokemon.status, sleep) +
+          bucket * Encode::Battle::Status::n_dim;
       auto &u = pokemon_data[key];
       u.reset(new T[dim]);
       auto *embedding = u.get();
@@ -127,18 +129,18 @@ template <typename T> struct SideCache {
         Status::None,      Status::Poison, Status::Burn,  Status::Freeze,
         Status::Paralysis, Status::Rest1,  Status::Rest2, Status::Rest3};
 
-    for (auto hp = 1; hp <= 50; ++hp) {
+    for (auto bucket = 1; bucket <= 50; ++bucket) {
       // TODO
-      pokemon.hp = pokemon.stats.hp * hp / 50;
+      // pokemon.hp = pokemon.stats.hp * bucket / 50;
       // non slept status conditions
       for (const auto status : status_array) {
         pokemon.status = status;
-        get_entry(pokemon, 0);
+        get_entry(pokemon, bucket, 0);
       }
       // slept
       pokemon.status = Status::Sleep1;
       for (auto sleep = 1; sleep <= 7; ++sleep) {
-        get_entry(pokemon, sleep);
+        get_entry(pokemon, bucket, sleep);
       }
     }
 

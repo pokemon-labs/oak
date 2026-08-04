@@ -33,6 +33,13 @@ public:
     return (biases == other.biases) && (weights == other.weights);
   }
 
+  void resize(uint32_t in, uint32_t out) {
+    in_dim = in;
+    out_dim = out;
+    weights.resize(out_dim, in_dim);
+    biases.resize(out_dim);
+  }
+
   bool read_parameters(std::istream &stream) {
     if (!stream.read(reinterpret_cast<char *>(&in_dim), sizeof(uint32_t))) {
       return false;
