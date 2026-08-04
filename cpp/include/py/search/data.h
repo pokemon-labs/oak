@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nn/battle/cache.h>
 #include <nn/battle/network.h>
 #include <search/bandit/exp3.h>
 #include <search/bandit/pexp3.h>
@@ -31,6 +32,8 @@ public:
   Network() : Eval(std::in_place_type<NetworkPtr>) {}
   auto &get() { return std::get<NetworkPtr>(this->data); }
   const auto &get() const { return std::get<NetworkPtr>(this->data); }
+
+  void zero_initialize() { data = std::make_shared<NN::Battle::Network>(); }
 
   bool read_parameters(const std::string &path) {
     auto [file, fd] = FileLock::try_open_file(path);
@@ -202,7 +205,7 @@ public:
   Variant data;
 
   bool is_quantized() const { return std::get_if<Cache<uint8_t>>(&data); }
-  bool quantize(const Network &network) {
+  void quantize(const Network &network) {
     if (!this->is_quantized()) {
       const auto &net = network.get();
       auto quantized = NN::Battle::quantize_cache(

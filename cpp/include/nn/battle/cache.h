@@ -4,6 +4,7 @@
 #include <encode/battle/key.h>
 #include <libpkmn/data/status.h>
 #include <nn/affine.h>
+#include <nn/battle/network.h>
 #include <nn/ffn.h>
 
 #include <map>
@@ -12,7 +13,7 @@
 namespace NN::Battle {
 
 template <typename T> struct SideCache {
-
+  using value_type = T;
   using Embedding = std::unique_ptr<T[]>;
   static constexpr auto max_active_input_size = 28;
   static constexpr auto max_active_moves_input_size = 4;
@@ -45,7 +46,7 @@ template <typename T> struct SideCache {
         const auto n = Encode::Battle::Moves::write(
             moves, encoding_input.data(), encoding_indices.data());
         it->second = std::make_unique<T[]>(dim);
-        network.template propagate_embedding<Embedding::Moves, T>(
+        network.template propagate_embedding<Embedding_::Moves, T>(
             encoding_input.data(), encoding_indices.data(), it->second.get(),
             n);
       } else {
@@ -72,7 +73,7 @@ template <typename T> struct SideCache {
             Encode::Battle::Moves::write(active.moves, input, indices);
         data[key] = std::make_unique<T[]>(dim);
         auto *embedding = data(key);
-        network.template propagate_embedding<Embedding::Active, T>(
+        network.template propagate_embedding<Embedding_::Active, T>(
             network, input, indices, embedding);
         encoding_input = {};
         encoding_indices = {};
@@ -84,63 +85,74 @@ template <typename T> struct SideCache {
   template <typename U> using Side = std::array<U, 6>;
   Side<PKMN::Pokemon> reference;
   // caches
-  Side<ActiveCache> active;
-  Side<ActiveMovesCache> active_moves;
-  Side<PokemonCache> pokemon;
-  Side<PokemonMovesCache> pokemon_moves;
+  Side<ActiveCache> active_cache;
+  Side<ActiveMovesCache> active_moves_cache;
+  Side<PokemonCache> pokemon_cache;
+  Side<PokemonMovesCache> pokemon_moves_cache;
   // work shit
   std::vector<float> embedding;
 
   void precompute(auto &network, const PKMN::Side &side, auto index) {
-    // reference[index] = side.pokemon[index];
-    // auto &data = pokemon[index].data;
-    // // pokemon
-    // const auto get_entry = [this, &network](const auto &pokemon,
-    //                                         const auto sleep) {
-    //   std::array<uint16_t, Encode::Battle::Pokemon::n_dim>
-    //   encoding_indices{}; std::array<float, Encode::Battle::Pokemon::n_dim>
-    //   encoding_input{}; float *input = encoding_input.data(); uint16_t
-    //   *indices = encoding_indices.data();
-    //   Encode::Battle::Pokemon::write(pokemon, sleep, input, indices);
-    //   auto *embedding =
-    //       this->data(Encode::Battle::Key::get_key(pokemon, sleep));
-    //   network.template propagate_embedding<Embedding::Pokemon, T>(
-    //       input, indices, embedding, 3);
-    // };
+    auto pokemon = side.pokemon[index];
+    reference[index] = pokemon;
 
-    // using PKMN::Data::Status;
+    auto &pokemon_data = pokemon_cache[index].data;
+    const auto dim = network.pokemon_net.template layer<1>().out_dim;
+    // pokemon
+    const auto get_entry = [&pokemon_data, &network, dim](const auto &pokemon,
+                                                          const auto sleep) {
+      std::array<uint16_t, Encode::Battle::Pokemon::n_dim> encoding_indices{};
+      std::array<float, Encode::Battle::Pokemon::n_dim> encoding_input{};
+      float *input = encoding_input.data();
+      uint16_t *indices = encoding_indices.data();
+      Encode::Battle::Pokemon::write(pokemon, sleep, input, indices);
+      const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
+      auto &u = pokemon_data[key];
+      u.reset(new T[dim]);
+      auto *embedding = u.get();
+      assert(embedding != nullptr);
+      network.template propagate_embedding<Embedding_::Pokemon, T>(
+          input, indices, embedding, 3);
+      // std::cout << "dim: " << dim << " ";
+      // for (auto i = 0; i < dim; ++i) {
+      //   std::cout << (float)embedding[i] << ' ';
+      // }
+      // std::cout << '\n';
+      std::cout << (int)key << ' ';
+    };
 
-    // constexpr std::array<Status, 8> status_array{
-    //     Status::None,      Status::Poison, Status::Burn,  Status::Freeze,
-    //     Status::Paralysis, Status::Rest1,  Status::Rest2, Status::Rest3};
+    using PKMN::Data::Status;
 
-    // for (auto hp = 1; hp <= 50; ++hp) {
-    //   // TODO
-    //   pokemon.hp = pokemon.stats.hp * hp / 50;
-    //   // non slept status conditions
-    //   for (const auto status : status_array) {
-    //     pokemon.status = status;
-    //     get_entry(pokemon, 0);
-    //   }
-    //   // slept
-    //   pokemon.status = Status::Sleep1;
-    //   for (auto sleep = 1; sleep <= 7; ++sleep) {
-    //     get_entry(pokemon, sleep);
-    //   }
-    // }
+    constexpr std::array<Status, 8> status_array{
+        Status::None,      Status::Poison, Status::Burn,  Status::Freeze,
+        Status::Paralysis, Status::Rest1,  Status::Rest2, Status::Rest3};
+
+    for (auto hp = 1; hp <= 50; ++hp) {
+      // TODO
+      pokemon.hp = pokemon.stats.hp * hp / 50;
+      // non slept status conditions
+      for (const auto status : status_array) {
+        pokemon.status = status;
+        get_entry(pokemon, 0);
+      }
+      // slept
+      pokemon.status = Status::Sleep1;
+      for (auto sleep = 1; sleep <= 7; ++sleep) {
+        get_entry(pokemon, sleep);
+      }
+    }
 
     // assert(std::all_of(data.begin(), data.end(),
     //                    [](auto x) { return static_cast<bool>(x); }));
-    return {};
   }
 
   void clear() {
-    active.data.clear();
-    active_moves.data.clear();
-    for (auto &embedding : pokemon.data) {
+    active_cache.data.clear();
+    active_moves_cache.data.clear();
+    for (auto &embedding : pokemon_cache.data) {
       embedding.reset();
     }
-    for (auto &embedding : pokemon_moves.data) {
+    for (auto &embedding : pokemon_moves_cache.data) {
       embedding.reset();
     }
   }
@@ -172,14 +184,14 @@ auto quantize_cache(const SideCache<float> &cache, uint32_t pokemon_dim,
   SideCache<uint8_t> quantized{};
   quantized.reference = cache.reference;
   for (auto index = 0; index < 6; ++index) {
-    copy_array(cache.pokemon[index].data, quantized.pokemon[index].data,
-               pokemon_dim);
-    copy_array(cache.pokemon_moves[index].data,
-               quantized.pokemon_moves[index].data, moves_dim);
-    copy_map(cache.active[index].data, quantized.active[index].data,
+    copy_array(cache.pokemon_cache[index].data,
+               quantized.pokemon_cache[index].data, pokemon_dim);
+    copy_array(cache.pokemon_moves_cache[index].data,
+               quantized.pokemon_moves_cache[index].data, moves_dim);
+    copy_map(cache.active_cache[index].data, quantized.active_cache[index].data,
              active_dim);
-    copy_map(cache.active_moves[index].data, quantized.active_moves[index].data,
-             moves_dim);
+    copy_map(cache.active_moves_cache[index].data,
+             quantized.active_moves_cache[index].data, moves_dim);
   }
   return quantized;
 }

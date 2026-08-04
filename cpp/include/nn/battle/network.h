@@ -2,7 +2,6 @@
 
 #include <encode/battle/battle.h>
 #include <encode/battle/policy.h>
-#include <nn/battle/cache.h>
 #include <nn/battle/main-net.h>
 #include <nn/battle/quantized/main-net.h>
 #include <nn/default-hyperparameters.h>
@@ -11,7 +10,7 @@
 
 namespace NN::Battle {
 
-enum class Embedding {
+enum class Embedding_ {
   Pokemon,
   Active,
   Moves,
@@ -73,7 +72,7 @@ public:
     }
   }
 
-  template <Embedding emb, typename T>
+  template <Embedding_ emb, typename T>
   void propagate_embedding(float *input, uint16_t *indices, T *embedding,
                            uint16_t n) {
     static thread_local std::vector<float> temp;
@@ -88,11 +87,11 @@ public:
         net.propagate<activation, activation>(input, indices, embedding, n);
       }
     };
-    if constexpr (emb == Embedding::Pokemon) {
+    if constexpr (emb == Embedding_::Pokemon) {
       go(pokemon_net);
-    } else if constexpr (emb == Embedding::Active) {
+    } else if constexpr (emb == Embedding_::Active) {
       go(active_net);
-    } else if constexpr (emb == Embedding::Moves) {
+    } else if constexpr (emb == Embedding_::Moves) {
       go(moves_net);
     } else {
       static_assert(emb != emb);

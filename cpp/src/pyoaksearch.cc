@@ -14,10 +14,11 @@
 
 #include <py/search/data.h>
 
-namespace Py::PKMN {
+namespace Py::Search {
 
 namespace py = pybind11;
 using namespace ::PKMN::Data;
+using namespace Py::PKMN;
 
 // Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames
 // &battle_frames,
@@ -88,21 +89,23 @@ PYBIND11_MODULE(pyoaksearch, m) {
   py::module_::import("oak");
 
   // Heap
-  py::class_<Py::Search::Heap>(m, "Heap").def("reset",
-                                              &Py::Search::Heap::reset);
-  py::class_<Py::Search::Node>(m, "Node").def(py::init<>());
-  py::class_<Py::Search::Table>(m, "Table").def(py::init<>());
+  py::class_<Heap>(m, "Heap").def("reset", &Heap::reset);
+  py::class_<Node>(m, "Node").def(py::init<>());
+  py::class_<Table>(m, "Table").def(py::init<>());
 
   // Eval
-  py::class_<Py::Search::Eval>(m, "Eval");
-  py::class_<Py::Search::PokeEngine>(m, "PokeEngine").def(py::init<>());
-  py::class_<Py::Search::MonteCarlo>(m, "MonteCarlo").def(py::init<>());
-  py::class_<Py::Search::Network>(m, "Network").def(py::init<>());
-  py::class_<Py::Search::SideCache>(m, "SideCache")
+  py::class_<Eval>(m, "Eval");
+  py::class_<PokeEngine>(m, "PokeEngine").def(py::init<>());
+  py::class_<MonteCarlo>(m, "MonteCarlo").def(py::init<>());
+  py::class_<Network>(m, "Network")
+      .def(py::init<>())
+      .def("read_parameters", &Network::read_parameters, py::arg("path"))
+      .def("zero_initialize", &Network::zero_initialize);
+  py::class_<SideCache>(m, "SideCache")
       .def(py::init<>())
       .def(
           "precompute",
-          [](Py::Search::SideCache &cache, Py::Search::Network &network,
+          [](SideCache &cache, Network &network,
              const Py::PKMN::SideProxy &side, int index) {
             const auto foo = [&](auto &net) {
               if (std::holds_alternative<NN::Battle::SideCache<float>>(
@@ -114,9 +117,25 @@ PYBIND11_MODULE(pyoaksearch, m) {
             };
             NN::Battle::visit_network(network.get(), foo);
           },
-          py::arg("network"), py::arg("side"), py::arg("index"));
+          py::arg("network"), py::arg("side"), py::arg("index"))
+      .def(
+          "pokemon_embedding",
+          [](const SideCache &cache, std::size_t side_index, std::size_t key,
+             uint32_t dim) -> py::object {
+            return std::visit(
+                [&](const auto &c) -> py::object {
+                  using T = typename std::decay_t<decltype(c)>::value_type;
+                  const T *ptr = c.pokemon_cache[side_index].data[key].get();
+                  if (!ptr) {
+                    return py::none();
+                  }
+                  return py::array_t<T>(dim, ptr);
+                },
+                cache.data);
+          },
+          py::arg("side_index"), py::arg("key"), py::arg("dim"));
   // Budget
-  py::class_<Py::Search::Budget>(m, "Budget");
+  py::class_<Budget>(m, "Budget");
   // .def(py::init([](py::object obj) {
   //     if (py::isinstance<py::int_>(obj)) {
   //         return Budget{
@@ -251,4 +270,4 @@ PYBIND11_MODULE(pyoaksearch, m) {
       py::arg("output"));
 }
 
-} // namespace Py::PKMN
+} // namespace Py::Search

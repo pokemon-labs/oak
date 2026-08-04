@@ -15,6 +15,7 @@ constexpr uint8_t hp48(uint16_t hp, uint16_t maxhp) {
 auto get_key(const PKMN::Pokemon &pokemon, uint8_t sleep) {
   uint16_t key = hp48(pokemon.hp, pokemon.stats.hp) * Status::n_dim +
                  Status::get_status_index(pokemon.status, sleep);
+  return key;
 }
 
 using Types = uint8_t;
