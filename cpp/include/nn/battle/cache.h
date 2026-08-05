@@ -91,55 +91,78 @@ template <typename T> struct SideCache {
   Side<PokemonMovesCache> pokemon_moves_cache;
 
   void precompute(auto &network, const PKMN::Side &side, auto index) {
+    auto &pokemon_data = pokemon_cache[index].data;
+    const auto pokemon_dim = network.pokemon_net.template layer<1>().out_dim;
+    const auto get_pokemon_embedding =
+        [&pokemon_data, &network, pokemon_dim](
+            const auto &pokemon, const auto bucket, const auto sleep) {
+          using namespace Encode::Battle::Pokemon;
+          uint16_t indices[n_nonzero];
+          float input[n_nonzero];
+          Encode::Battle::Pokemon::write(pokemon, sleep, input, indices);
+          // const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
+          const auto key =
+              Encode::Battle::Status::get_status_index(pokemon.status, sleep) +
+              (bucket - 1) * Encode::Battle::Status::n_dim;
+          auto &u = pokemon_data[key];
+          u.reset(new T[pokemon_dim]);
+          auto *embedding = u.get();
+          network.template propagate_embedding<Embedding_::Pokemon, T>(
+              input, indices, embedding, n_nonzero);
+        };
     auto pokemon = side.pokemon[index];
     reference[index] = pokemon;
-
-    auto &pokemon_data = pokemon_cache[index].data;
-    const auto dim = network.pokemon_net.template layer<1>().out_dim;
-    // pokemon
-    const auto get_entry = [&pokemon_data, &network, dim](const auto &pokemon,
-                                                          const auto bucket,
-                                                          const auto sleep) {
-      std::array<uint16_t, Encode::Battle::Pokemon::n_dim> encoding_indices{};
-      std::array<float, Encode::Battle::Pokemon::n_dim> encoding_input{};
-      float *input = encoding_input.data();
-      uint16_t *indices = encoding_indices.data();
-      Encode::Battle::Pokemon::write(pokemon, sleep, input, indices);
-      // const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
-      const auto key =
-          Encode::Battle::Status::get_status_index(pokemon.status, sleep) +
-          (bucket - 1) * Encode::Battle::Status::n_dim;
-      auto &u = pokemon_data[key];
-      u.reset(new T[dim]);
-      auto *embedding = u.get();
-      assert(embedding != nullptr);
-      network.template propagate_embedding<Embedding_::Pokemon, T>(
-          input, indices, embedding, 3);
-    };
-
     using PKMN::Data::Status;
-
     constexpr std::array<Status, 8> status_array{
         Status::None,      Status::Poison, Status::Burn,  Status::Freeze,
         Status::Paralysis, Status::Rest1,  Status::Rest2, Status::Rest3};
-
     for (auto bucket = 1; bucket <= 50; ++bucket) {
-      // TODO
       pokemon.hp = pokemon.stats.hp * bucket / 50;
-      // non slept status conditions
       for (const auto status : status_array) {
         pokemon.status = status;
-        get_entry(pokemon, bucket, 0);
+        get_pokemon_embedding(pokemon, bucket, 0);
       }
-      // slept
       pokemon.status = Status::Sleep1;
       for (auto sleep = 1; sleep <= 7; ++sleep) {
-        get_entry(pokemon, bucket, sleep);
+        get_pokemon_embedding(pokemon, bucket, sleep);
       }
     }
 
-    // assert(std::all_of(data.begin(), data.end(),
-    //                    [](auto x) { return static_cast<bool>(x); }));
+    auto &moves_data = pokemon_moves_cache[index].data;
+    const auto moves_dim = network.moves_net.template layer<1>().out_dim;
+    const auto get_moves_embedding = [&moves_data, &network,
+                                      moves_dim](const auto &moves) {
+      using namespace Encode::Battle::Moves;
+      uint16_t indices[n_nonzero];
+      float input[n_nonzero];
+      const auto n = write(moves, input, indices);
+      const auto key = Encode::Battle::Key::get_key(moves);
+      auto &u = moves_data[key];
+      u.reset(new T[moves_dim]);
+      auto *embedding = u.get();
+      network.template propagate_embedding<Embedding_::Moves, T>(input, indices,
+                                                                 embedding, n);
+    };
+
+    using Encode::Battle::Key::n_moves;
+    using Encode::Battle::Key::n_pp;
+    for (auto m = 0; m < n_moves; ++m) {
+      auto m_ = m;
+      for (auto i = 0; i < 4; ++i) {
+        auto pp_bucket = m_ % n_pp;
+        uint8_t repr = std::pow(2, pp_bucket) - 1;
+        pokemon.moves[i].pp = repr;
+        m_ /= n_pp;
+      }
+      get_moves_embedding(pokemon.moves);
+    }
+
+    assert(std::all_of(pokemon_data.begin(), pokemon_data.end(),
+                       [](auto &x) { return static_cast<bool>(x); }));
+    assert(std::all_of(moves_data.begin(), moves_data.end(),
+                       [](auto &x) { return static_cast<bool>(x); }));
+    // assert(std::all_of(pokemon_data.begin(), pokemon_data.end()));
+    // assert(std::all_of(moves_data.begin(), moves_data.end()));
   }
 
   void clear() {

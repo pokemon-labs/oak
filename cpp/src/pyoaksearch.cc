@@ -190,6 +190,23 @@ PYBIND11_MODULE(pyoaksearch, m) {
                 },
                 cache.data);
           },
+          py::arg("side_index"), py::arg("key"), py::arg("dim"))
+      .def(
+          "moves_embedding",
+          [](const SideCache &cache, std::size_t side_index, std::size_t key,
+             uint32_t dim) -> py::object {
+            return std::visit(
+                [&](const auto &c) -> py::object {
+                  using T = typename std::decay_t<decltype(c)>::value_type;
+                  const T *ptr =
+                      c.pokemon_moves_cache[side_index].data[key].get();
+                  if (!ptr) {
+                    return py::none();
+                  }
+                  return py::array_t<T>(dim, ptr);
+                },
+                cache.data);
+          },
           py::arg("side_index"), py::arg("key"), py::arg("dim"));
   // Budget
   py::class_<Budget>(m, "Budget");

@@ -57,6 +57,7 @@ constexpr auto n_dim = 15;
 
 namespace Pokemon {
 constexpr auto n_dim = 151 + Status::n_dim + 1;
+constexpr auto n_nonzero = 3;
 constexpr float *write(const PKMN::Pokemon &pokemon, uint8_t sleep, float *t) {
   auto species = static_cast<uint8_t>(pokemon.species);
   assert(species > 0);
@@ -104,6 +105,7 @@ constexpr auto n_moves = static_cast<uint8_t>(Move::Struggle) - 1;
 constexpr auto n_pp = 6; // 7 buckets when we allow for 0pp but we don't encode
                          // anything in that case
 constexpr auto n_dim = n_moves * n_pp;
+constexpr auto n_nonzero = 4;
 static_assert(ceil_log2_u8(61) == 6);
 constexpr float *write(const std::array<PKMN::MoveSlot, 4> &moves, float *t) {
   for (auto [id, pp] : moves) {

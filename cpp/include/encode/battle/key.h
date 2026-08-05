@@ -44,7 +44,8 @@ constexpr auto get_key(const PKMN::ActivePokemon &active,
   return key;
 }
 
-constexpr auto n_moves = 7 * 7 * 7 * 7;
+constexpr size_t n_pp = 7;
+constexpr size_t n_moves = n_pp * n_pp * n_pp * n_pp;
 
 uint16_t get_key(const std::array<PKMN::MoveSlot, 4> &moves) {
   uint16_t key = 0;

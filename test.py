@@ -14,3 +14,5 @@ cache.precompute(network, battle.side(0), 0)
 
 foo = cache.pokemon_embedding(0, 749, 40)
 print(foo)
+foo = cache.moves_embedding(0, 7**4-1, 40)
+print(foo)
