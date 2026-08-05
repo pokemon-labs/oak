@@ -16,17 +16,17 @@
 
 namespace RuntimeSearch {
 
-MCTS::Output run(mt19937 &device, const Py::PKMN::Battle &battle,
-                 const Py::PKMN::Durations &durations,
+MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
+                 const Py::PKMN::DurationsView &durations,
                  const Py::Search::Budget &budget,
                  const Py::Search::BanditParams &params, Py::Search::Heap &heap,
-                 Py::Search::Eval &eval);
+                 Py::Search::Eval &eval, MCTS::Output);
 
-MCTS::Output run(mt19937 &device, const Py::PKMN::Battle &battle,
-                 const Py::PKMN::Durations &durations,
-                 const Py::Search::Budget &budget,
-                 const Py::Search::BanditParams &params, Py::Search::Heap &heap,
-                 Py::Search::Eval &eval, Py::Search::SideCache &p1_cache,
-                 Py::Search::SideCache &p2_cache);
+// MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
+//                  const Py::PKMN::DurationsView &durations,
+//                  const Py::Search::Budget &budget,
+//                  const Py::Search::BanditParams &params, Py::Search::Heap
+//                  &heap, Py::Search::Eval &eval, Py::Search::SideCache
+//                  &p1_cache, Py::Search::SideCache &p2_cache);
 
 } // namespace RuntimeSearch

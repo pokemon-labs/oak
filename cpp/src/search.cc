@@ -17,7 +17,7 @@
 // evals
 // #define NO_MONTE_CARLO
 // #define NO_POKE_ENGINE
-// #define NO_NETWORK
+#define NO_NETWORK
 
 // bandits
 // #define NO_UCB
@@ -34,27 +34,25 @@
 
 namespace RuntimeSearch {
 
-MCTS::Output run(mt19937 &device, const Py::PKMN::Battle &battle,
-                 const Py::PKMN::Durations &durations,
+MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
+                 const Py::PKMN::DurationsView &durations,
                  const Py::Search::Budget &budget,
                  const Py::Search::BanditParams &params, Py::Search::Heap &heap,
-                 Py::Search::Eval &eval) {
+                 Py::Search::Eval &eval, MCTS::Output output) {
 
-  MCTS::Input input {
-    battle.raw, durations.raw, PKMN::result(battle.raw, durations.raw);
-  };
+  MCTS::Input input{battle.raw, durations.raw, PKMN::result(battle.raw)};
 
   const auto parse_eval = [&](const auto dur, const auto &params, auto &heap) {
     MCTS::Search s{};
     if (false) {
     }
 #ifndef NO_MONTE_CARLO
-    else if (auto *ptr = std::get_if<MCTS::MonteCarlo>(&eval.data); ptr) {
+    else if (auto *ptr = std::get_if<MCTS::MonteCarlo>(&eval.data)) {
       return s.run(device, dur, params, heap, *ptr, input, output);
     }
 #endif
 #ifndef NO_POKE_ENGINE
-    else if (auto *ptr = std::get_if<PokeEngine::Eval>(&eval.data); ptr) {
+    else if (auto *ptr = std::get_if<PokeEngine::Eval>(&eval.data)) {
       return s.run(device, dur, params, heap, *ptr, input, output);
     }
 #endif
@@ -97,7 +95,8 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::Battle &battle,
   };
 
   const auto parse_params = [&](auto dur, auto bandit, auto &heap) {
-    auto *matrix_ucb_params = dynamic_cast<Py::Search::MatrixUCB>(&params);
+    const auto *matrix_ucb_params =
+        dynamic_cast<const Py::Search::MatrixUCB *>(&params);
     using T = std::remove_cvref_t<decltype(bandit)>::Params;
     auto bandit_params = std::get<T>(params.data);
 
@@ -110,23 +109,23 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::Battle &battle,
       eee.delay = matrix_ucb_params->delay;
       eee.interval = matrix_ucb_params->interval;
       eee.minimum = matrix_ucb_params->minimum;
-      eee.c = matrix_ucb_params->C;
+      eee.c = matrix_ucb_params->c;
       return parse_eval(dur, eee, heap);
     }
 #endif
     else {
-      return parse_eval(dur, bandit_params, heap)
+      return parse_eval(dur, bandit_params, heap);
     }
   };
 
   const auto parse_heap = [&](auto dur, auto bandit) {
     using Node = MCTS::Node<Joint<std::remove_cvref_t<decltype(bandit)>>>;
     using Table = MCTS::Table<Joint<std::remove_cvref_t<decltype(bandit)>>>;
+    auto *data = &heap.data;
     if (false) {
     }
 #ifndef NO_NODE
-    else if (auto *ptr =
-                 std::get_if<Py::Search::Heap::NodeVariant>(&heap.data)) {
+    else if (auto *ptr = std::get_if<Py::Search::Heap::NodeVariant>(data)) {
       auto &node_variant = *ptr;
       if (std::holds_alternative<std::monostate>(node_variant)) {
         node_variant = Node{};
@@ -139,8 +138,7 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::Battle &battle,
       }
 #endif
 #ifndef NO_TABLE
-    } else if (auto *ptr =
-                   std::get_if<Py::Search::Heap::TableVariant>(&heap.data)) {
+    } else if (auto *ptr = std::get_if<Py::Search::Heap::TableVariant>(data)) {
       auto &table_variant = *ptr;
       if (std::holds_alternative<std::monostate>(table_variant)) {
         table_variant = Table{};
@@ -159,30 +157,26 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::Battle &battle,
   };
 
   const auto parse_bandit = [&](auto dur) {
+    const auto *data = &params.data;
     if (false) {
 #ifndef NO_EXP3
-    } else if (auto *ptr = std::get_if<Exp3::Bandit::Params>(&params.data);
-               ptr) {
+    } else if (auto *ptr = std::get_if<Exp3::Bandit::Params>(data)) {
       return parse_heap(dur, Exp3::Bandit{});
 #endif
 #ifndef NO_PEXP3
-    } else if (auto *ptr = std::get_if<PExp3::Bandit::Params>(&params.data);
-               ptr) {
+    } else if (auto *ptr = std::get_if<PExp3::Bandit::Params>(data)) {
       return parse_heap(dur, PExp3::Bandit{});
 #endif
 #ifndef NO_UCB
-    } else if (auto *ptr = std::get_if<UCB::Bandit::Params>(&params.data);
-               ptr) {
+    } else if (auto *ptr = std::get_if<UCB::Bandit::Params>(data)) {
       return parse_heap(dur, UCB::Bandit{});
 #endif
 #ifndef NO_PUCB
-    } else if (auto *ptr = std::get_if<PUCB::Bandit::Params>(&params.data);
-               ptr) {
+    } else if (auto *ptr = std::get_if<PUCB::Bandit::Params>(data)) {
       return parse_heap(dur, PUCB::Bandit{});
 #endif
 #ifndef NO_UCB1
-    } else if (auto *ptr = std::get_if<UCB::Bandit::Params>(&params.data);
-               ptr) {
+    } else if (auto *ptr = std::get_if<UCB::Bandit::Params>(data)) {
       return parse_heap(dur, UCB1::Bandit{});
 #endif
     } else {
@@ -195,24 +189,22 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::Battle &battle,
     if (false) {
     }
 #ifndef NO_FLAG
-    else if (auto *ptr = std::get_if<bool *>(&budget.data); ptr) {
+    else if (auto *ptr = std::get_if<bool *>(&budget.data)) {
       return parse_bandit(*ptr);
     }
 #endif
 #ifndef NO_ITERATION
-    else if (auto *ptr = std::get_if<size_t>(&budget.data); ptr) {
+    else if (auto *ptr = std::get_if<size_t>(&budget.data)) {
       return parse_bandit(*ptr);
     }
 #endif
 #ifndef NO_DURATION
-    else if (auto *ptr = std::get_if<std::chrono::milliseconds>(&budget.data);
-             ptr) {
+    else if (auto *ptr = std::get_if<std::chrono::milliseconds>(&budget.data)) {
       return parse_bandit(*ptr);
     }
 #endif
     else {
-      throw std::runtime_error("Invalid search duration specification: " +
-                               agent.budget);
+      throw std::runtime_error("Invalid search budget.");
       return output;
     }
   };

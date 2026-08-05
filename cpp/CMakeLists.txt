@@ -66,7 +66,7 @@ FetchContent_MakeAvailable(pybind11)
 
 add_library(search_lib STATIC src/search.cc)
 target_include_directories(search_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(search_lib PUBLIC libpkmn_chance lrslibgmp eigen)
+target_link_libraries(search_lib PUBLIC libpkmn_chance lrslibgmp eigen pybind11::module)
 set_target_properties(search_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_executable(benchmark src/benchmark.cc)

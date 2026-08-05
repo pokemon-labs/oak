@@ -5,7 +5,8 @@ s = "starmie recover | snorlax bodyslam"
 network = Network()
 network.zero_initialize()
 network.resize(128, 40, 128, 60, 128, 40, 64, 64, 64)
-network.initialize(10)
+seed = 33464560398
+network.initialize(seed)
 cache = SideCache()
 
 battle, durations, result = oak.parse_battle(s)

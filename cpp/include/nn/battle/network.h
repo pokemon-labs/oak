@@ -22,6 +22,27 @@ struct NetworkBase {
   virtual std::tuple<int, int, int, int> shape() const noexcept = 0;
   virtual ~NetworkBase() = default;
   virtual MainNet *main_net_float() = 0;
+  void initialize(auto &device) {
+    if (auto *main = main_net_float()) {
+      pokemon_net.initialize(device);
+      active_net.initialize(device);
+      moves_net.initialize(device);
+      main->initialize(device);
+    } else {
+      throw std::runtime_error{"Attempting to initialize quantized network"};
+    }
+  }
+  void resize(uint32_t ph, uint32_t po, uint32_t ah, uint32_t ao, uint32_t mh,
+              uint32_t mo, uint32_t h, uint32_t value, uint32_t policy) {
+    if (auto *main = main_net_float()) {
+      pokemon_net.resize(Encode::Battle::Pokemon::n_dim, ph, po);
+      active_net.resize(Encode::Battle::Active::n_dim, ah, ao);
+      moves_net.resize(Encode::Battle::Moves::n_dim, mh, mo);
+      main->resize(2 * side_embedding_dim(), h, value, policy);
+    } else {
+      throw std::runtime_error{"Attempting to resize quantized network"};
+    }
+  }
   EmbeddingNet pokemon_net;
   EmbeddingNet active_net;
   EmbeddingNet moves_net;
@@ -41,33 +62,52 @@ struct NetworkBase {
            (slot - 1) * (pokemon_out_dim() + moves_out_dim());
   }
   uint32_t side_embedding_dim() const { return side_slot_index(7); }
-
-  void initialize(auto &device) {
-    pokemon_net.initialize(device);
-    active_net.initialize(device);
-    moves_net.initialize(device);
-    if (auto *main = main_net_float()) {
-      main->initialize(device);
-    }
-  }
-
-  void resize(uint32_t ph, uint32_t po, uint32_t ah, uint32_t ao, uint32_t mh,
-              uint32_t mo, uint32_t h, uint32_t value, uint32_t policy) {
-    if (auto *main = main_net_float()) {
-      pokemon_net.resize(Encode::Battle::Pokemon::n_dim, ph, po);
-      active_net.resize(Encode::Battle::Active::n_dim, ah, ao);
-      moves_net.resize(Encode::Battle::Moves::n_dim, mh, mo);
-      main->resize(2 * side_embedding_dim(), h, value, policy);
-    } else {
-      throw std::runtime_error{"Attempting to resize quantized network"};
-    }
-  }
 };
 
-template <typename... Caches>
-void write_battle_embedding(const auto &battle, const auto &durations,
-                            NetworkBase &network, Caches... caches) {
-  static constexpr auto n_caches = sizeof...(Caches);
+template <typename T, typename... Caches>
+T *write_side_embedding(T *embedding, const PKMN::Side &side,
+                        const PKMN::Duration &duration, NetworkBase &network,
+                        Caches... caches) {
+  // constexpr bool use_cache = sizeof...(Cache);
+  // if constexpr (use_cache) {
+  //   auto& cache = std::get<0)(caches);
+  // }
+  // const auto write_pokemon_embedding = []() {};
+  // const auto get_pokemon_moves_embedding = []() {};
+  // const auto get_active_embedding = []() {};
+  // const auto get_active_moves_embedding = []() {};
+
+  // const auto pokemon_dim = network.pokemon_out_dim();
+  // const auto active_dim = network.active_out_dim();
+  // const auto moves_dim = network.moves_out_dim();
+
+  // const auto write_zero = [&embedding](auto dim) {
+  //   std::copy_n(embedding, embedding + dim, 0);
+  //   embedding += dim;
+  // };
+
+  // const auto &stored = side.stored();
+  // const auto &active = side.active;
+
+  // if (stored.hp == 0) {
+  //   write_zero(active_dim + moves_dim);
+  // } else {
+  // }
+
+  // for (auto slot = 1; slot <= 6; ++slot) {
+  //   const auto index = side.order[slot - 1];
+  //   if (index == 0) {
+  //     write_zero(pokemon_dim + moves_dim);
+  //   } else {
+  //     const auto &pokemon = side.pokemon[index - 1];
+  //     if (pokemon.hp == 0) {
+  //       write_zero(pokemon_dim + moves_dim);
+  //     } else {
+  //     }
+  //   }
+  // }
+
+  return embedding;
 }
 
 template <typename Main, Activation activation>
@@ -84,7 +124,6 @@ public:
     return main_net.shape();
   }
 
-  // we use this to get read_parameters()
   MainNet *main_net_float() override {
     if constexpr (std::is_same_v<Main, MainNet>) {
       return &main_net;

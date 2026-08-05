@@ -161,8 +161,6 @@ template <typename T> struct SideCache {
                        [](auto &x) { return static_cast<bool>(x); }));
     assert(std::all_of(moves_data.begin(), moves_data.end(),
                        [](auto &x) { return static_cast<bool>(x); }));
-    // assert(std::all_of(pokemon_data.begin(), pokemon_data.end()));
-    // assert(std::all_of(moves_data.begin(), moves_data.end()));
   }
 
   void clear() {
