@@ -162,7 +162,7 @@ constexpr float *write(const PKMN::Stats &stats, float *t) {
   // t[4] = stats.hp / max_hp_value;
   return t + n_dim;
 }
-constexpr void write(const PKMN::Stats &stats, float *&t, uint16_t *&index,
+constexpr auto write(const PKMN::Stats &stats, float *&t, uint16_t *&index,
                      uint16_t &offset) {
   *t++ = std::min(1.0f, stats.atk / max_stat_value);
   *index++ = offset + 0;
@@ -175,6 +175,7 @@ constexpr void write(const PKMN::Stats &stats, float *&t, uint16_t *&index,
   // *t++ = stats.hp / max_hp_value;
   // *index++ = offset + 4;
   offset += n_dim;
+  return 4;
 }
 inline consteval auto get_dim_labels() {
   return std::array<std::array<char, 4>, n_dim>{{"ATK", "DEF", "SPE", "SPC"}};
@@ -194,19 +195,23 @@ constexpr float *write(const uint8_t types, float *t) {
   t[type_2] = 1;
   return t + n_dim;
 }
-constexpr void write(const uint8_t types, float *&t, uint16_t *&index,
+constexpr auto write(const uint8_t types, float *&t, uint16_t *&index,
                      uint16_t &offset) {
+  auto n = 0;
   const uint8_t type_1 = types % 16;
   const uint8_t type_2 = types / 16;
   assert(type_1 < n_dim);
   assert(type_2 < n_dim);
   *t++ = 1.0f;
   *index++ = offset + type_1;
+  ++n;
   if (type_2 != type_1) {
     *t++ = 1.0f;
     *index++ = offset + type_2;
+    ++n;
   }
   offset += n_dim;
+  return n;
 }
 } // namespace Types
 
@@ -242,8 +247,9 @@ constexpr float *write(const PKMN::Volatiles &vol, float *t) {
   t[17] = vol.toxic_counter() / 16.0;
   return t + n_dim;
 }
-constexpr void write(const PKMN::Volatiles &vol, float *&t, uint16_t *&index,
+constexpr auto write(const PKMN::Volatiles &vol, float *&t, uint16_t *&index,
                      uint16_t &offset) {
+  auto n = 0;
   constexpr float chansey_sub = Stats::max_hp_value / 4 + 1;
   const float vals[n_dim] = {static_cast<float>(vol.bide()),
                              static_cast<float>(vol.thrashing()),
@@ -269,9 +275,11 @@ constexpr void write(const PKMN::Volatiles &vol, float *&t, uint16_t *&index,
     if (vals[i] != 0.0f) {
       *t++ = vals[i];
       *index++ = offset + i;
+      ++n;
     }
   }
   offset += n_dim;
+  return n;
 }
 inline consteval auto get_dim_labels() {
   return std::array<std::array<char, 13>, n_dim>{
@@ -315,32 +323,37 @@ constexpr float *write(const PKMN::Duration &duration, float *t) {
   t += n_binding;
   return t;
 }
-constexpr void write(const PKMN::Duration &duration, float *&t,
+constexpr auto write(const PKMN::Duration &duration, float *&t,
                      uint16_t *&index, uint16_t &offset) {
-
+  auto n = 0;
   if (const auto c = duration.confusion()) {
     *t++ = 1.0f;
     *index++ = offset + (c - 1);
+    ++n;
   }
   offset += n_confusion;
 
   if (const auto d = duration.disable()) {
     *t++ = 1.0f;
     *index++ = offset + (d - 1);
+    ++n;
   }
   offset += n_disable;
 
   if (const auto a = duration.attacking()) {
     *t++ = 1.0f;
     *index++ = offset + (a - 1);
+    ++n;
   }
   offset += n_attacking;
 
   if (const auto b = duration.binding()) {
     *t++ = 1.0f;
     *index++ = offset + (b - 1);
+    ++n;
   }
   offset += n_binding;
+  return n;
 }
 
 inline consteval auto get_dim_labels() {
@@ -377,6 +390,7 @@ constexpr auto dim_labels = get_dim_labels();
 namespace Active {
 constexpr auto n_dim =
     Stats::n_dim + Types::n_dim + Volatiles::n_dim + Duration::n_dim;
+constexpr auto n_nonzero = 28;
 constexpr float *write(const PKMN::ActivePokemon &active,
                        const PKMN::Duration &duration, float *t) {
   t = Stats::write(active.stats, t);
@@ -385,13 +399,16 @@ constexpr float *write(const PKMN::ActivePokemon &active,
   t = Duration::write(duration, t);
   return t;
 }
-constexpr void write(const PKMN::ActivePokemon &active,
-                     const PKMN::Duration &duration, float *&t,
-                     uint16_t *&index, uint16_t &offset) {
-  Stats::write(active.stats, t, index, offset);
-  Types::write(active.types, t, index, offset);
-  Volatiles::write(active.volatiles, t, index, offset);
-  Duration::write(duration, t, index, offset);
+constexpr auto write(const PKMN::ActivePokemon &active,
+                     const PKMN::Duration &duration, float *t,
+                     uint16_t *index) {
+  uint16_t offset = 0;
+  auto n = 0;
+  n += Stats::write(active.stats, t, index, offset);
+  n += Types::write(active.types, t, index, offset);
+  n += Volatiles::write(active.volatiles, t, index, offset);
+  n += Duration::write(duration, t, index, offset);
+  return n;
 }
 inline consteval auto get_dim_labels() {
   std::array<std::array<char, 13>, n_dim> result{};

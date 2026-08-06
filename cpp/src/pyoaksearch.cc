@@ -157,7 +157,37 @@ PYBIND11_MODULE(pyoaksearch, m) {
             mt19937 device{seed};
             network->initialize(device);
           },
-          py::arg("seed"));
+          py::arg("seed"))
+      .def(
+          "forward_side",
+          [](Network &net, const Py::PKMN::SideProxy &side,
+             const Py::PKMN::DurationProxy &duration,
+             std::optional<std::reference_wrapper<Py::Search::SideCache>> cache)
+              -> py::array {
+            auto network = net.get();
+            py::array result;
+            const auto foo = [&](auto &net) {
+              using T = typename std::remove_cvref_t<decltype(net)>::T;
+              const auto dim = net.side_embedding_dim();
+
+              py::array_t<T> arr(static_cast<py::ssize_t>(dim));
+              T *bar = arr.mutable_data();
+              if (cache) {
+                auto &side_cache =
+                    std::get<NN::Battle::SideCache<T>>(cache->get().data);
+                NN::Battle::write_side_embedding(bar, *side.p, *duration.p, net,
+                                                 side_cache);
+              } else {
+                NN::Battle::write_side_embedding(bar, *side.p, *duration.p,
+                                                 net);
+              }
+              result = std::move(arr);
+            };
+            NN::Battle::visit_network(network, foo);
+            return result;
+          },
+          py::arg("side"), py::arg("duration"),
+          py::arg("cache") = std::nullopt);
   py::class_<SideCache>(m, "SideCache")
       .def(py::init<>())
       .def(

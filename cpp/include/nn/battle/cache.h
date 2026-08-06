@@ -17,27 +17,26 @@ template <typename T> struct SideCache {
   using Embedding = std::unique_ptr<T[]>;
   static constexpr auto max_active_input_size = 28;
   static constexpr auto max_active_moves_input_size = 4;
+  using Moves = std::array<PKMN::MoveSlot, 4>;
 
   struct PokemonCache {
     std::array<Embedding, Encode::Battle::Key::n_pokemon> data;
     const T *get(const PKMN::Pokemon &pokemon, uint8_t sleep) const {
       auto key = Encode::Battle::Key::get_key(pokemon, sleep);
-      return data[key];
+      return data[key].get();
     }
   };
   struct PokemonMovesCache {
     std::array<Embedding, Encode::Battle::Key::n_moves> data;
-    const T *get(const PKMN::Pokemon &pokemon) const {
-      auto key = Encode::Battle::Key::get_key(pokemon.moves);
-      return data[key];
+    const T *get(const Moves &moves) const {
+      auto key = Encode::Battle::Key::get_key(moves);
+      return data[key].get();
     }
   };
   struct ActiveMovesCache {
-    using Moves = std::array<PKMN::MoveSlot, 4>;
     std::map<Moves, Embedding> data;
     std::array<float, max_active_moves_input_size> encoding_input;
     std::array<uint16_t, max_active_moves_input_size> encoding_indices;
-
     const T *get(auto &network, const Moves &moves) {
       const auto dim = network.moves_net.template layer<1>().out_dim;
       auto key = Encode::Battle::Key::get_key_active(moves);
@@ -49,35 +48,30 @@ template <typename T> struct SideCache {
         network.template propagate_embedding<Embedding_::Moves, T>(
             encoding_input.data(), encoding_indices.data(), it->second.get(),
             n);
-      } else {
-        return it->second;
       }
+      return it->second.get();
     }
   };
-
   struct ActiveCache {
     std::map<Encode::Battle::Key::ActiveKey, Embedding> data;
     std::array<float, max_active_input_size> encoding_input;
     std::array<uint16_t, max_active_input_size> encoding_indices;
-
     const T *get(auto &network, const PKMN::ActivePokemon &active,
                  const PKMN::Duration &duration) {
       const auto dim = network.active_net.template layer<1>().out_dim;
       auto key = Encode::Battle::Key::get_key(active, duration);
-      if (data.find(key) != data.end()) {
-        return data[key];
-      } else {
-        auto *input = encoding_input.data();
-        auto *indices = encoding_indices.data();
-        const auto n =
-            Encode::Battle::Moves::write(active.moves, input, indices);
-        data[key] = std::make_unique<T[]>(dim);
-        auto *embedding = data(key);
+      auto [it, inserted] = data.try_emplace(key);
+      if (inserted) {
+        const auto n = Encode::Battle::Active::write(
+            active, duration, encoding_input.data(), encoding_indices.data());
+        it->second = std::make_unique<T[]>(dim);
         network.template propagate_embedding<Embedding_::Active, T>(
-            network, input, indices, embedding);
+            encoding_input.data(), encoding_indices.data(), it->second.get(),
+            n);
         encoding_input = {};
         encoding_indices = {};
       }
+      return it->second.get();
     }
   };
 
