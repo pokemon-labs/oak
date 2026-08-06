@@ -161,6 +161,12 @@ template <SearchOptions Options = default_search> struct Search {
              auto &eval, const Input &input, Output output,
              Caches &...caches) noexcept {
 
+    if constexpr (sizeof...(Caches) == 2) {
+      std::cout << "Yes Yes caches\n";
+    } else {
+      std::cout << "No No caches\n";
+    }
+
     // reset data members
     *this = {};
 

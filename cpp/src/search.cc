@@ -67,6 +67,7 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
 
         const bool has_caches = p1_cache_ptr && p2_cache_ptr;
         if (has_caches) {
+          std::cout << "Yes  Cache\n";
           if constexpr (std::is_same_v<output_type, float>) {
             auto &p1_cache = std::get<Py::Search::SideCache::Cache<float>>(
                 p1_cache_ptr->data);
@@ -83,6 +84,7 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
                            p1_cache, p2_cache);
           }
         } else {
+          std::cout << "No Cache\n";
           output = s.run(device, dur, params, heap, net, input, output);
         }
       };
