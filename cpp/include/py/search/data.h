@@ -27,7 +27,7 @@ struct Eval {
       : data(std::in_place_type<T>, std::forward<Args>(args)...) {}
 };
 
-class Network : private Eval {
+class Network : public Eval {
 public:
   using NetworkPtr = std::shared_ptr<NN::Battle::NetworkBase>;
   Network()
@@ -73,7 +73,7 @@ public:
   bool is_quantized() const { return false; }
 };
 
-class MonteCarlo : private Eval {
+class MonteCarlo : public Eval {
 public:
   MonteCarlo() : Eval{std::in_place_type<MCTS::MonteCarlo>} {}
   auto &get() { return std::get<::MCTS::MonteCarlo>(this->data); }
@@ -84,7 +84,7 @@ public:
   const bool &forbid_status() const { return get().forbid_status; }
 };
 
-class PokeEngine : private Eval {
+class PokeEngine : public Eval {
 public:
   PokeEngine() : Eval{std::in_place_type<::PokeEngine::Eval>} {}
   auto &get() { return std::get<::PokeEngine::Eval>(this->data); }
@@ -116,7 +116,7 @@ struct Heap {
   }
 };
 
-class Node : private Heap {
+class Node : public Heap {
 public:
   Node() : Heap{std::in_place_type<Heap::NodeVariant>} {}
 
@@ -140,7 +140,7 @@ public:
   }
 };
 
-class Table : private Heap {
+class Table : public Heap {
 public:
   Table() : Heap{std::in_place_type<Heap::TableVariant>} {}
 };
@@ -168,6 +168,7 @@ class PExp3 : public BanditParams {
                      exploration} {}
 };
 class UCB : public BanditParams {
+public:
   UCB(float c) : BanditParams{std::in_place_type<::UCB::Bandit::Params>, c} {}
 };
 class PUCB : public BanditParams {
@@ -193,11 +194,19 @@ struct MatrixUCB : public BanditParams {
 struct Budget {
   using Variant = std::variant<size_t, std::chrono::milliseconds, bool *>;
   Variant data;
+  template <class T, class... Args>
+  Budget(std::in_place_type_t<T>, Args &&...args)
+      : data(std::in_place_type<T>, std::forward<Args>(args)...) {}
 };
 
 class Flag : public Budget {
-  Flag() : Budget{} {}
+  Flag() : Budget{std::in_place_type<bool *>} {}
   bool &value() { return *std::get<bool *>(this->data); }
+};
+
+class Iterations : public Budget {
+public:
+  Iterations(size_t i) : Budget{std::in_place_type<size_t>, i} {}
 };
 
 class SideCache {

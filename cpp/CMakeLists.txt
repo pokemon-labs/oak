@@ -99,7 +99,7 @@ set_target_properties(pyoaktrain PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # TODO revert this back to main maybe?
 add_library(pyoaksearch SHARED src/pyoaksearch.cc)
 target_include_directories(pyoaksearch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(pyoaksearch PRIVATE libpkmn_chance pybind11::module eigen)
+target_link_libraries(pyoaksearch PRIVATE libpkmn_chance pybind11::module eigen search_lib)
 set_target_properties(pyoaksearch PROPERTIES PREFIX "" SUFFIX ".so")
 set_target_properties(pyoaksearch PROPERTIES POSITION_INDEPENDENT_CODE ON)
 

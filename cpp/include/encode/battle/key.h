@@ -9,12 +9,12 @@ constexpr auto n_hp = 50;
 constexpr auto n_status = Status::n_dim;
 constexpr auto n_pokemon = n_hp * n_status;
 
-constexpr uint8_t hp48(uint16_t hp, uint16_t maxhp) {
+inline constexpr uint8_t hp48(uint16_t hp, uint16_t maxhp) {
   assert(hp != 0);
   return static_cast<uint8_t>(1 + (uint32_t(hp - 1) * 49) / (maxhp - 1));
 }
 
-constexpr auto get_key(const PKMN::Pokemon &pokemon, uint8_t sleep) {
+inline constexpr auto get_key(const PKMN::Pokemon &pokemon, uint8_t sleep) {
   auto bucket = hp48(pokemon.hp, pokemon.stats.hp);
   assert(bucket != 0);
   uint16_t key = (bucket - 1) * Status::n_dim +
@@ -26,8 +26,8 @@ using Types = uint8_t;
 using Duration = uint16_t;
 using ActiveKey = std::tuple<PKMN::Stats, Types, PKMN::Volatiles, Duration>;
 
-constexpr auto get_key(const PKMN::ActivePokemon &active,
-                       const PKMN::Duration &duration) {
+inline constexpr auto get_key(const PKMN::ActivePokemon &active,
+                              const PKMN::Duration &duration) {
   ActiveKey key{};
   std::get<0>(key) = active.stats;
   std::get<1>(key) = active.types;
@@ -47,7 +47,7 @@ constexpr auto get_key(const PKMN::ActivePokemon &active,
 constexpr size_t n_pp = 7;
 constexpr size_t n_moves = n_pp * n_pp * n_pp * n_pp;
 
-uint16_t get_key(const std::array<PKMN::MoveSlot, 4> &moves) {
+inline uint16_t get_key(const std::array<PKMN::MoveSlot, 4> &moves) {
   uint16_t key = 0;
   for (const auto [id, pp] : moves) {
     key *= 7;
@@ -57,7 +57,7 @@ uint16_t get_key(const std::array<PKMN::MoveSlot, 4> &moves) {
   return key;
 }
 
-auto get_key_active(const std::array<PKMN::MoveSlot, 4> &moves) {
+inline auto get_key_active(const std::array<PKMN::MoveSlot, 4> &moves) {
   auto key = moves;
   for (auto &ms : key) {
     ms.pp = ceil_log2_u8(ms.pp);

@@ -172,8 +172,8 @@ template <typename T> struct SideCache {
   }
 };
 
-auto quantize_cache(const SideCache<float> &cache, uint32_t pokemon_dim,
-                    uint32_t active_dim, uint32_t moves_dim) {
+inline auto quantize_cache(const SideCache<float> &cache, uint32_t pokemon_dim,
+                           uint32_t active_dim, uint32_t moves_dim) {
   const auto copy_array = [](const auto &src, auto &dest, auto dim) {
     for (std::size_t i = 0; i < src.size(); ++i) {
       dest[i].reset();

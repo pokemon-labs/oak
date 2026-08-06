@@ -4,7 +4,7 @@
 #include <py/battle/frames.h>
 #include <py/battle/output-buffer.h>
 #include <py/libpkmn/data.h>
-// #include <util/search.h>
+#include <util/search.h>
 #include <util/strings.h>
 
 #include <pybind11/pybind11.h>
@@ -57,84 +57,19 @@ namespace py = pybind11;
 using namespace ::PKMN::Data;
 using namespace Py::PKMN;
 
-// Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames
-// &battle_frames,
-//                                        std::string network_path,
-//                                        bool discrete = false,
-//                                        std::string budget = "0") {
-
-//   RuntimeSearch::AgentParams agent_params{};
-//   agent_params.eval = network_path;
-//   agent_params.bandit = "pucb-1.0";
-//   agent_params.discrete = discrete;
-//   agent_params.budget = budget;
-//   RuntimeSearch::Agent agent{agent_params};
-//   auto battle =
-//       *reinterpret_cast<const pkmn_gen1_battle
-//       *>(battle_frames.battle.data());
-//   auto options = ::PKMN::options();
-//   auto result = ::PKMN::result();
-//   agent.initialize_network(battle);
-//   mt19937 device{std::random_device{}()};
-
-//   Py::Battle::OutputBuffer buffer{battle_frames.size};
-//   auto value = buffer.value.mutable_data();
-//   auto p1_logit = buffer.policy_logit.mutable_data();
-//   auto p2_logit = buffer.policy_logit.mutable_data() + 9;
-//   auto p1_policy = buffer.policy.mutable_data();
-//   auto p2_policy = buffer.policy.mutable_data() + 9;
-//   auto battle_ptr = battle_frames.battle.data();
-//   auto durations_ptr = battle_frames.durations.data();
-//   auto k = battle_frames.k.data();
-//   auto choice = battle_frames.choice.data();
-//   auto p1_choices = battle_frames.choices.data();
-//   auto p2_choices = battle_frames.choices.data() + 9;
-
-//   for (auto i = 0; i < battle_frames.size; ++i) {
-//     MCTS::Input input{
-//         .battle = battle,
-//         .durations = ::PKMN::durations(options),
-//         .result = result,
-//     };
-//     RuntimeSearch::Heap heap{};
-//     const auto output = RuntimeSearch::run(device, input, heap, agent);
-//     *value = output.initial_value;
-//     std::copy_n(output.p1.logit.data(), output.p1.k, p1_logit);
-//     std::copy_n(output.p2.logit.data(), output.p2.k, p2_logit);
-//     std::copy_n(output.p1.prior.data(), output.p1.k, p1_policy);
-//     std::copy_n(output.p2.prior.data(), output.p2.k, p2_policy);
-//     result = ::PKMN::update(battle, choice[0], choice[1], options);
-//     // out
-//     value += 1;
-//     p1_logit += 18;
-//     p2_logit += 18;
-//     p1_policy += 18;
-//     p2_policy += 18;
-//     // in
-//     battle_ptr += sizeof(pkmn_gen1_battle);
-//     durations_ptr += sizeof(pkmn_gen1_chance_durations);
-//     k += 2;
-//     choice += 2;
-//     p1_choices += 18;
-//     p2_choices += 18;
-//   }
-
-//   return buffer;
-// }
-
 PYBIND11_MODULE(pyoaksearch, m) {
   py::module_::import("oak");
 
   // Heap
   py::class_<Heap>(m, "Heap").def("reset", &Heap::reset);
-  py::class_<Node>(m, "Node").def(py::init<>());
-  py::class_<Table>(m, "Table").def(py::init<>());
+  py::class_<Node, Heap>(m, "Node").def(py::init<>());
+  py::class_<Table, Heap>(m, "Table").def(py::init<>());
 
   // Eval
   py::class_<Eval>(m, "Eval");
-  py::class_<PokeEngine>(m, "PokeEngine").def(py::init<>());
-  py::class_<MonteCarlo>(m, "MonteCarlo").def(py::init<>());
-  py::class_<Network>(m, "Network")
+  py::class_<PokeEngine, Eval>(m, "PokeEngine").def(py::init<>());
+  py::class_<MonteCarlo, Eval>(m, "MonteCarlo").def(py::init<>());
+  py::class_<Network, Eval>(m, "Network")
       .def(py::init<>())
       .def("read_parameters", &Network::read_parameters, py::arg("path"))
       .def(
@@ -189,6 +124,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
           },
           py::arg("side"), py::arg("duration"),
           py::arg("cache") = std::nullopt);
+
   py::class_<SideCache>(m, "SideCache")
       .def(py::init<>())
       .def(
@@ -245,29 +181,10 @@ PYBIND11_MODULE(pyoaksearch, m) {
           py::arg("side_index"), py::arg("key"), py::arg("dim"));
   // Budget
   py::class_<Budget>(m, "Budget");
-  // .def(py::init([](py::object obj) {
-  //     if (py::isinstance<py::int_>(obj)) {
-  //         return Budget{
-  //             Budget::Variant{obj.cast<std::size_t>()}
-  //         };
-  //     }
-  //     if (py::isinstance(obj,
-  //     py::module_::import("datetime").attr("timedelta"))) {
-  //         // Convert timedelta -> milliseconds
-  //         auto total_seconds =
-  //             obj.attr("total_seconds")().cast<double>();
-
-  //         return Budget{
-  //             Budget::Variant{
-  //                 std::chrono::milliseconds(
-  //                     static_cast<int64_t>(total_seconds * 1000))
-  //             }
-  //         };
-  //     }
-
-  //     throw py::type_error(
-  //         "Budget must be an int or datetime.timedelta");
-  // }));
+  py::class_<Iterations, Budget>(m, "Iterations").def(py::init<size_t>());
+  // Params
+  py::class_<BanditParams>(m, "BanditParams");
+  py::class_<UCB, BanditParams>(m, "UCB").def(py::init<float>(), py::arg("c"));
 
   py::class_<MCTS::Output>(m, "Output")
       .def(py::init<>())
@@ -364,10 +281,6 @@ PYBIND11_MODULE(pyoaksearch, m) {
           r(i) = o.p2.nash[i];
         return arr;
       });
-
-  // m.def("cpp_inference", &cpp_inference, py::arg("battle_frames"),
-  //       py::arg("network_path"), py::arg("discrete"), py::arg("budget"));
-
   m.def(
       "output_string",
       [](const BattleView &battle, const DurationsView &durations,
@@ -377,6 +290,26 @@ PYBIND11_MODULE(pyoaksearch, m) {
       },
       py::arg("battle"), py::arg("durations"), py::arg("result"),
       py::arg("output"));
+  m.def(
+      "search",
+      [](const BattleView &battle, const DurationsView &durations,
+         const Py::Search::Budget &budget,
+         const Py::Search::BanditParams &params, Py::Search::Heap &heap,
+         Py::Search::Eval &eval, MCTS::Output output,
+         std::optional<std::reference_wrapper<Py::Search::SideCache>> p1_cache =
+             {},
+         std::optional<std::reference_wrapper<Py::Search::SideCache>> p2_cache =
+             {}) {
+        mt19937 device{std::random_device{}()};
+        return RuntimeSearch::run(
+            device, battle, durations, budget, params, heap, eval, output,
+            p1_cache.has_value() ? &p1_cache.value().get() : nullptr,
+            p2_cache.has_value() ? &p2_cache.value().get() : nullptr);
+      },
+      py::arg("battle"), py::arg("durations"), py::arg("budget"),
+      py::arg("params"), py::arg("heap"), py::arg("eval"),
+      py::arg("output") = MCTS::Output{}, py::arg("p1_cache") = std::nullopt,
+      py::arg("p2_cache") = std::nullopt);
 }
 
 } // namespace Py::Search
