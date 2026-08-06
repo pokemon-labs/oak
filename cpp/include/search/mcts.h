@@ -156,8 +156,10 @@ template <SearchOptions Options = default_search> struct Search {
   size_t total_depth;
   size_t errors;
 
+  template <typename... Caches>
   Output run(auto &device, const auto budget, const auto &params, auto &heap,
-             auto &eval, const Input &input, Output output = {}) noexcept {
+             auto &eval, const Input &input, Output output,
+             Caches &...caches) noexcept {
 
     // reset data members
     *this = {};
@@ -226,7 +228,8 @@ template <SearchOptions Options = default_search> struct Search {
           std::chrono::duration_cast<std::chrono::microseconds>(budget);
       std::chrono::microseconds elapsed{};
       while (elapsed < duration) {
-        run_root_iteration(device, params, heap, input, eval, output);
+        run_root_iteration(device, params, heap, input, eval, output,
+                           caches...);
         ++output.iterations;
         elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::high_resolution_clock::now() - start);
@@ -234,13 +237,15 @@ template <SearchOptions Options = default_search> struct Search {
       // run while boolean flag is set
     } else if constexpr (requires { *budget; }) {
       while (*budget) {
-        run_root_iteration(device, params, heap, input, eval, output);
+        run_root_iteration(device, params, heap, input, eval, output,
+                           caches...);
         ++output.iterations;
       }
       // number of iterations
     } else {
       for (auto i = 0; i < budget; ++i) {
-        run_root_iteration(device, params, heap, input, eval, output);
+        run_root_iteration(device, params, heap, input, eval, output,
+                           caches...);
         ++output.iterations;
       }
     }
@@ -252,9 +257,10 @@ template <SearchOptions Options = default_search> struct Search {
     return output;
   }
 
+  template <typename... Caches>
   float run_root_iteration(auto &device, const auto &params, auto &heap,
-                           const auto &input, auto &eval,
-                           Output &output) noexcept {
+                           const auto &input, auto &eval, Output &output,
+                           Caches &...caches) noexcept {
 
     auto copy = input;
     auto *rng = reinterpret_cast<uint64_t *>(
@@ -268,11 +274,13 @@ template <SearchOptions Options = default_search> struct Search {
     }
 
     if constexpr (!is_matrix_ucb<decltype(params)>) {
-      return run_iteration(device, params, heap, copy, eval, output).first;
+      return run_iteration(device, params, heap, copy, eval, output, 0,
+                           caches...)
+          .first;
     } else {
       if ((output.iterations < params.delay)) {
         return run_iteration(device, params.bandit_params, heap, copy, eval,
-                             output)
+                             output, 0, caches...)
             .first;
       } else {
         const auto [p1_index, p2_index] =
@@ -288,10 +296,10 @@ template <SearchOptions Options = default_search> struct Search {
                 pkmn_gen1_battle_options_chance_actions(&options));
             auto &child = heap.children[{p1_index, p2_index, obs}];
             return run_iteration(device, params.bandit_params, child, copy,
-                                 eval, output, 1);
+                                 eval, output, 1, caches...);
           } else {
             return run_iteration(device, params.bandit_params, heap, copy, eval,
-                                 output, 1);
+                                 output, 1, caches...);
           }
         }();
 
@@ -306,10 +314,11 @@ template <SearchOptions Options = default_search> struct Search {
   // typical recursive mcts function
   // we return value for each player because it's slightly faster than calcing 1
   // - value at each heap
+  template <typename... Caches>
   std::pair<float, float> run_iteration(auto &device, const auto &bandit_params,
                                         auto &heap, auto &input, auto &eval,
-                                        Output &output,
-                                        size_t depth = 0) noexcept {
+                                        Output &output, size_t depth,
+                                        Caches &...caches) noexcept {
     static constexpr size_t max_depth = 100;
 
     bool error = false;
@@ -414,16 +423,45 @@ template <SearchOptions Options = default_search> struct Search {
           }
 
           if constexpr (is_network<T>) {
-            if constexpr (is_contextual_bandit<decltype(stats)>) {
-              static thread_local std::array<float, 9> p1_logits;
-              static thread_local std::array<float, 9> p2_logits;
-              value = eval.value_policy_inference(
-                  battle, durations(), m, n, p1_choices.data(),
-                  p2_choices.data(), p1_logits.data(), p2_logits.data());
-              stats.softmax_logits(bandit_params, p1_logits.data(),
-                                   p2_logits.data());
+            using output_type = std::remove_cvref_t<T>::T;
+            constexpr auto activation = std::remove_cvref_t<T>::act;
+
+            static thread_local std::vector<output_type> battle_embedding;
+            battle_embedding.reserve(2 * eval.side_embedding_dim());
+            auto *embedding = battle_embedding.data();
+            if constexpr (sizeof...(Caches) == 2) {
+              auto &p1_cache = std::get<0>(std::tie(caches...));
+              auto &p2_cache = std::get<1>(std::tie(caches...));
+              embedding =
+                  NN::Battle::write_side_embedding<output_type, activation>(
+                      embedding, PKMN::view(battle).sides[0],
+                      PKMN::view((durations())).get(0), eval, p1_cache);
+              embedding =
+                  NN::Battle::write_side_embedding<output_type, activation>(
+                      embedding, PKMN::view(battle).sides[1],
+                      PKMN::view(durations()).get(1), eval, p2_cache);
             } else {
-              value = eval.value_inference(battle, durations());
+              embedding =
+                  NN::Battle::write_side_embedding<output_type, activation>(
+                      embedding, PKMN::view(battle).sides[0],
+                      PKMN::view(durations()).get(0), eval);
+              embedding =
+                  NN::Battle::write_side_embedding<output_type, activation>(
+                      embedding, PKMN::view(battle).sides[1],
+                      PKMN::view(durations()).get(1), eval);
+            }
+
+            if constexpr (is_contextual_bandit<decltype(stats)>) {
+              // static thread_local std::array<float, 9> p1_logits;
+              // static thread_local std::array<float, 9> p2_logits;
+              // value = eval.value_policy_inference(
+              //     battle, durations(), m, n, p1_choices.data(),
+              //     p2_choices.data(), p1_logits.data(), p2_logits.data());
+              // stats.softmax_logits(bandit_params, p1_logits.data(),
+              //                      p2_logits.data());
+            } else {
+              value = eval.main_net.template propagate<activation>(
+                  battle_embedding.data());
             }
           } else if constexpr (is_poke_engine<T>) {
             value = eval.evaluate(battle);

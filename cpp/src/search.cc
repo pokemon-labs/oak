@@ -11,26 +11,26 @@
 
 // budget
 // #define NO_ITERATION
-// #define NO_DURATION
-// #define NO_FLAG
+#define NO_DURATION
+#define NO_FLAG
 
 // evals
-// #define NO_MONTE_CARLO
-// #define NO_POKE_ENGINE
-#define NO_NETWORK
+#define NO_MONTE_CARLO
+#define NO_POKE_ENGINE
+// #define NO_NETWORK
 
 // bandits
 // #define NO_UCB
-// #define NO_UCB1
-// #define NO_PUCB
-// #define NO_EXP3
-// #define NO_PEXP3
+#define NO_UCB1
+#define NO_PUCB
+#define NO_EXP3
+#define NO_PEXP3
 // matrix ucb
-// #define NO_MATRIX_UCB
+#define NO_MATRIX_UCB
 
 // heap
 // #define NO_NODE
-// #define NO_TABLE
+#define NO_TABLE
 
 namespace RuntimeSearch {
 
@@ -38,7 +38,9 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
                  const Py::PKMN::DurationsView &durations,
                  const Py::Search::Budget &budget,
                  const Py::Search::BanditParams &params, Py::Search::Heap &heap,
-                 Py::Search::Eval &eval, MCTS::Output output) {
+                 Py::Search::Eval &eval, MCTS::Output output,
+                 Py::Search::SideCache *p1_cache_ptr,
+                 Py::Search::SideCache *p2_cache_ptr) {
 
   MCTS::Input input{battle.raw, durations.raw, PKMN::result(battle.raw)};
 
@@ -59,32 +61,33 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
 #ifndef NO_NETWORK
     else if (auto *ptr = std::get_if<std::shared_ptr<NN::Battle::NetworkBase>>(
                  &eval.data)) {
-      auto *network = ptr->get();
-      // if (!agent.network_ptr) {
-      //   agent.initialize_network(input.battle);
-      // }
-      // if (auto network =
-      //         dynamic_cast<NN::Battle::Network *>(agent.network_ptr.get())) {
-      //   return s.run(device, dur, params, heap, *network, input, output);
-      // } else if (auto network = dynamic_cast<NN::Battle::NetworkClamped *>(
-      //                agent.network_ptr.get())) {
-      //   return s.run(device, dur, params, heap, *network, input, output);
-      // } else if (auto network = dynamic_cast<NN::Battle::NetworkScaled *>(
-      //                agent.network_ptr.get())) {
-      //   return s.run(device, dur, params, heap, *network, input, output);
-      // } else {
-      //   const auto [id, hd, vd, pd] = agent.network_ptr->shape();
-      //   auto q_network_ptr = NN::Battle::visit_quantized_network(
-      //       id, hd, vd, pd,
-      //       [&](auto &net) {
-      //         output = s.run(device, dur, params, heap, net, input, output);
-      //       },
-      //       std::move(agent.network_ptr));
-      //   if (q_network_ptr) {
-      //     agent.network_ptr = std::move(q_network_ptr);
-      //   }
-      //   return output;
-      // }
+      auto network_search = [&](auto &net) {
+        using output_type = std::remove_cvref_t<decltype(net)>::T;
+        constexpr auto activation = std::remove_cvref_t<decltype(net)>::act;
+
+        const bool has_caches = p1_cache_ptr && p2_cache_ptr;
+        if (has_caches) {
+          if constexpr (std::is_same_v<output_type, float>) {
+            auto &p1_cache = std::get<Py::Search::SideCache::Cache<float>>(
+                p1_cache_ptr->data);
+            auto &p2_cache = std::get<Py::Search::SideCache::Cache<float>>(
+                p2_cache_ptr->data);
+            output = s.run(device, dur, params, heap, net, input, output,
+                           p1_cache, p2_cache);
+          } else {
+            auto &p1_cache = std::get<Py::Search::SideCache::Cache<uint8_t>>(
+                p1_cache_ptr->data);
+            auto &p2_cache = std::get<Py::Search::SideCache::Cache<uint8_t>>(
+                p2_cache_ptr->data);
+            output = s.run(device, dur, params, heap, net, input, output,
+                           p1_cache, p2_cache);
+          }
+        } else {
+          output = s.run(device, dur, params, heap, net, input, output);
+        }
+      };
+      auto net = *ptr; // shared ptr to base
+      NN::Battle::visit_network(net, network_search);
       return output;
     }
 #endif
@@ -213,25 +216,3 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
 }
 
 } // namespace RuntimeSearch
-
-// budget
-#undef NO_ITERATION
-#undef NO_DURATION
-#undef NO_FLAG
-
-// evals
-#undef NO_MONTE_CARLO
-#undef NO_POKE_ENGINE
-#undef NO_NETWORK
-
-// bandits
-#undef NO_UCB
-#undef NO_UCB1
-#undef NO_PUCB
-#undef NO_EXP3
-#undef NO_PEXP3
-#undef NO_MATRIX_UCB
-
-// heap
-#undef NO_NODE
-#undef NO_TABLE

@@ -20,13 +20,7 @@ MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
                  const Py::PKMN::DurationsView &durations,
                  const Py::Search::Budget &budget,
                  const Py::Search::BanditParams &params, Py::Search::Heap &heap,
-                 Py::Search::Eval &eval, MCTS::Output);
-
-// MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
-//                  const Py::PKMN::DurationsView &durations,
-//                  const Py::Search::Budget &budget,
-//                  const Py::Search::BanditParams &params, Py::Search::Heap
-//                  &heap, Py::Search::Eval &eval, Py::Search::SideCache
-//                  &p1_cache, Py::Search::SideCache &p2_cache);
-
+                 Py::Search::Eval &eval, MCTS::Output output,
+                 Py::Search::SideCache *p1_cache = nullptr,
+                 Py::Search::SideCache *p2_cache = nullptr);
 } // namespace RuntimeSearch
