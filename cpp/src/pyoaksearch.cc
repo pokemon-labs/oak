@@ -14,6 +14,9 @@
 
 #include <py/search/data.h>
 
+#include <fstream>
+#include <string_view>
+
 consteval bool check_buckets() {
   using PKMN::Data::Status;
   constexpr std::array<Status, 8> status_array{
@@ -50,6 +53,99 @@ consteval bool check_buckets() {
 }
 
 static_assert(check_buckets());
+
+namespace {
+
+// --- Zero-copy tensor views over NN::Affine<> layers -----------------------
+//
+// These build a strided py::array that aliases an Affine layer's live Eigen
+// storage directly -- no copy. `self` is the owning Py::Search::Network
+// python object; passing it as the array's `base` makes pybind11 keep it
+// (and therefore the underlying NetworkBase/Eigen buffers) alive for as long
+// as the returned array is alive.
+//
+// IMPORTANT: these views are only valid between a call to resize() (or
+// read_parameters(), which resizes internally) and the next resize() call.
+// resize() reallocates the Eigen matrices, which silently invalidates any
+// outstanding view -- the caller is responsible for not holding views across
+// a resize().
+//
+// weights is always logically (out_dim, in_dim) regardless of Eigen storage
+// order; the strides below encode RowMajor vs ColMajor storage so the
+// logical shape/indexing seen from Python (and from e.g. torch.from_numpy)
+// is identical either way. Only EmbeddingNet's first layer (fc0 of
+// pokemon_net/active_net/moves_net) is ColMajor -- see nn/ffn.h.
+
+template <int Order>
+py::array affine_weights_view(NN::Affine<Order> &affine, py::object self) {
+  constexpr bool col_major = (Order == Eigen::ColMajor);
+  const std::vector<py::ssize_t> shape{static_cast<py::ssize_t>(affine.out_dim),
+                                       static_cast<py::ssize_t>(affine.in_dim)};
+  const std::vector<py::ssize_t> strides =
+      col_major
+          ? std::vector<py::ssize_t>{
+                static_cast<py::ssize_t>(sizeof(float)),
+                static_cast<py::ssize_t>(affine.out_dim * sizeof(float))}
+          : std::vector<py::ssize_t>{
+                static_cast<py::ssize_t>(affine.in_dim * sizeof(float)),
+                static_cast<py::ssize_t>(sizeof(float))};
+  return py::array_t<float>(shape, strides, affine.weights.data(),
+                            std::move(self));
+}
+
+template <int Order>
+py::array affine_biases_view(NN::Affine<Order> &affine, py::object self) {
+  const std::vector<py::ssize_t> shape{
+      static_cast<py::ssize_t>(affine.out_dim)};
+  const std::vector<py::ssize_t> strides{
+      static_cast<py::ssize_t>(sizeof(float))};
+  return py::array_t<float>(shape, strides, affine.biases.data(),
+                            std::move(self));
+}
+
+// Invokes F(name, affine_layer) for every float Affine<> layer in a
+// NetworkBase: the three embedding nets (each 2 layers) plus MainNet's 8
+// layers. Throws for quantized networks, which have no float layers/no
+// Affine<float> storage to view. Order of iteration is stable and is the
+// order used by write_parameters() below, matching
+// Py::Search::Network::read_parameters()'s on-disk layer order.
+void for_each_float_layer(NN::Battle::NetworkBase &network, const auto &F) {
+  auto *main = network.main_net_float();
+  if (!main) {
+    throw std::runtime_error{
+        "Network: no float layers to expose (network is quantized)."};
+  }
+  F("pokemon_net.fc0", network.pokemon_net.layer<0>());
+  F("pokemon_net.fc1", network.pokemon_net.layer<1>());
+  F("active_net.fc0", network.active_net.layer<0>());
+  F("active_net.fc1", network.active_net.layer<1>());
+  F("moves_net.fc0", network.moves_net.layer<0>());
+  F("moves_net.fc1", network.moves_net.layer<1>());
+  F("main_net.fc0", main->fc0);
+  F("main_net.fc1", main->fc1);
+  F("main_net.value_fc2", main->value_fc2);
+  F("main_net.value_fc3", main->value_fc3);
+  F("main_net.p1_policy_fc2", main->p1_policy_fc2);
+  F("main_net.p1_policy_fc3", main->p1_policy_fc3);
+  F("main_net.p2_policy_fc2", main->p2_policy_fc2);
+  F("main_net.p2_policy_fc3", main->p2_policy_fc3);
+}
+
+// Small FNV-1a byte hash. Deterministic across runs/platforms (unlike
+// std::hash<string_view>, which is only guaranteed stable within a single
+// process), but NOT the same algorithm as oak.torch's Python-side
+// hash_bytes() (blake2b) -- this is for cheap local integrity/diffing
+// checks (e.g. "did read_parameters round-trip correctly"), not for
+// comparing against hashes computed on the old torch.py path.
+uint64_t fnv1a(std::string_view bytes, uint64_t h = 0xcbf29ce484222325ULL) {
+  for (const unsigned char byte : bytes) {
+    h ^= byte;
+    h *= 0x100000001b3ULL;
+  }
+  return h;
+}
+
+} // namespace
 
 namespace Py::Search {
 
@@ -123,7 +219,147 @@ PYBIND11_MODULE(pyoaksearch, m) {
             return result;
           },
           py::arg("side"), py::arg("duration"),
-          py::arg("cache") = std::nullopt);
+          py::arg("cache") = std::nullopt)
+      .def(
+          "named_parameters",
+          [](py::object self) -> py::dict {
+            Network &net = self.cast<Network &>();
+            auto network = net.get();
+            py::dict result;
+            for_each_float_layer(*network, [&](const char *name,
+                                               auto &affine) {
+              result[py::str(name)] = py::make_tuple(
+                  affine_weights_view(affine, self),
+                  affine_biases_view(affine, self));
+            });
+            return result;
+          },
+          "Zero-copy {name: (weights, biases)} view over every float "
+          "Affine<> layer (embedding nets' fc0/fc1, and MainNet's 8 "
+          "layers). Each array aliases this Network's live Eigen storage "
+          "directly -- wrap with torch.from_numpy(...) (and "
+          "torch.nn.Parameter(...) to make it optimizable) to train this "
+          "Network in place, with no copy back to disk/C++ required. "
+          "Invalid after a subsequent call to resize(); take views only "
+          "once the network's final shape is set. Raises if this Network "
+          "is quantized (no float layers).")
+      .def(
+          "weights",
+          [](py::object self, const std::string &layer) -> py::array {
+            Network &net = self.cast<Network &>();
+            auto network = net.get();
+            std::optional<py::array> result;
+            for_each_float_layer(
+                *network, [&](const char *name, auto &affine) {
+                  if (!result && layer == name) {
+                    result = affine_weights_view(affine, self);
+                  }
+                });
+            if (!result) {
+              throw std::runtime_error{"Network: unknown layer '" + layer +
+                                       "'"};
+            }
+            return std::move(*result);
+          },
+          py::arg("layer"),
+          "Zero-copy view of a single layer's weight matrix by name (see "
+          "named_parameters() for the full name list). Same aliasing/"
+          "lifetime rules as named_parameters().")
+      .def(
+          "biases",
+          [](py::object self, const std::string &layer) -> py::array {
+            Network &net = self.cast<Network &>();
+            auto network = net.get();
+            std::optional<py::array> result;
+            for_each_float_layer(
+                *network, [&](const char *name, auto &affine) {
+                  if (!result && layer == name) {
+                    result = affine_biases_view(affine, self);
+                  }
+                });
+            if (!result) {
+              throw std::runtime_error{"Network: unknown layer '" + layer +
+                                       "'"};
+            }
+            return std::move(*result);
+          },
+          py::arg("layer"),
+          "Zero-copy view of a single layer's bias vector by name. Same "
+          "aliasing/lifetime rules as named_parameters().")
+      .def(
+          "write_parameters",
+          [](Network &net, const std::string &path) {
+            auto network = net.get();
+            if (!network->main_net_float()) {
+              throw std::runtime_error{
+                  "write_parameters: cannot serialize a quantized network."};
+            }
+            std::ofstream file(path, std::ios::binary);
+            if (!file) {
+              throw std::runtime_error{
+                  "write_parameters: could not open '" + path + "'"};
+            }
+            uint8_t header[8] = {};
+            // Mirrors Network::read_parameters()'s header parsing
+            // (py/search/data.h): byte 0 is 0 for relu, 1 for clamp.
+            // Bytes 1-7 are reserved/unused there too.
+            header[0] =
+                dynamic_cast<NN::Battle::NetworkClamped *>(network.get())
+                    ? 1
+                    : 0;
+            file.write(reinterpret_cast<const char *>(header), sizeof(header));
+            for_each_float_layer(*network, [&](const char *,
+                                               auto &affine) {
+              file.write(reinterpret_cast<const char *>(&affine.in_dim),
+                        sizeof(uint32_t));
+              file.write(reinterpret_cast<const char *>(&affine.out_dim),
+                        sizeof(uint32_t));
+              file.write(reinterpret_cast<const char *>(affine.biases.data()),
+                        affine.out_dim * sizeof(float));
+              // On-disk weight layout is always row-major, matching
+              // Affine::read_parameters (nn/affine.h), regardless of this
+              // layer's in-memory Eigen storage order.
+              using Layer = std::remove_reference_t<decltype(affine)>;
+              const typename Layer::MatrixRowMajor row_major_weights =
+                  affine.weights;
+              file.write(
+                  reinterpret_cast<const char *>(row_major_weights.data()),
+                  affine.out_dim * affine.in_dim * sizeof(float));
+            });
+            if (!file) {
+              throw std::runtime_error{
+                  "write_parameters: write failed for '" + path + "'"};
+            }
+          },
+          py::arg("path"),
+          "Serialize this network to disk in the format read_parameters() "
+          "expects. New counterpart to read_parameters() -- previously "
+          "only implemented Python-side in oak.torch.")
+      .def(
+          "hash",
+          [](Network &net) {
+            auto network = net.get();
+            uint64_t h = 0;
+            for_each_float_layer(*network, [&](const char *, auto &affine) {
+              using Layer = std::remove_reference_t<decltype(affine)>;
+              const typename Layer::MatrixRowMajor row_major_weights =
+                  affine.weights;
+              const std::string_view weight_bytes(
+                  reinterpret_cast<const char *>(row_major_weights.data()),
+                  affine.out_dim * affine.in_dim * sizeof(float));
+              const std::string_view bias_bytes(
+                  reinterpret_cast<const char *>(affine.biases.data()),
+                  affine.out_dim * sizeof(float));
+              h = NN::combine_hash(h, fnv1a(weight_bytes));
+              h = NN::combine_hash(h, fnv1a(bias_bytes));
+            });
+            return h;
+          },
+          "Order-dependent FNV-1a fingerprint of every float layer's "
+          "parameters. Useful for e.g. asserting read_parameters() round-"
+          "tripped correctly, or that two Network objects hold identical "
+          "weights. NOT bit-for-bit comparable to oak.torch's old "
+          "hash_bytes()/blake2b-based hash() -- different algorithm.");
 
   py::class_<SideCache>(m, "SideCache")
       .def(py::init<>())
