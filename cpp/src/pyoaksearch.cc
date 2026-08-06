@@ -57,6 +57,41 @@ namespace py = pybind11;
 using namespace ::PKMN::Data;
 using namespace Py::PKMN;
 
+// Every field of PokeEngine::Params, in (python_kwarg_name, C++ field) pairs.
+// Used to generate both the PokeEngine keyword-argument constructor and the
+// read/write properties below, so the two stay in sync.
+#define POKE_ENGINE_PARAMS(X)                                                \
+  X(pokemon_alive, POKEMON_ALIVE)                                            \
+  X(pokemon_hp, POKEMON_HP)                                                  \
+  X(pokemon_attack_boost, POKEMON_ATTACK_BOOST)                              \
+  X(pokemon_defense_boost, POKEMON_DEFENSE_BOOST)                            \
+  X(pokemon_special_attack_boost, POKEMON_SPECIAL_ATTACK_BOOST)              \
+  X(pokemon_speed_boost, POKEMON_SPEED_BOOST)                                \
+  X(pokemon_boost_multiplier_6, POKEMON_BOOST_MULTIPLIER_6)                  \
+  X(pokemon_boost_multiplier_5, POKEMON_BOOST_MULTIPLIER_5)                  \
+  X(pokemon_boost_multiplier_4, POKEMON_BOOST_MULTIPLIER_4)                  \
+  X(pokemon_boost_multiplier_3, POKEMON_BOOST_MULTIPLIER_3)                  \
+  X(pokemon_boost_multiplier_2, POKEMON_BOOST_MULTIPLIER_2)                  \
+  X(pokemon_boost_multiplier_1, POKEMON_BOOST_MULTIPLIER_1)                  \
+  X(pokemon_boost_multiplier_0, POKEMON_BOOST_MULTIPLIER_0)                  \
+  X(pokemon_boost_multiplier_neg_1, POKEMON_BOOST_MULTIPLIER_NEG_1)          \
+  X(pokemon_boost_multiplier_neg_2, POKEMON_BOOST_MULTIPLIER_NEG_2)          \
+  X(pokemon_boost_multiplier_neg_3, POKEMON_BOOST_MULTIPLIER_NEG_3)          \
+  X(pokemon_boost_multiplier_neg_4, POKEMON_BOOST_MULTIPLIER_NEG_4)          \
+  X(pokemon_boost_multiplier_neg_5, POKEMON_BOOST_MULTIPLIER_NEG_5)          \
+  X(pokemon_boost_multiplier_neg_6, POKEMON_BOOST_MULTIPLIER_NEG_6)          \
+  X(pokemon_frozen, POKEMON_FROZEN)                                          \
+  X(pokemon_asleep, POKEMON_ASLEEP)                                          \
+  X(pokemon_paralyzed, POKEMON_PARALYZED)                                    \
+  X(pokemon_toxic, POKEMON_TOXIC)                                            \
+  X(pokemon_poisoned, POKEMON_POISONED)                                      \
+  X(pokemon_burned, POKEMON_BURNED)                                          \
+  X(leech_seed, LEECH_SEED)                                                  \
+  X(substitute, SUBSTITUTE)                                                  \
+  X(confusion, CONFUSION)                                                    \
+  X(reflect, REFLECT)                                                        \
+  X(light_screen, LIGHT_SCREEN)
+
 PYBIND11_MODULE(pyoaksearch, m) {
   py::module_::import("oak");
 
@@ -67,7 +102,100 @@ PYBIND11_MODULE(pyoaksearch, m) {
 
   // Eval
   py::class_<Eval>(m, "Eval");
-  py::class_<PokeEngine, Eval>(m, "PokeEngine").def(py::init<>());
+  {
+    // Defaults are pulled directly from the C++ struct so that the Python
+    // kwarg defaults can never drift from cpp/include/search/poke-engine-evaluate.h.
+    static const ::PokeEngine::Params poke_engine_defaults{};
+
+    auto poke_engine_cls =
+        py::class_<PokeEngine, Eval>(m, "PokeEngine")
+            .def(py::init(
+                     [](float pokemon_alive, float pokemon_hp,
+                        float pokemon_attack_boost, float pokemon_defense_boost,
+                        float pokemon_special_attack_boost,
+                        float pokemon_speed_boost,
+                        float pokemon_boost_multiplier_6,
+                        float pokemon_boost_multiplier_5,
+                        float pokemon_boost_multiplier_4,
+                        float pokemon_boost_multiplier_3,
+                        float pokemon_boost_multiplier_2,
+                        float pokemon_boost_multiplier_1,
+                        float pokemon_boost_multiplier_0,
+                        float pokemon_boost_multiplier_neg_1,
+                        float pokemon_boost_multiplier_neg_2,
+                        float pokemon_boost_multiplier_neg_3,
+                        float pokemon_boost_multiplier_neg_4,
+                        float pokemon_boost_multiplier_neg_5,
+                        float pokemon_boost_multiplier_neg_6,
+                        float pokemon_frozen, float pokemon_asleep,
+                        float pokemon_paralyzed, float pokemon_toxic,
+                        float pokemon_poisoned, float pokemon_burned,
+                        float leech_seed, float substitute, float confusion,
+                        float reflect, float light_screen) {
+                       auto engine = std::make_unique<PokeEngine>();
+                       auto &params = engine->get();
+#define X(pyname, cppname) params.cppname = pyname;
+                       POKE_ENGINE_PARAMS(X)
+#undef X
+                       return engine;
+                     }),
+                 py::arg("pokemon_alive") = poke_engine_defaults.POKEMON_ALIVE,
+                 py::arg("pokemon_hp") = poke_engine_defaults.POKEMON_HP,
+                 py::arg("pokemon_attack_boost") =
+                     poke_engine_defaults.POKEMON_ATTACK_BOOST,
+                 py::arg("pokemon_defense_boost") =
+                     poke_engine_defaults.POKEMON_DEFENSE_BOOST,
+                 py::arg("pokemon_special_attack_boost") =
+                     poke_engine_defaults.POKEMON_SPECIAL_ATTACK_BOOST,
+                 py::arg("pokemon_speed_boost") =
+                     poke_engine_defaults.POKEMON_SPEED_BOOST,
+                 py::arg("pokemon_boost_multiplier_6") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_6,
+                 py::arg("pokemon_boost_multiplier_5") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_5,
+                 py::arg("pokemon_boost_multiplier_4") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_4,
+                 py::arg("pokemon_boost_multiplier_3") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_3,
+                 py::arg("pokemon_boost_multiplier_2") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_2,
+                 py::arg("pokemon_boost_multiplier_1") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_1,
+                 py::arg("pokemon_boost_multiplier_0") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_0,
+                 py::arg("pokemon_boost_multiplier_neg_1") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_1,
+                 py::arg("pokemon_boost_multiplier_neg_2") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_2,
+                 py::arg("pokemon_boost_multiplier_neg_3") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_3,
+                 py::arg("pokemon_boost_multiplier_neg_4") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_4,
+                 py::arg("pokemon_boost_multiplier_neg_5") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_5,
+                 py::arg("pokemon_boost_multiplier_neg_6") =
+                     poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_6,
+                 py::arg("pokemon_frozen") = poke_engine_defaults.POKEMON_FROZEN,
+                 py::arg("pokemon_asleep") = poke_engine_defaults.POKEMON_ASLEEP,
+                 py::arg("pokemon_paralyzed") =
+                     poke_engine_defaults.POKEMON_PARALYZED,
+                 py::arg("pokemon_toxic") = poke_engine_defaults.POKEMON_TOXIC,
+                 py::arg("pokemon_poisoned") =
+                     poke_engine_defaults.POKEMON_POISONED,
+                 py::arg("pokemon_burned") = poke_engine_defaults.POKEMON_BURNED,
+                 py::arg("leech_seed") = poke_engine_defaults.LEECH_SEED,
+                 py::arg("substitute") = poke_engine_defaults.SUBSTITUTE,
+                 py::arg("confusion") = poke_engine_defaults.CONFUSION,
+                 py::arg("reflect") = poke_engine_defaults.REFLECT,
+                 py::arg("light_screen") = poke_engine_defaults.LIGHT_SCREEN);
+
+#define X(pyname, cppname)                                                   \
+  poke_engine_cls.def_property(                                              \
+      #pyname, [](const PokeEngine &self) { return self.get().cppname; },    \
+      [](PokeEngine &self, float value) { self.get().cppname = value; });
+    POKE_ENGINE_PARAMS(X)
+#undef X
+  }
   py::class_<MonteCarlo, Eval>(m, "MonteCarlo").def(py::init<>());
   py::class_<Network, Eval>(m, "Network")
       .def(py::init<>())
