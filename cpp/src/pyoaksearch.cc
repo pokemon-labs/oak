@@ -83,9 +83,9 @@ py::array affine_weights_view(NN::Affine<Order> &affine, py::object self) {
                                        static_cast<py::ssize_t>(affine.in_dim)};
   const std::vector<py::ssize_t> strides =
       col_major
-          ? std::vector<py::ssize_t>{
-                static_cast<py::ssize_t>(sizeof(float)),
-                static_cast<py::ssize_t>(affine.out_dim * sizeof(float))}
+          ? std::vector<py::ssize_t>{static_cast<py::ssize_t>(sizeof(float)),
+                                     static_cast<py::ssize_t>(affine.out_dim *
+                                                              sizeof(float))}
           : std::vector<py::ssize_t>{
                 static_cast<py::ssize_t>(affine.in_dim * sizeof(float)),
                 static_cast<py::ssize_t>(sizeof(float))};
@@ -218,19 +218,17 @@ PYBIND11_MODULE(pyoaksearch, m) {
             NN::Battle::visit_network(network, write_embedding);
             return result;
           },
-          py::arg("side"), py::arg("duration"),
-          py::arg("cache") = std::nullopt)
+          py::arg("side"), py::arg("duration"), py::arg("cache") = std::nullopt)
       .def(
           "named_parameters",
           [](py::object self) -> py::dict {
             Network &net = self.cast<Network &>();
             auto network = net.get();
             py::dict result;
-            for_each_float_layer(*network, [&](const char *name,
-                                               auto &affine) {
-              result[py::str(name)] = py::make_tuple(
-                  affine_weights_view(affine, self),
-                  affine_biases_view(affine, self));
+            for_each_float_layer(*network, [&](const char *name, auto &affine) {
+              result[py::str(name)] =
+                  py::make_tuple(affine_weights_view(affine, self),
+                                 affine_biases_view(affine, self));
             });
             return result;
           },
@@ -249,12 +247,11 @@ PYBIND11_MODULE(pyoaksearch, m) {
             Network &net = self.cast<Network &>();
             auto network = net.get();
             std::optional<py::array> result;
-            for_each_float_layer(
-                *network, [&](const char *name, auto &affine) {
-                  if (!result && layer == name) {
-                    result = affine_weights_view(affine, self);
-                  }
-                });
+            for_each_float_layer(*network, [&](const char *name, auto &affine) {
+              if (!result && layer == name) {
+                result = affine_weights_view(affine, self);
+              }
+            });
             if (!result) {
               throw std::runtime_error{"Network: unknown layer '" + layer +
                                        "'"};
@@ -271,12 +268,11 @@ PYBIND11_MODULE(pyoaksearch, m) {
             Network &net = self.cast<Network &>();
             auto network = net.get();
             std::optional<py::array> result;
-            for_each_float_layer(
-                *network, [&](const char *name, auto &affine) {
-                  if (!result && layer == name) {
-                    result = affine_biases_view(affine, self);
-                  }
-                });
+            for_each_float_layer(*network, [&](const char *name, auto &affine) {
+              if (!result && layer == name) {
+                result = affine_biases_view(affine, self);
+              }
+            });
             if (!result) {
               throw std::runtime_error{"Network: unknown layer '" + layer +
                                        "'"};
@@ -296,26 +292,24 @@ PYBIND11_MODULE(pyoaksearch, m) {
             }
             std::ofstream file(path, std::ios::binary);
             if (!file) {
-              throw std::runtime_error{
-                  "write_parameters: could not open '" + path + "'"};
+              throw std::runtime_error{"write_parameters: could not open '" +
+                                       path + "'"};
             }
             uint8_t header[8] = {};
             // Mirrors Network::read_parameters()'s header parsing
             // (py/search/data.h): byte 0 is 0 for relu, 1 for clamp.
             // Bytes 1-7 are reserved/unused there too.
             header[0] =
-                dynamic_cast<NN::Battle::NetworkClamped *>(network.get())
-                    ? 1
-                    : 0;
+                dynamic_cast<NN::Battle::NetworkClamped *>(network.get()) ? 1
+                                                                          : 0;
             file.write(reinterpret_cast<const char *>(header), sizeof(header));
-            for_each_float_layer(*network, [&](const char *,
-                                               auto &affine) {
+            for_each_float_layer(*network, [&](const char *, auto &affine) {
               file.write(reinterpret_cast<const char *>(&affine.in_dim),
-                        sizeof(uint32_t));
+                         sizeof(uint32_t));
               file.write(reinterpret_cast<const char *>(&affine.out_dim),
-                        sizeof(uint32_t));
+                         sizeof(uint32_t));
               file.write(reinterpret_cast<const char *>(affine.biases.data()),
-                        affine.out_dim * sizeof(float));
+                         affine.out_dim * sizeof(float));
               // On-disk weight layout is always row-major, matching
               // Affine::read_parameters (nn/affine.h), regardless of this
               // layer's in-memory Eigen storage order.
@@ -327,8 +321,8 @@ PYBIND11_MODULE(pyoaksearch, m) {
                   affine.out_dim * affine.in_dim * sizeof(float));
             });
             if (!file) {
-              throw std::runtime_error{
-                  "write_parameters: write failed for '" + path + "'"};
+              throw std::runtime_error{"write_parameters: write failed for '" +
+                                       path + "'"};
             }
           },
           py::arg("path"),
