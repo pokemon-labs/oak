@@ -17,7 +17,8 @@ def timed(f, *args, **kwargs):
     return result
 
 def test_search():
-    iterations = 2**20
+    iterations = 2**15
+    print(f"iter: {iterations}")
     node = oak.search.Node()
     network = oak.search.Network()
     network.resize(
@@ -59,13 +60,14 @@ def test_search():
         heap=node,
         eval=network,
     )
+    node2 = oak.search.Node()
     output_net = timed(
         oak.search.search,
         battle,
         durations,
         budget,
         params=ucb,
-        heap=node,
+        heap=node2,
         eval=network,
         p1_cache=p1_cache,
         p2_cache=p2_cache,

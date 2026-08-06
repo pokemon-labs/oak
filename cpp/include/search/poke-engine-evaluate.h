@@ -53,7 +53,7 @@ struct Params {
 struct Eval : Params {
   float root_score;
 
-  float get_boost_multiplier(int8_t boost) {
+  float get_boost_multiplier(int8_t boost) const noexcept {
     switch (boost) {
     case 6:
       return POKEMON_BOOST_MULTIPLIER_6;

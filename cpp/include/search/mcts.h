@@ -380,10 +380,10 @@ template <SearchOptions Options = default_search> struct Search {
           auto &child =
               heap.children[{outcome.p1.index, outcome.p2.index, obs}];
           return run_iteration(device, bandit_params, child, input, eval,
-                               output, depth + 1);
+                               output, depth + 1, caches...);
         } else {
           return run_iteration(device, bandit_params, heap, input, eval, output,
-                               depth + 1);
+                               depth + 1, caches...);
         }
       }();
       outcome.p1.value = value.first;
