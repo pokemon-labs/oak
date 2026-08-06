@@ -26,8 +26,10 @@ def bar():
     network.initialize(seed=random.randint(0, 2**64-1))
     ucb = oak.search.UCB(c=1.0)
     budget = oak.search.Iterations(2**10)
+    fp = oak.search.PokeEngine()
 
-    output = oak.search.search(battle, durations, budget, params=ucb, heap=node, eval=network)
+
+    output = oak.search.search(battle, durations, budget, params=ucb, heap=node, eval=fp)
     print(output.iterations)
     print(output.visit_matrix)
 

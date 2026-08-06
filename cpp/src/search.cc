@@ -16,7 +16,7 @@
 
 // evals
 #define NO_MONTE_CARLO
-#define NO_POKE_ENGINE
+// #define NO_POKE_ENGINE
 // #define NO_NETWORK
 
 // bandits
