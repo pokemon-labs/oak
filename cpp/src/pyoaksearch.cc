@@ -137,7 +137,6 @@ PYBIND11_MODULE(pyoaksearch, m) {
   py::class_<Network>(m, "Network")
       .def(py::init<>())
       .def("read_parameters", &Network::read_parameters, py::arg("path"))
-      .def("zero_initialize", &Network::zero_initialize)
       .def(
           "resize",
           [](Network &net, uint32_t ph, uint32_t po, uint32_t ah, uint32_t ao,
@@ -166,24 +165,26 @@ PYBIND11_MODULE(pyoaksearch, m) {
               -> py::array {
             auto network = net.get();
             py::array result;
-            const auto foo = [&](auto &net) {
-              using T = typename std::remove_cvref_t<decltype(net)>::T;
-              const auto dim = net.side_embedding_dim();
+            const auto write_embedding = [&](auto &net) {
+              using Network = typename std::remove_cvref_t<decltype(net)>;
+              using T = Network::T;
+              constexpr auto activation = Network::act;
 
+              const auto dim = net.side_embedding_dim();
               py::array_t<T> arr(static_cast<py::ssize_t>(dim));
-              T *bar = arr.mutable_data();
+              T *embedding = arr.mutable_data();
               if (cache) {
                 auto &side_cache =
                     std::get<NN::Battle::SideCache<T>>(cache->get().data);
-                NN::Battle::write_side_embedding(bar, *side.p, *duration.p, net,
-                                                 side_cache);
+                NN::Battle::write_side_embedding<T, activation>(
+                    embedding, *side.p, *duration.p, net, side_cache);
               } else {
-                NN::Battle::write_side_embedding(bar, *side.p, *duration.p,
-                                                 net);
+                NN::Battle::write_side_embedding<T, activation>(
+                    embedding, *side.p, *duration.p, net);
               }
               result = std::move(arr);
             };
-            NN::Battle::visit_network(network, foo);
+            NN::Battle::visit_network(network, write_embedding);
             return result;
           },
           py::arg("side"), py::arg("duration"),
@@ -194,15 +195,19 @@ PYBIND11_MODULE(pyoaksearch, m) {
           "precompute",
           [](SideCache &cache, Network &network,
              const Py::PKMN::SideProxy &side, int index) {
-            const auto foo = [&](auto &net) {
+            const auto precompute = [&](auto &net) {
+              using Network = typename std::remove_cvref_t<decltype(net)>;
+              constexpr auto activation = Network::act;
               if (std::holds_alternative<NN::Battle::SideCache<float>>(
                       cache.data)) {
                 auto &c = std::get<NN::Battle::SideCache<float>>(cache.data);
-                c.precompute(net, *side.p, index);
+                c.precompute<activation>(net, *side.p, index);
               } else {
+                auto &c = std::get<NN::Battle::SideCache<uint8_t>>(cache.data);
+                c.precompute<activation>(net, *side.p, index);
               }
             };
-            NN::Battle::visit_network(network.get(), foo);
+            NN::Battle::visit_network(network.get(), precompute);
           },
           py::arg("network"), py::arg("side"), py::arg("index"))
       .def(

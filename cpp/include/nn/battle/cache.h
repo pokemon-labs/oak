@@ -37,7 +37,8 @@ template <typename T> struct SideCache {
     std::map<Moves, Embedding> data;
     std::array<float, max_active_moves_input_size> encoding_input;
     std::array<uint16_t, max_active_moves_input_size> encoding_indices;
-    const T *get(auto &network, const Moves &moves) {
+    template <Activation activation>
+    const T *get(NetworkBase &network, const Moves &moves) {
       const auto dim = network.moves_net.template layer<1>().out_dim;
       auto key = Encode::Battle::Key::get_key_active(moves);
       auto [it, inserted] = data.try_emplace(key);
@@ -45,7 +46,7 @@ template <typename T> struct SideCache {
         const auto n = Encode::Battle::Moves::write(
             moves, encoding_input.data(), encoding_indices.data());
         it->second = std::make_unique<T[]>(dim);
-        network.template propagate_embedding<Embedding_::Moves, T>(
+        network.propagate_embedding<Embedding_::Moves, T, activation>(
             encoding_input.data(), encoding_indices.data(), it->second.get(),
             n);
       }
@@ -56,7 +57,8 @@ template <typename T> struct SideCache {
     std::map<Encode::Battle::Key::ActiveKey, Embedding> data;
     std::array<float, max_active_input_size> encoding_input;
     std::array<uint16_t, max_active_input_size> encoding_indices;
-    const T *get(auto &network, const PKMN::ActivePokemon &active,
+    template <Activation activation>
+    const T *get(NetworkBase &network, const PKMN::ActivePokemon &active,
                  const PKMN::Duration &duration) {
       const auto dim = network.active_net.template layer<1>().out_dim;
       auto key = Encode::Battle::Key::get_key(active, duration);
@@ -65,7 +67,7 @@ template <typename T> struct SideCache {
         const auto n = Encode::Battle::Active::write(
             active, duration, encoding_input.data(), encoding_indices.data());
         it->second = std::make_unique<T[]>(dim);
-        network.template propagate_embedding<Embedding_::Active, T>(
+        network.propagate_embedding<Embedding_::Active, T, activation>(
             encoding_input.data(), encoding_indices.data(), it->second.get(),
             n);
         encoding_input = {};
@@ -84,7 +86,8 @@ template <typename T> struct SideCache {
   Side<PokemonCache> pokemon_cache;
   Side<PokemonMovesCache> pokemon_moves_cache;
 
-  void precompute(auto &network, const PKMN::Side &side, auto index) {
+  template <Activation activation>
+  void precompute(NetworkBase &network, const PKMN::Side &side, uint8_t index) {
     auto &pokemon_data = pokemon_cache[index].data;
     const auto pokemon_dim = network.pokemon_net.template layer<1>().out_dim;
     const auto get_pokemon_embedding =
@@ -101,7 +104,7 @@ template <typename T> struct SideCache {
           auto &u = pokemon_data[key];
           u.reset(new T[pokemon_dim]);
           auto *embedding = u.get();
-          network.template propagate_embedding<Embedding_::Pokemon, T>(
+          network.propagate_embedding<Embedding_::Pokemon, T, activation>(
               input, indices, embedding, n_nonzero);
         };
     auto pokemon = side.pokemon[index];
@@ -134,8 +137,8 @@ template <typename T> struct SideCache {
       auto &u = moves_data[key];
       u.reset(new T[moves_dim]);
       auto *embedding = u.get();
-      network.template propagate_embedding<Embedding_::Moves, T>(input, indices,
-                                                                 embedding, n);
+      network.propagate_embedding<Embedding_::Moves, T, activation>(
+          input, indices, embedding, n);
     };
 
     using Encode::Battle::Key::n_moves;

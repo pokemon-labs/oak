@@ -34,13 +34,9 @@ struct NetworkBase {
   uint32_t moves_out_dim() const noexcept {
     return this->moves_net.layer<1>().out_dim;
   }
-  uint32_t side_slot_index(auto slot) const {
-    assert(slot > 1);
-    assert(slot <= 7);
-    return active_out_dim() + moves_out_dim() +
-           (slot - 1) * (pokemon_out_dim() + moves_out_dim());
+  uint32_t side_embedding_dim() const {
+    return active_out_dim() + 6 * (pokemon_out_dim() + moves_out_dim());
   }
-  uint32_t side_embedding_dim() const { return side_slot_index(7); }
   void resize(uint32_t ph, uint32_t po, uint32_t ah, uint32_t ao, uint32_t mh,
               uint32_t mo, uint32_t h, uint32_t value, uint32_t policy) {
     if (auto *main = main_net_float()) {
@@ -62,28 +58,7 @@ struct NetworkBase {
       throw std::runtime_error{"Attempting to initialize quantized network"};
     }
   }
-};
-
-template <typename Main, Activation activation>
-class NetworkImpl : public NetworkBase {
-public:
-  static_assert(activation == Activation::relu ||
-                activation == Activation::clamp ||
-                activation == Activation::relu_scaled);
-  using T = typename Main::T;
-  using act = Activation;
-  Main main_net;
-  std::tuple<int, int, int, int> shape() const noexcept {
-    return main_net.shape();
-  }
-  MainNet *main_net_float() override {
-    if constexpr (std::is_same_v<Main, MainNet>) {
-      return &main_net;
-    } else {
-      return nullptr;
-    }
-  }
-  template <Embedding_ emb, typename T>
+  template <Embedding_ emb, typename T, Activation activation>
   void propagate_embedding(float *input, uint16_t *indices, T *embedding,
                            uint16_t n) {
     static thread_local std::vector<float> temp;
@@ -106,6 +81,27 @@ public:
       go(moves_net);
     } else {
       static_assert(emb != emb);
+    }
+  }
+};
+
+template <typename Main, Activation activation>
+class NetworkImpl : public NetworkBase {
+public:
+  static_assert(activation == Activation::relu ||
+                activation == Activation::clamp ||
+                activation == Activation::relu_scaled);
+  using T = typename Main::T;
+  static constexpr auto act = activation;
+  Main main_net;
+  std::tuple<int, int, int, int> shape() const noexcept {
+    return main_net.shape();
+  }
+  MainNet *main_net_float() override {
+    if constexpr (std::is_same_v<Main, MainNet>) {
+      return &main_net;
+    } else {
+      return nullptr;
     }
   }
 };
@@ -251,9 +247,9 @@ void visit_network(std::shared_ptr<NetworkBase> network, const auto &F) {
   }
 }
 
-template <typename T, typename... Caches>
-T *write_pokemon(T *embedding, auto index, const PKMN::Pokemon &pokemon,
-                 uint8_t sleep, auto &network, Caches &...cache_pack) {
+template <typename T, Activation activation, typename... Caches>
+T *write_pokemon(T *embedding, uint8_t index, const PKMN::Pokemon &pokemon,
+                 uint8_t sleep, NetworkBase &network, Caches &...cache_pack) {
   static_assert(sizeof...(Caches) <= 1,
                 "write_pokemon takes zero or one cache");
   using namespace Encode::Battle::Pokemon;
@@ -266,15 +262,15 @@ T *write_pokemon(T *embedding, auto index, const PKMN::Pokemon &pokemon,
     uint16_t indices[n_nonzero];
     float input[n_nonzero];
     Encode::Battle::Pokemon::write(pokemon, sleep, input, indices);
-    network.template propagate_embedding<Embedding_::Pokemon, T>(
+    network.template propagate_embedding<Embedding_::Pokemon, T, activation>(
         input, indices, embedding, n_nonzero);
   }
   return embedding + pokemon_dim;
 }
 
-template <typename T, typename... Caches>
-T *write_pokemon_moves(T *embedding, auto index, const auto &moves,
-                       auto &network, Caches &...cache_pack) {
+template <typename T, Activation activation, typename... Caches>
+T *write_pokemon_moves(T *embedding, uint8_t index, const auto &moves,
+                       NetworkBase &network, Caches &...cache_pack) {
   static_assert(sizeof...(Caches) <= 1,
                 "write_active_moves takes zero or one cache");
   using namespace Encode::Battle::Moves;
@@ -288,15 +284,15 @@ T *write_pokemon_moves(T *embedding, auto index, const auto &moves,
     uint16_t indices[n_nonzero];
     float input[n_nonzero];
     auto n = Encode::Battle::Moves::write(moves, input, indices);
-    network.template propagate_embedding<Embedding_::Moves, T>(input, indices,
-                                                               embedding, n);
+    network.template propagate_embedding<Embedding_::Moves, T, activation>(
+        input, indices, embedding, n);
   }
   return embedding + moves_dim;
 }
 
-template <typename T, typename... Caches>
-T *write_active_moves(T *embedding, auto index, const auto &moves,
-                      auto &network, Caches &...cache_pack) {
+template <typename T, Activation activation, typename... Caches>
+T *write_active_moves(T *embedding, uint8_t index, const auto &moves,
+                      NetworkBase &network, Caches &...cache_pack) {
   static_assert(sizeof...(Caches) <= 1,
                 "write_active_moves takes zero or one cache");
   using namespace Encode::Battle::Moves;
@@ -304,21 +300,21 @@ T *write_active_moves(T *embedding, auto index, const auto &moves,
   if constexpr (sizeof...(Caches) == 1) {
     auto &cache =
         std::get<0>(std::tie(cache_pack...)).active_moves_cache[index];
-    const T *t = cache.get(network, moves);
+    const T *t = cache.template get<activation>(network, moves);
     std::copy(t, t + moves_dim, embedding);
   } else {
     uint16_t indices[n_nonzero];
     float input[n_nonzero];
     auto n = Encode::Battle::Moves::write(moves, input, indices);
-    network.template propagate_embedding<Embedding_::Moves, T>(input, indices,
-                                                               embedding, n);
+    network.template propagate_embedding<Embedding_::Moves, T, activation>(
+        input, indices, embedding, n);
   }
   return embedding + moves_dim;
 }
 
-template <typename T, typename... Caches>
-T *write_active(T *embedding, auto index, const PKMN::ActivePokemon &active,
-                const PKMN::Duration &duration, auto &network,
+template <typename T, Activation activation, typename... Caches>
+T *write_active(T *embedding, uint8_t index, const PKMN::ActivePokemon &active,
+                const PKMN::Duration &duration, NetworkBase &network,
                 Caches &...cache_pack) {
   static_assert(sizeof...(Caches) <= 1, "write_active takes zero or one cache");
   using namespace Encode::Battle::Active;
@@ -326,22 +322,22 @@ T *write_active(T *embedding, auto index, const PKMN::ActivePokemon &active,
 
   if constexpr (sizeof...(Caches) == 1) {
     auto &cache = std::get<0>(std::tie(cache_pack...)).active_cache[index];
-    const T *t = cache.get(network, active, duration);
+    const T *t = cache.template get<activation>(network, active, duration);
     std::copy(t, t + active_dim, embedding);
   } else {
     uint16_t indices[n_nonzero];
     float input[n_nonzero];
     const auto n =
         Encode::Battle::Active::write(active, duration, input, indices);
-    network.template propagate_embedding<Embedding_::Active, T>(input, indices,
-                                                                embedding, n);
+    network.template propagate_embedding<Embedding_::Active, T, activation>(
+        input, indices, embedding, n);
   }
   return embedding + active_dim;
 }
 
-template <typename T, typename... Caches>
+template <typename T, Activation activation, typename... Caches>
 T *write_side_embedding(T *embedding, const PKMN::Side &side,
-                        const PKMN::Duration &duration, auto &network,
+                        const PKMN::Duration &duration, NetworkBase &network,
                         Caches &...caches) {
   static_assert(sizeof...(Caches) <= 1,
                 "write_side_embedding takes zero or one cache");
@@ -349,23 +345,28 @@ T *write_side_embedding(T *embedding, const PKMN::Side &side,
   const auto active_dim = network.active_out_dim();
   const auto moves_dim = network.moves_out_dim();
 
-  const auto write_zero = [&embedding](auto dim) {
+  const auto write_zero = [embedding](auto dim) {
     std::fill_n(embedding, dim, T{0});
-    embedding += dim;
-    return embedding;
+    return embedding + dim;
   };
-
-  if (side.stored().hp == 0) {
-    embedding = write_zero(active_dim + moves_dim);
+  const auto &stored = side.stored();
+  if (stored.hp == 0) {
+    embedding = write_zero(active_dim + pokemon_dim + moves_dim);
   } else {
-    auto index = side.order[0] - 1;
-    const auto &active = side.active;
-    embedding =
-        write_active<T>(embedding, index, active, duration, network, caches...);
-    embedding = write_active_moves<T>(embedding, index, active.moves, network,
-                                      caches...);
+    const auto index = side.order[0] - 1;
+    embedding = write_active<T, activation>(embedding, index, side.active,
+                                            duration, network, caches...);
+    embedding = write_pokemon<T, activation>(
+        embedding, index, stored, duration.sleep(0), network, caches...);
+    if (side.active.moves == stored.moves) {
+      embedding = write_pokemon_moves<T, activation>(
+          embedding, index, side.active.moves, network, caches...);
+    } else {
+      embedding = write_active_moves<T, activation>(
+          embedding, index, side.active.moves, network, caches...);
+    }
   }
-  for (auto slot = 1; slot <= 6; ++slot) {
+  for (auto slot = 2; slot <= 6; ++slot) {
     const auto index = side.order[slot - 1];
     if (index == 0) {
       write_zero(pokemon_dim + moves_dim);
@@ -374,15 +375,14 @@ T *write_side_embedding(T *embedding, const PKMN::Side &side,
       if (pokemon.hp == 0) {
         write_zero(pokemon_dim + moves_dim);
       } else {
-        embedding =
-            write_pokemon<T>(embedding, index - 1, pokemon,
-                             duration.sleep(slot - 1), network, caches...);
-        embedding = write_pokemon_moves<T>(embedding, index - 1, pokemon.moves,
-                                           network, caches...);
+        embedding = write_pokemon<T, activation>(embedding, index - 1, pokemon,
+                                                 duration.sleep(slot - 1),
+                                                 network, caches...);
+        embedding = write_pokemon_moves<T, activation>(
+            embedding, index - 1, pokemon.moves, network, caches...);
       }
     }
   }
-
   return embedding;
 }
 
