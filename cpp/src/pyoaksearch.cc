@@ -163,8 +163,346 @@ PYBIND11_MODULE(pyoaksearch, m) {
 
   // Eval
   py::class_<Eval>(m, "Eval");
-  py::class_<PokeEngine, Eval>(m, "PokeEngine").def(py::init<>());
-  py::class_<MonteCarlo, Eval>(m, "MonteCarlo").def(py::init<>());
+
+  {
+    // Defaults are pulled directly from the C++ struct so the Python kwarg
+    // defaults can never drift from cpp/include/search/poke-engine-evaluate.h.
+    static const ::PokeEngine::Params poke_engine_defaults{};
+
+    py::class_<PokeEngine, Eval>(m, "PokeEngine")
+        .def(py::init([](float pokemon_alive, float pokemon_hp,
+                          float pokemon_attack_boost,
+                          float pokemon_defense_boost,
+                          float pokemon_special_attack_boost,
+                          float pokemon_speed_boost,
+                          float pokemon_boost_multiplier_6,
+                          float pokemon_boost_multiplier_5,
+                          float pokemon_boost_multiplier_4,
+                          float pokemon_boost_multiplier_3,
+                          float pokemon_boost_multiplier_2,
+                          float pokemon_boost_multiplier_1,
+                          float pokemon_boost_multiplier_0,
+                          float pokemon_boost_multiplier_neg_1,
+                          float pokemon_boost_multiplier_neg_2,
+                          float pokemon_boost_multiplier_neg_3,
+                          float pokemon_boost_multiplier_neg_4,
+                          float pokemon_boost_multiplier_neg_5,
+                          float pokemon_boost_multiplier_neg_6,
+                          float pokemon_frozen, float pokemon_asleep,
+                          float pokemon_paralyzed, float pokemon_toxic,
+                          float pokemon_poisoned, float pokemon_burned,
+                          float leech_seed, float substitute,
+                          float confusion, float reflect,
+                          float light_screen) {
+               auto engine = std::make_unique<PokeEngine>();
+               auto &params = engine->get();
+               params.POKEMON_ALIVE = pokemon_alive;
+               params.POKEMON_HP = pokemon_hp;
+               params.POKEMON_ATTACK_BOOST = pokemon_attack_boost;
+               params.POKEMON_DEFENSE_BOOST = pokemon_defense_boost;
+               params.POKEMON_SPECIAL_ATTACK_BOOST =
+                   pokemon_special_attack_boost;
+               params.POKEMON_SPEED_BOOST = pokemon_speed_boost;
+               params.POKEMON_BOOST_MULTIPLIER_6 = pokemon_boost_multiplier_6;
+               params.POKEMON_BOOST_MULTIPLIER_5 = pokemon_boost_multiplier_5;
+               params.POKEMON_BOOST_MULTIPLIER_4 = pokemon_boost_multiplier_4;
+               params.POKEMON_BOOST_MULTIPLIER_3 = pokemon_boost_multiplier_3;
+               params.POKEMON_BOOST_MULTIPLIER_2 = pokemon_boost_multiplier_2;
+               params.POKEMON_BOOST_MULTIPLIER_1 = pokemon_boost_multiplier_1;
+               params.POKEMON_BOOST_MULTIPLIER_0 = pokemon_boost_multiplier_0;
+               params.POKEMON_BOOST_MULTIPLIER_NEG_1 =
+                   pokemon_boost_multiplier_neg_1;
+               params.POKEMON_BOOST_MULTIPLIER_NEG_2 =
+                   pokemon_boost_multiplier_neg_2;
+               params.POKEMON_BOOST_MULTIPLIER_NEG_3 =
+                   pokemon_boost_multiplier_neg_3;
+               params.POKEMON_BOOST_MULTIPLIER_NEG_4 =
+                   pokemon_boost_multiplier_neg_4;
+               params.POKEMON_BOOST_MULTIPLIER_NEG_5 =
+                   pokemon_boost_multiplier_neg_5;
+               params.POKEMON_BOOST_MULTIPLIER_NEG_6 =
+                   pokemon_boost_multiplier_neg_6;
+               params.POKEMON_FROZEN = pokemon_frozen;
+               params.POKEMON_ASLEEP = pokemon_asleep;
+               params.POKEMON_PARALYZED = pokemon_paralyzed;
+               params.POKEMON_TOXIC = pokemon_toxic;
+               params.POKEMON_POISONED = pokemon_poisoned;
+               params.POKEMON_BURNED = pokemon_burned;
+               params.LEECH_SEED = leech_seed;
+               params.SUBSTITUTE = substitute;
+               params.CONFUSION = confusion;
+               params.REFLECT = reflect;
+               params.LIGHT_SCREEN = light_screen;
+               return engine;
+             }),
+             py::arg("pokemon_alive") = poke_engine_defaults.POKEMON_ALIVE,
+             py::arg("pokemon_hp") = poke_engine_defaults.POKEMON_HP,
+             py::arg("pokemon_attack_boost") =
+                 poke_engine_defaults.POKEMON_ATTACK_BOOST,
+             py::arg("pokemon_defense_boost") =
+                 poke_engine_defaults.POKEMON_DEFENSE_BOOST,
+             py::arg("pokemon_special_attack_boost") =
+                 poke_engine_defaults.POKEMON_SPECIAL_ATTACK_BOOST,
+             py::arg("pokemon_speed_boost") =
+                 poke_engine_defaults.POKEMON_SPEED_BOOST,
+             py::arg("pokemon_boost_multiplier_6") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_6,
+             py::arg("pokemon_boost_multiplier_5") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_5,
+             py::arg("pokemon_boost_multiplier_4") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_4,
+             py::arg("pokemon_boost_multiplier_3") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_3,
+             py::arg("pokemon_boost_multiplier_2") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_2,
+             py::arg("pokemon_boost_multiplier_1") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_1,
+             py::arg("pokemon_boost_multiplier_0") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_0,
+             py::arg("pokemon_boost_multiplier_neg_1") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_1,
+             py::arg("pokemon_boost_multiplier_neg_2") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_2,
+             py::arg("pokemon_boost_multiplier_neg_3") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_3,
+             py::arg("pokemon_boost_multiplier_neg_4") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_4,
+             py::arg("pokemon_boost_multiplier_neg_5") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_5,
+             py::arg("pokemon_boost_multiplier_neg_6") =
+                 poke_engine_defaults.POKEMON_BOOST_MULTIPLIER_NEG_6,
+             py::arg("pokemon_frozen") = poke_engine_defaults.POKEMON_FROZEN,
+             py::arg("pokemon_asleep") = poke_engine_defaults.POKEMON_ASLEEP,
+             py::arg("pokemon_paralyzed") =
+                 poke_engine_defaults.POKEMON_PARALYZED,
+             py::arg("pokemon_toxic") = poke_engine_defaults.POKEMON_TOXIC,
+             py::arg("pokemon_poisoned") =
+                 poke_engine_defaults.POKEMON_POISONED,
+             py::arg("pokemon_burned") = poke_engine_defaults.POKEMON_BURNED,
+             py::arg("leech_seed") = poke_engine_defaults.LEECH_SEED,
+             py::arg("substitute") = poke_engine_defaults.SUBSTITUTE,
+             py::arg("confusion") = poke_engine_defaults.CONFUSION,
+             py::arg("reflect") = poke_engine_defaults.REFLECT,
+             py::arg("light_screen") = poke_engine_defaults.LIGHT_SCREEN)
+        .def_property(
+            "pokemon_alive",
+            [](const PokeEngine &self) { return self.get().POKEMON_ALIVE; },
+            [](PokeEngine &self, float v) { self.get().POKEMON_ALIVE = v; })
+        .def_property(
+            "pokemon_hp",
+            [](const PokeEngine &self) { return self.get().POKEMON_HP; },
+            [](PokeEngine &self, float v) { self.get().POKEMON_HP = v; })
+        .def_property(
+            "pokemon_attack_boost",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_ATTACK_BOOST;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_ATTACK_BOOST = v;
+            })
+        .def_property(
+            "pokemon_defense_boost",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_DEFENSE_BOOST;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_DEFENSE_BOOST = v;
+            })
+        .def_property(
+            "pokemon_special_attack_boost",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_SPECIAL_ATTACK_BOOST;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_SPECIAL_ATTACK_BOOST = v;
+            })
+        .def_property(
+            "pokemon_speed_boost",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_SPEED_BOOST;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_SPEED_BOOST = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_6",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_6;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_6 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_5",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_5;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_5 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_4",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_4;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_4 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_3",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_3;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_3 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_2",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_2;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_2 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_1",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_1;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_1 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_0",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_0;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_0 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_neg_1",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_NEG_1;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_NEG_1 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_neg_2",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_NEG_2;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_NEG_2 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_neg_3",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_NEG_3;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_NEG_3 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_neg_4",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_NEG_4;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_NEG_4 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_neg_5",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_NEG_5;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_NEG_5 = v;
+            })
+        .def_property(
+            "pokemon_boost_multiplier_neg_6",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_BOOST_MULTIPLIER_NEG_6;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_BOOST_MULTIPLIER_NEG_6 = v;
+            })
+        .def_property(
+            "pokemon_frozen",
+            [](const PokeEngine &self) { return self.get().POKEMON_FROZEN; },
+            [](PokeEngine &self, float v) { self.get().POKEMON_FROZEN = v; })
+        .def_property(
+            "pokemon_asleep",
+            [](const PokeEngine &self) { return self.get().POKEMON_ASLEEP; },
+            [](PokeEngine &self, float v) { self.get().POKEMON_ASLEEP = v; })
+        .def_property(
+            "pokemon_paralyzed",
+            [](const PokeEngine &self) {
+              return self.get().POKEMON_PARALYZED;
+            },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_PARALYZED = v;
+            })
+        .def_property(
+            "pokemon_toxic",
+            [](const PokeEngine &self) { return self.get().POKEMON_TOXIC; },
+            [](PokeEngine &self, float v) { self.get().POKEMON_TOXIC = v; })
+        .def_property(
+            "pokemon_poisoned",
+            [](const PokeEngine &self) { return self.get().POKEMON_POISONED; },
+            [](PokeEngine &self, float v) {
+              self.get().POKEMON_POISONED = v;
+            })
+        .def_property(
+            "pokemon_burned",
+            [](const PokeEngine &self) { return self.get().POKEMON_BURNED; },
+            [](PokeEngine &self, float v) { self.get().POKEMON_BURNED = v; })
+        .def_property(
+            "leech_seed",
+            [](const PokeEngine &self) { return self.get().LEECH_SEED; },
+            [](PokeEngine &self, float v) { self.get().LEECH_SEED = v; })
+        .def_property(
+            "substitute",
+            [](const PokeEngine &self) { return self.get().SUBSTITUTE; },
+            [](PokeEngine &self, float v) { self.get().SUBSTITUTE = v; })
+        .def_property(
+            "confusion",
+            [](const PokeEngine &self) { return self.get().CONFUSION; },
+            [](PokeEngine &self, float v) { self.get().CONFUSION = v; })
+        .def_property(
+            "reflect",
+            [](const PokeEngine &self) { return self.get().REFLECT; },
+            [](PokeEngine &self, float v) { self.get().REFLECT = v; })
+        .def_property(
+            "light_screen",
+            [](const PokeEngine &self) { return self.get().LIGHT_SCREEN; },
+            [](PokeEngine &self, float v) { self.get().LIGHT_SCREEN = v; });
+  }
+
+  {
+    // Defaults pulled from MCTS::MonteCarlo's own constructor defaults.
+    static const ::MCTS::MonteCarlo monte_carlo_defaults{};
+
+    py::class_<MonteCarlo, Eval>(m, "MonteCarlo")
+        .def(py::init([](bool forbid_switches, bool forbid_status) {
+               auto engine = std::make_unique<MonteCarlo>();
+               engine->forbid_switches() = forbid_switches;
+               engine->forbid_status() = forbid_status;
+               return engine;
+             }),
+             py::arg("forbid_switches") =
+                 monte_carlo_defaults.forbid_switches,
+             py::arg("forbid_status") = monte_carlo_defaults.forbid_status)
+        .def_property(
+            "forbid_switches",
+            [](const MonteCarlo &self) { return self.forbid_switches(); },
+            [](MonteCarlo &self, bool v) { self.forbid_switches() = v; })
+        .def_property(
+            "forbid_status",
+            [](const MonteCarlo &self) { return self.forbid_status(); },
+            [](MonteCarlo &self, bool v) { self.forbid_status() = v; });
+  }
   py::class_<Network, Eval>(m, "Network")
       .def(py::init<>())
       .def("read_parameters", &Network::read_parameters, py::arg("path"))
