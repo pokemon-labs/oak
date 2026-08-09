@@ -20,8 +20,6 @@
 
 namespace Py::Search {
 
-struct Eval;
-
 struct Eval {
   using Variant = std::variant<MCTS::MonteCarlo, PokeEngine::Eval,
                                std::shared_ptr<NN::Battle::NetworkBase>>;
@@ -33,11 +31,6 @@ struct Eval {
   bool is_network() const noexcept {
     return std::holds_alternative<std::shared_ptr<NN::Battle::NetworkBase>>(
         data);
-  }
-  Network network() {
-    Network network;
-    network.data = std::get<std::shared_ptr<NN::Battle::NetworkBase>>(data);
-    return network;
   }
 };
 
@@ -240,8 +233,8 @@ struct MatrixUCB : public BanditParams {
   uint32_t interval;
   uint32_t minimum;
   float c;
-  MatrixUCB(const BanditParams &params, uint32_t delay, uint32_t interval,
-            uint32_t minimum, float c)
+  MatrixUCB(const BanditParams &params, uint32_t delay = 0,
+            uint32_t interval = 0, uint32_t minimum = 0, float c = 0)
       : delay{delay}, interval{interval}, minimum{minimum}, c{c} {
     this->data = params.data;
   }
@@ -303,7 +296,7 @@ public:
 
 namespace Parse {
 
-Eval eval(const std::string &s, bool quantize) {
+inline Eval eval(const std::string &s, bool quantize) {
   if (s == "mc" || s == "montecarlo") {
     return MonteCarlo{};
   }
@@ -320,7 +313,7 @@ Eval eval(const std::string &s, bool quantize) {
   return network;
 }
 
-BanditParams bandit(const std::string &s) {
+inline BanditParams bandit(const std::string &s) {
   const auto bandit_split = ::Parse::split(s, '-');
   if (bandit_split.size() < 2) {
     throw std::runtime_error{"Could not parse bandit string: " + s};
@@ -349,7 +342,19 @@ BanditParams bandit(const std::string &s) {
   }
 }
 
-Heap heap(bool use_table) {
+inline MatrixUCB matrix_ucb(const BanditParams &params, const std::string &s) {
+  const auto matrix_ucb_split = ::Parse::split(s, '-');
+  if (matrix_ucb_split.size() != 4) {
+    throw std::runtime_error{"Could not parse MatrixUCB name: " + s};
+  }
+  const uint32_t delay = std::stoull(matrix_ucb_split[0]);
+  const uint32_t interval = std::stoull(matrix_ucb_split[1]);
+  const uint32_t minimum = std::stoull(matrix_ucb_split[2]);
+  const float c = std::stof(matrix_ucb_split[3]);
+  return MatrixUCB{params, delay, interval, minimum, c};
+}
+
+inline Heap heap(bool use_table) {
   if (use_table) {
     return Table{};
   } else {
@@ -357,7 +362,7 @@ Heap heap(bool use_table) {
   }
 }
 
-Budget budget(const std::string &s) {
+inline Budget budget(const std::string &s) {
   const auto pos = s.find_first_not_of("0123456789");
   const size_t number = std::stoull(s.substr(0, pos));
   const std::string unit = (pos == std::string::npos) ? "" : s.substr(pos);

@@ -365,52 +365,153 @@ PYBIND11_MODULE(pyoak, m) {
                     "Raw uint32 of all packed duration bits.")
       .def("__repr__", [](const DurationProxy &) { return "<Duration>"; });
 
-  py::class_<DurationsView>(m, "Durations",
-                            "8-byte chance durations for both sides.\n\n"
-                            "  d = oak.Durations(dur_bytes)  # from bytes\n"
-                            "  d = oak.Durations()           # zeroed\n"
-                            "  d.get(0).confusion = 3\n"
-                            "  dur_bytes = d.bytes()")
+  py::class_<pkmn_gen1_chance_durations>(
+      m, "Durations",
+      "8-byte chance durations for both sides.\n\n"
+      "  d = oak.Durations(dur_bytes)  # from bytes\n"
+      "  d = oak.Durations()           # zeroed\n"
+      "  d.get(0).confusion = 3\n"
+      "  dur_bytes = d.bytes()")
       .def(py::init<>(), "Construct zeroed Durations.")
-      .def(py::init<py::bytes>(), py::arg("data"),
-           "Construct from 8 raw bytes.")
-      .def("get", &DurationsView::get, py::arg("side"),
-           "Duration for side 0 or 1.",
-           py::return_value_policy::reference_internal)
-      .def("bytes", &DurationsView::bytes,
-           "Return current (possibly mutated) 8-byte representation.")
-      .def("__repr__", [](const DurationsView &) { return "<Durations>"; })
-      .def(py::pickle([](const DurationsView &d) { return d.bytes(); },
-                      [](py::bytes b) { return DurationsView(b); }));
+      .def(py::init([](py::bytes b) {
+             auto sv = bytes_sv(b);
 
-  py::class_<BattleView>(m, "Battle",
-                         "Structured view of a 384-byte pkmn_gen1_battle.\n\n"
-                         "  b = oak.Battle(raw_bytes)\n"
-                         "  b.side(0).slot(1).hp = 200\n"
-                         "  new_bytes = b.bytes()")
-      .def(py::init<>(), "Construct zeroed Battle.")
-      .def(py::init<py::bytes>(), py::arg("data"),
-           "Construct from 384 raw bytes.")
-      .def("side", &BattleView::side, py::arg("index"),
-           "Side 0 (P1) or Side 1 (P2).",
-           py::return_value_policy::reference_internal)
-      .def("last_move", &BattleView::last_move, py::arg("index"),
-           "last_moves[_], 0 or 1", py::return_value_policy::reference_internal)
-      .def_property("turn", &BattleView::get_turn, &BattleView::set_turn)
-      .def_property("last_damage", &BattleView::get_last_damage,
-                    &BattleView::set_last_damage)
-      .def_property("rng", &BattleView::get_rng, &BattleView::set_rng,
-                    "RNG seed as uint64.")
-      .def("bytes", &BattleView::bytes,
-           "Return the current (possibly mutated) 384-byte battle "
-           "representation.")
-      .def("__str__", &BattleView::to_string)
+             if (sv.size() != PKMN_GEN1_CHANCE_DURATIONS_SIZE)
+               throw std::runtime_error(
+                   "Durations: expected " +
+                   std::to_string(PKMN_GEN1_CHANCE_DURATIONS_SIZE) +
+                   " bytes, got " + std::to_string(sv.size()));
+
+             pkmn_gen1_chance_durations raw{};
+             std::memcpy(&raw, sv.data(), PKMN_GEN1_CHANCE_DURATIONS_SIZE);
+             return raw;
+           }),
+           py::arg("data"), "Construct from 8 raw bytes.")
+      .def(
+          "get",
+          [](pkmn_gen1_chance_durations &raw, int i) -> DurationProxy {
+            if (i < 0 || i > 1)
+              throw std::out_of_range("index must be 0 or 1");
+
+            return {&::PKMN::view(raw).get(i)};
+          },
+          py::arg("side"), "Duration for side 0 or 1.",
+          py::return_value_policy::reference_internal)
+      .def(
+          "bytes",
+          [](const pkmn_gen1_chance_durations &raw) {
+            return py::bytes(reinterpret_cast<const char *>(&raw),
+                             PKMN_GEN1_CHANCE_DURATIONS_SIZE);
+          },
+          "Return current (possibly mutated) 8-byte representation.")
       .def("__repr__",
-           [](const BattleView &b) {
-             return "<Battle turn=" + std::to_string(b.get_turn()) + ">";
+           [](const pkmn_gen1_chance_durations &) { return "<Durations>"; })
+      .def(py::pickle(
+          [](const pkmn_gen1_chance_durations &raw) {
+            return py::bytes(reinterpret_cast<const char *>(&raw),
+                             PKMN_GEN1_CHANCE_DURATIONS_SIZE);
+          },
+          [](py::bytes b) {
+            auto sv = bytes_sv(b);
+
+            if (sv.size() != PKMN_GEN1_CHANCE_DURATIONS_SIZE)
+              throw std::runtime_error(
+                  "Durations: expected " +
+                  std::to_string(PKMN_GEN1_CHANCE_DURATIONS_SIZE) +
+                  " bytes, got " + std::to_string(sv.size()));
+
+            pkmn_gen1_chance_durations raw{};
+            std::memcpy(&raw, sv.data(), PKMN_GEN1_CHANCE_DURATIONS_SIZE);
+            return raw;
+          }));
+
+  py::class_<pkmn_gen1_battle>(
+      m, "Battle",
+      "Structured view of a 384-byte pkmn_gen1_battle.\n\n"
+      "  b = oak.Battle(raw_bytes)\n"
+      "  b.side(0).slot(1).hp = 200\n"
+      "  new_bytes = b.bytes()")
+      .def(py::init<>(), "Construct zeroed Battle.")
+      .def(py::init([](py::bytes b) {
+             auto sv = bytes_sv(b);
+             if (sv.size() != PKMN_GEN1_BATTLE_SIZE)
+               throw std::runtime_error(
+                   "Battle: expected " + std::to_string(PKMN_GEN1_BATTLE_SIZE) +
+                   " bytes, got " + std::to_string(sv.size()));
+
+             pkmn_gen1_battle raw{};
+             std::memcpy(&raw, sv.data(), PKMN_GEN1_BATTLE_SIZE);
+             return raw;
+           }),
+           py::arg("data"), "Construct from 384 raw bytes.")
+      .def(
+          "side",
+          [](pkmn_gen1_battle &raw, int i) -> SideProxy {
+            if (i < 0 || i > 1)
+              throw std::out_of_range("side index must be 0 or 1");
+
+            auto &battle = ::PKMN::view(raw);
+            return {&battle.sides[static_cast<std::size_t>(i)]};
+          },
+          py::arg("index"), "Side 0 (P1) or Side 1 (P2).",
+          py::return_value_policy::reference_internal)
+      .def(
+          "last_move",
+          [](pkmn_gen1_battle &raw, int i) -> MoveDetailsProxy {
+            if (i < 0 || i > 1)
+              throw std::out_of_range("player = 0, 1");
+
+            return {&::PKMN::view(raw).last_moves[i]};
+          },
+          py::arg("index"), "last_moves[_], 0 or 1",
+          py::return_value_policy::reference_internal)
+      .def_property(
+          "turn",
+          [](const pkmn_gen1_battle &raw) { return ::PKMN::view(raw).turn; },
+          [](pkmn_gen1_battle &raw, uint16_t v) { ::PKMN::view(raw).turn = v; })
+      .def_property(
+          "last_damage",
+          [](const pkmn_gen1_battle &raw) {
+            return ::PKMN::view(raw).last_damage;
+          },
+          [](pkmn_gen1_battle &raw, uint16_t v) {
+            ::PKMN::view(raw).last_damage = v;
+          })
+      .def_property(
+          "rng",
+          [](const pkmn_gen1_battle &raw) { return ::PKMN::view(raw).rng; },
+          [](pkmn_gen1_battle &raw, uint64_t v) { ::PKMN::view(raw).rng = v; },
+          "RNG seed as uint64.")
+      .def(
+          "bytes",
+          [](const pkmn_gen1_battle &raw) {
+            return py::bytes(reinterpret_cast<const char *>(&raw),
+                             PKMN_GEN1_BATTLE_SIZE);
+          },
+          "Return the current (possibly mutated) 384-byte battle "
+          "representation.")
+      .def("__str__",
+           [](const pkmn_gen1_battle &raw) { return ::PKMN::to_string(raw); })
+      .def("__repr__",
+           [](const pkmn_gen1_battle &raw) {
+             return "<Battle turn=" + std::to_string(::PKMN::view(raw).turn) +
+                    ">";
            })
-      .def(py::pickle([](const BattleView &b) { return b.bytes(); },
-                      [](py::bytes b) { return BattleView(b); }));
+      .def(py::pickle(
+          [](const pkmn_gen1_battle &raw) {
+            return py::bytes(reinterpret_cast<const char *>(&raw),
+                             PKMN_GEN1_BATTLE_SIZE);
+          },
+          [](py::bytes b) {
+            auto sv = bytes_sv(b);
+            if (sv.size() != PKMN_GEN1_BATTLE_SIZE)
+              throw std::runtime_error(
+                  "Battle: expected " + std::to_string(PKMN_GEN1_BATTLE_SIZE) +
+                  " bytes, got " + std::to_string(sv.size()));
+            pkmn_gen1_battle raw{};
+            std::memcpy(&raw, sv.data(), PKMN_GEN1_BATTLE_SIZE);
+            return raw;
+          }));
 
   py::class_<ActionProxy>(
       m, "Action",
@@ -543,37 +644,37 @@ PYBIND11_MODULE(pyoak, m) {
         input.battle = battle;
         input.durations = durations;
         input.result = PKMN::result(battle);
-        return py::make_tuple(BattleView{battle}, DurationsView{durations},
-                              input.result);
+        return py::make_tuple(battle, durations, input.result);
       },
       py::arg("battle_string"), py::arg("seed") = 0x123456);
 
   m.def(
       "update",
-      [](BattleView &battle, DurationsView &durations, uint8_t c1, uint8_t c2) {
+      [](pkmn_gen1_battle &battle, pkmn_gen1_chance_durations &durations,
+         uint8_t c1, uint8_t c2) {
         auto options = PKMN::options();
         pkmn_gen1_chance_options chance_options{};
-        chance_options.durations = durations.raw;
+        chance_options.durations = durations;
         PKMN::set(options, chance_options);
-        auto result = PKMN::update(battle.raw, c1, c2, options);
-        durations.raw = PKMN::durations(options);
+        auto result = PKMN::update(battle, c1, c2, options);
+        durations = PKMN::durations(options);
         return result;
       },
       py::arg("battle"), py::arg("durations"), py::arg("c1"), py::arg("c2"));
 
   m.def(
       "update",
-      [](BattleView &battle, DurationsView &durations,
+      [](pkmn_gen1_battle &battle, pkmn_gen1_chance_durations &durations,
          const ActionsView &actions, uint8_t c1, uint8_t c2) {
         auto options = PKMN::options();
         pkmn_gen1_chance_options chance_options{};
-        chance_options.durations = durations.raw;
+        chance_options.durations = durations;
         PKMN::set(options, chance_options);
         pkmn_gen1_calc_options calc_options{};
         PKMN::view(calc_options.overrides).actions = actions.raw;
         PKMN::set(options, calc_options);
-        auto result = pkmn_gen1_battle_update(&battle.raw, c1, c2, &options);
-        durations.raw = PKMN::durations(options);
+        auto result = pkmn_gen1_battle_update(&battle, c1, c2, &options);
+        durations = PKMN::durations(options);
         return result;
       },
       py::arg("battle"), py::arg("durations"), py::arg("actions"),
@@ -581,8 +682,9 @@ PYBIND11_MODULE(pyoak, m) {
 
   m.def(
       "battle_string",
-      [](const BattleView &battle, const DurationsView &durations) {
-        return PKMN::battle_data_to_string(battle.raw, durations.raw);
+      [](const pkmn_gen1_battle &battle,
+         const pkmn_gen1_chance_durations &durations) {
+        return PKMN::battle_data_to_string(battle, durations);
       },
       py::arg("battle"), py::arg("durations"));
 
@@ -706,9 +808,9 @@ PYBIND11_MODULE(pyoak, m) {
   });
 
   m.def("choices",
-        [](const BattleView &battle, int result)
+        [](const pkmn_gen1_battle &battle, int result)
             -> std::pair<std::vector<pkmn_choice>, std::vector<pkmn_choice>> {
-          return PKMN::choices(battle.raw, static_cast<pkmn_result>(result));
+          return PKMN::choices(battle, static_cast<pkmn_result>(result));
         });
 
   m.def("result_type",

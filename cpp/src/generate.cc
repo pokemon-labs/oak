@@ -243,25 +243,17 @@ void generate(const ProgramArgs *args_ptr) {
 
     Train::Battle::CompressedFrames training_frames{battle_data.battle};
 
-    auto agent_params = RuntimeSearch::AgentParams{
-        .budget = args.budget,
-        .bandit = args.bandit,
-        .eval = args.eval,
-        .matrix_ucb = args.matrix_ucb,
-        .discrete = args.use_discrete,
-        .table = args.use_table,
-    };
-
     auto eval = Py::Search::Parse::eval(args.eval, args.use_discrete);
     auto p1_cache = Py::Search::SideCache{};
     auto p2_cache = Py::Search::SideCache{};
-    if (eval.is_network()) {
-      Network network;
+    const bool is_network = eval.is_network();
+    if (is_network) {
+      Py::Search::Network network;
       network.data =
           std::get<std::shared_ptr<NN::Battle::NetworkBase>>(eval.data);
       for (auto i = 0; i < 6; ++i) {
-        p1_cache.precompute(network.get(), battle.sides[0], i);
-        p2_cache.precompute(network.get(), battle.sides[1], i);
+        p1_cache.precompute(network.get(), PKMN::view(battle).sides[0], i);
+        p2_cache.precompute(network.get(), PKMN::view(battle).sides[1], i);
       }
       if (args.use_discrete) {
         network.quantize();
@@ -269,8 +261,12 @@ void generate(const ProgramArgs *args_ptr) {
         p2_cache.quantize(network.get());
       }
     }
-
     const auto bandit = Py::Search::Parse::bandit(args.bandit);
+    auto matrix_ucb =
+        args.matrix_ucb.empty()
+            ? Py::Search::Parse::matrix_ucb(bandit, args.matrix_ucb)
+            : Py::Search::MatrixUCB{bandit};
+    auto budget = Py::Search::Parse::budget(args.budget);
     auto heap = Py::Search::Parse::heap(args.use_table);
 
     auto policy_options =
@@ -306,16 +302,20 @@ void generate(const ProgramArgs *args_ptr) {
                                                 battle_data.durations));
 
         const bool use_fast = device.uniform() < args.fast_search_prob;
-        agent.budget =
+        budget = Py::Search::Parse::budget(
             ((battle_length == 0) && skip_battle)
                 ? args.t1_budget.value()
-                : (use_fast ? args.fast_budget.value() : args.budget);
+                : (use_fast ? args.fast_budget.value() : args.budget));
         policy_options.mode =
             use_fast ? args.fast_policy_mode.value_or(args.policy_mode)
                      : args.policy_mode;
         MCTS::Output output{};
 
-        output = RuntimeSearch::run() if (battle_length == 0) {
+        output = RuntimeSearch::run(
+            device, battle_data.battle, battle_data.durations, budget,
+            args.matrix_ucb.empty() ? matrix_ucb : bandit, heap, eval, output,
+            is_network ? &p1_cache : nullptr, is_network ? &p2_cache : nullptr);
+        if (battle_length == 0) {
           p1_matchup = output.empirical_value;
           p2_matchup = 1 - output.empirical_value;
           if (skip_battle) {
@@ -347,13 +347,15 @@ void generate(const ProgramArgs *args_ptr) {
         // set heap
         const auto &obs = *reinterpret_cast<const MCTS::Obs *>(
             pkmn_gen1_battle_options_chance_actions(&options));
-        if (args.keep_node) {
-          const bool node_kept = heap.update(p1_index, p2_index, obs);
-          RuntimeData::update_with_node_counter.fetch_add(node_kept);
-        } else {
-          heap = RuntimeSearch::Heap{};
-          // heap.reset();
-        }
+        // TODO
+        // if (args.keep_node) {
+        //   const bool node_kept = heap.update(p1_index, p2_index, obs);
+        //   RuntimeData::update_with_node_counter.fetch_add(node_kept);
+        // } else {
+        //   heap = RuntimeSearch::Heap{};
+        //   // heap.reset();
+        // }
+        heap.reset();
         RuntimeData::update_counter.fetch_add(1);
 
         ++battle_length;

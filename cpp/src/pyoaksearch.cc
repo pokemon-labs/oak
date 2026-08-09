@@ -509,16 +509,18 @@ PYBIND11_MODULE(pyoaksearch, m) {
       });
   m.def(
       "output_string",
-      [](const BattleView &battle, const DurationsView &durations,
-         const pkmn_result result, const MCTS::Output &output) {
-        return MCTS::output_string(
-            output, MCTS::Input{battle.raw, durations.raw, result});
+      [](const pkmn_gen1_battle &battle,
+         const pkmn_gen1_chance_durations &durations, const pkmn_result result,
+         const MCTS::Output &output) {
+        return MCTS::output_string(output,
+                                   MCTS::Input{battle, durations, result});
       },
       py::arg("battle"), py::arg("durations"), py::arg("result"),
       py::arg("output"));
   m.def(
       "search",
-      [](const BattleView &battle, const DurationsView &durations,
+      [](const pkmn_gen1_battle &battle,
+         const pkmn_gen1_chance_durations &durations,
          const Py::Search::Budget &budget,
          const Py::Search::BanditParams &params, Py::Search::Heap &heap,
          Py::Search::Eval &eval, MCTS::Output output,

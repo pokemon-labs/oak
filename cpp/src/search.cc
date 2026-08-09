@@ -34,15 +34,15 @@
 
 namespace RuntimeSearch {
 
-MCTS::Output run(mt19937 &device, const Py::PKMN::BattleView &battle,
-                 const Py::PKMN::DurationsView &durations,
+MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
+                 const pkmn_gen1_chance_durations &durations,
                  const Py::Search::Budget &budget,
                  const Py::Search::BanditParams &params, Py::Search::Heap &heap,
                  Py::Search::Eval &eval, MCTS::Output output,
                  Py::Search::SideCache *p1_cache_ptr,
                  Py::Search::SideCache *p2_cache_ptr) {
 
-  MCTS::Input input{battle.raw, durations.raw, PKMN::result(battle.raw)};
+  MCTS::Input input{battle, durations, PKMN::result(battle)};
 
   const auto parse_eval = [&](const auto dur, const auto &params, auto &heap) {
     MCTS::Search s{};

@@ -19,19 +19,20 @@ PYBIND11_MODULE(pyoaklog, m) {
 
   m.def(
       "update",
-      [](BattleView &battle, DurationsView &durations, uint8_t c1, uint8_t c2,
+      [](pkmn_gen1_battle &battle, pkmn_gen1_chance_durations &durations,
+         uint8_t c1, uint8_t c2,
          int view = 0) -> std::pair<int, std::vector<std::string>> {
         std::array<uint8_t, 512> buffer{};
         pkmn_gen1_log_options log_options{buffer.data(), buffer.size()};
         auto options = PKMN::options(log_options);
         pkmn_gen1_chance_options chance_options{};
-        chance_options.durations = durations.raw;
+        chance_options.durations = durations;
         PKMN::set(options, chance_options);
-        auto result = PKMN::update(battle.raw, c1, c2, options);
-        durations.raw = PKMN::durations(options);
+        auto result = PKMN::update(battle, c1, c2, options);
+        durations = PKMN::durations(options);
         const auto finish =
             [&](auto &parser) -> std::pair<int, std::vector<std::string>> {
-          parser.battle = battle.raw;
+          parser.battle = battle;
           parser.parse();
           return {result, parser.log};
         };
@@ -55,23 +56,23 @@ PYBIND11_MODULE(pyoaklog, m) {
 
   m.def(
       "update",
-      [](BattleView &battle, DurationsView &durations,
+      [](pkmn_gen1_battle &battle, pkmn_gen1_chance_durations &durations,
          const ActionsView &actions, uint8_t c1, uint8_t c2,
          int view = 0) -> std::pair<int, std::vector<std::string>> {
         std::array<uint8_t, 512> buffer{};
         pkmn_gen1_log_options log_options{buffer.data(), buffer.size()};
         auto options = PKMN::options(log_options);
         pkmn_gen1_chance_options chance_options{};
-        chance_options.durations = durations.raw;
+        chance_options.durations = durations;
         PKMN::set(options, chance_options);
         pkmn_gen1_calc_options calc_options{};
         PKMN::view(calc_options.overrides).actions = actions.raw;
         PKMN::set(options, calc_options);
-        auto result = pkmn_gen1_battle_update(&battle.raw, c1, c2, &options);
-        durations.raw = PKMN::durations(options);
+        auto result = pkmn_gen1_battle_update(&battle, c1, c2, &options);
+        durations = PKMN::durations(options);
         const auto finish =
             [&](auto &parser) -> std::pair<int, std::vector<std::string>> {
-          parser.battle = battle.raw;
+          parser.battle = battle;
           parser.parse();
           return {result, parser.log};
         };
@@ -93,19 +94,21 @@ PYBIND11_MODULE(pyoaklog, m) {
       py::arg("battle"), py::arg("durations"), py::arg("actions"),
       py::arg("c1"), py::arg("c2"), py::arg("view"));
 
-  m.def(
-      "compare_battles",
-      [](const BattleView &public_battle, const DurationsView &public_durations,
-         const BattleView &truth_battle, const DurationsView &truth_durations,
-         const BattleView &key_battle,
-         const DurationsView &key_durations) -> std::pair<bool, std::string> {
-        std::string reason = "";
-        bool matches = PKMN::Client::compare_battles(
-            PKMN::view(public_battle.raw), PKMN::view(public_durations.raw),
-            PKMN::view(truth_battle.raw), PKMN::view(truth_durations.raw),
-            PKMN::view(key_battle.raw), PKMN::view(key_durations.raw), reason);
-        return {matches, reason};
-      });
+  m.def("compare_battles",
+        [](const pkmn_gen1_battle &public_battle,
+           const pkmn_gen1_chance_durations &public_durations,
+           const pkmn_gen1_battle &truth_battle,
+           const pkmn_gen1_chance_durations &truth_durations,
+           const pkmn_gen1_battle &key_battle,
+           const pkmn_gen1_chance_durations &key_durations)
+            -> std::pair<bool, std::string> {
+          std::string reason = "";
+          bool matches = PKMN::Client::compare_battles(
+              PKMN::view(public_battle), PKMN::view(public_durations),
+              PKMN::view(truth_battle), PKMN::view(truth_durations),
+              PKMN::view(key_battle), PKMN::view(key_durations), reason);
+          return {matches, reason};
+        });
 }
 
 } // namespace Py::PKMN
