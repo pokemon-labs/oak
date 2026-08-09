@@ -3,8 +3,7 @@ project(oak VERSION 1.1.4)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# TODO eigen stopped building one day idk
-add_compile_options(-fpermissive)
+
 add_subdirectory(extern/lrsnash EXCLUDE_FROM_ALL)
 add_subdirectory(extern/eigen EXCLUDE_FROM_ALL)
 add_subdirectory(extern/argparse EXCLUDE_FROM_ALL)
