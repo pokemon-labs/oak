@@ -166,7 +166,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
   py::class_<PokeEngine, Eval>(m, "PokeEngine").def(py::init<>());
   py::class_<MonteCarlo, Eval>(m, "MonteCarlo").def(py::init<>());
   py::class_<Network, Eval>(m, "Network")
-      .def(py::init<>())
+      .def(py::init<int>(), py::arg("activation") = 1)
       .def("read_parameters", &Network::read_parameters, py::arg("path"))
       .def(
           "resize",
@@ -188,6 +188,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
             network->initialize(device);
           },
           py::arg("seed"))
+      .def("quantize", &Network::quantize)
       .def(
           "forward_side",
           [](Network &net, const Py::PKMN::SideProxy &side,
@@ -376,6 +377,8 @@ PYBIND11_MODULE(pyoaksearch, m) {
             NN::Battle::visit_network(network.get(), precompute);
           },
           py::arg("network"), py::arg("side"), py::arg("index"))
+      .def("quantize",
+           [](SideCache &cache, Network &network) { cache.quantize(network); })
       .def(
           "pokemon_embedding",
           [](const SideCache &cache, std::size_t side_index, std::size_t key,
@@ -415,6 +418,12 @@ PYBIND11_MODULE(pyoaksearch, m) {
   // Params
   py::class_<BanditParams>(m, "BanditParams");
   py::class_<UCB, BanditParams>(m, "UCB").def(py::init<float>(), py::arg("c"));
+  py::class_<PUCB, BanditParams>(m, "PUCB").def(py::init<float>(),
+                                                py::arg("c"));
+  py::class_<UCB1, BanditParams>(m, "UCB1").def(py::init<float>(),
+                                                py::arg("c"));
+  // py::class_<UCB, BanditParams>(m, "Exp3").def(py::init<float, float>(),
+  // py::arg("lr"), py::arg("c"));
 
   py::class_<MCTS::Output>(m, "Output")
       .def(py::init<>())

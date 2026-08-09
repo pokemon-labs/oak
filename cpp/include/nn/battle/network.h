@@ -16,8 +16,6 @@ enum class Embedding_ {
   Moves,
 };
 
-inline constexpr float sigmoid(const float x) { return 1 / (1 + std::exp(-x)); }
-
 struct NetworkBase {
   virtual std::tuple<int, int, int, int> shape() const noexcept = 0;
   virtual ~NetworkBase() = default;

@@ -30,9 +30,21 @@ struct Eval {
 class Network : public Eval {
 public:
   using NetworkPtr = std::shared_ptr<NN::Battle::NetworkBase>;
-  Network()
-      : Eval(std::in_place_type<NetworkPtr>,
-             std::make_shared<NN::Battle::Network>()) {}
+  Network(int act = 1) : Eval(std::in_place_type<NetworkPtr>) {
+    switch (static_cast<NN::Activation>(act)) {
+    case NN::Activation::relu: {
+      this->data = std::make_shared<NN::Battle::Network>();
+      return;
+    }
+    case NN::Activation::clamp: {
+      this->data = std::make_shared<NN::Battle::NetworkClamped>();
+      return;
+    }
+    default: {
+      throw std::runtime_error{"Invalid activation."};
+    }
+    }
+  }
   auto &get() { return std::get<NetworkPtr>(this->data); }
   const auto &get() const { return std::get<NetworkPtr>(this->data); }
 
@@ -69,7 +81,35 @@ public:
     }
   }
 
-  bool quantize() { return false; }
+  bool quantize() {
+    auto network = get();
+    if (auto net = std::dynamic_pointer_cast<NN::Battle::Network>(network)) {
+      throw std::runtime_error{
+          "Attempting to quantize a network with non clamped activations."};
+      return false;
+    } else if (auto net = std::dynamic_pointer_cast<NN::Battle::NetworkClamped>(
+                   network)) {
+      const auto [in, h, v, p] = network->shape();
+      auto *m = network->main_net_float();
+      auto q = NN::Battle::visit_quantized_network(in, h, v, p, [m](auto &net) {
+        net.main_net.try_copy_parameters(*m);
+      });
+      q->pokemon_net = network->pokemon_net;
+      q->active_net = network->active_net;
+      q->moves_net = network->moves_net;
+      if (!q) {
+        throw std::runtime_error{"Network with that shape is not quantizable."};
+        return false;
+      }
+      this->data = q;
+      return true;
+    } else if (network->main_net_float() == nullptr) {
+      return true;
+    } else {
+      assert(false);
+    }
+    return false;
+  }
   bool is_quantized() const { return false; }
 };
 
@@ -158,11 +198,13 @@ struct BanditParams {
 };
 
 class Exp3 : public BanditParams {
+public:
   Exp3(float lr, float exploration)
       : BanditParams{std::in_place_type<::Exp3::Bandit::Params>, lr,
                      exploration} {}
 };
 class PExp3 : public BanditParams {
+public:
   PExp3(float lr, float exploration)
       : BanditParams{std::in_place_type<::PExp3::Bandit::Params>, lr,
                      exploration} {}
@@ -172,9 +214,11 @@ public:
   UCB(float c) : BanditParams{std::in_place_type<::UCB::Bandit::Params>, c} {}
 };
 class PUCB : public BanditParams {
+public:
   PUCB(float c) : BanditParams{std::in_place_type<::PUCB::Bandit::Params>, c} {}
 };
 class UCB1 : public BanditParams {
+public:
   UCB1(float c) : BanditParams{std::in_place_type<::UCB1::Bandit::Params>, c} {}
 };
 struct MatrixUCB : public BanditParams {
