@@ -272,4 +272,79 @@ public:
   }
 };
 
+namespace Parse {
+
+Eval eval(const std::string &s) {
+  if (s == "mc" || s == "montecarlo" || s == "monte_carlo") {
+    return MonteCarlo{};
+  }
+  if (s == "foul_play" || s == "pokeengine" || s == "poke_engine") {
+    return PokeEngine{};
+  }
+  Network network{};
+  if (!network.read_parameters(s)) {
+    throw std::runtime_error{"Parse::eval: could not read parameters at: " + s};
+  }
+  return network;
+}
+
+BanditParams bandit(const std::string &s) {
+  const auto bandit_split = ::Parse::split(s, '-');
+  if (bandit_split.size() < 2) {
+    throw std::runtime_error{"Could not parse bandit string: " + s};
+  }
+
+  const auto &name = bandit_split[0];
+  const float f1 = std::stof(bandit_split[1]);
+
+  if (name == "ucb") {
+    return UCB{f1};
+  } else if (name == "ucb1") {
+    return UCB1{f1};
+  } else if (name == "pucb") {
+    return PUCB{f1};
+  }
+  float lr = .05f;
+  if (bandit_split.size() >= 3) {
+    lr = std::stof(bandit_split[2]);
+  }
+  if (name == "exp3") {
+    return Exp3{f1, lr};
+  } else if (name == "pexp3") {
+    return PExp3{f1, lr};
+  } else {
+    throw std::runtime_error{"Could not parse bandit string: " + name};
+  }
+}
+
+Heap heap(const std::string &s) {
+  // Mirrors the old `agent.table` boolean: "table" selects the Table
+  // variant, anything else falls back to Node.
+  if (s == "table") {
+    return Table{};
+  }
+  return Node{};
+}
+
+Budget budget(const std::string &s) {
+  const auto pos = s.find_first_not_of("0123456789");
+  const size_t number = std::stoull(s.substr(0, pos));
+  const std::string unit = (pos == std::string::npos) ? "" : s.substr(pos);
+
+  if (unit.empty()) {
+    return Iterations{number};
+  } else if (unit == "ms" || unit == "millisec" || unit == "milliseconds") {
+    return Budget{std::in_place_type<std::chrono::milliseconds>,
+                  std::chrono::milliseconds{number}};
+  } else if (unit == "s" || unit == "sec" || unit == "seconds") {
+    // Budget::Variant only holds milliseconds (no seconds alternative),
+    // so convert here instead of storing chrono::seconds.
+    return Budget{std::in_place_type<std::chrono::milliseconds>,
+                  std::chrono::milliseconds{number * 1000}};
+  } else {
+    throw std::runtime_error{"Invalid search duration specification: " + s};
+  }
+}
+} // namespace Parse
+
 } // namespace Py::Search
