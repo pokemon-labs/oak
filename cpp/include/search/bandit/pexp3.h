@@ -25,10 +25,13 @@ struct Bandit {
   };
 
   struct Params {
-    float gamma;
-    float one_minus_gamma;
-    float alpha;
-    float one_minus_alpha;
+    Params() = default;
+    Params(float lr, float exploration)
+        : lr{lr}, exploration{exploration},
+          one_minus_exploration{1 - exploration} {}
+    float lr;
+    float exploration;
+    float one_minus_exploration;
   };
 
   std::array<float, 9> gains;
@@ -43,7 +46,7 @@ struct Bandit {
   bool is_init() const noexcept { return k; }
 
   void softmax_logits(const Params &params, const float *logits) noexcept {
-    const float eta{params.gamma / k};
+    const float eta{params.lr / k};
     std::transform(logits, logits + k, this->gains.data(),
                    [eta](const auto x) { return x / eta; });
   }
@@ -55,12 +58,12 @@ struct Bandit {
       outcome.index = 0;
       outcome.prob = 1;
     } else {
-      const float eta{params.gamma / k};
-      const float delta{params.alpha / k};
+      const float eta{params.lr / k};
+      const float delta{params.exploration / k};
       softmax(policy, gains, eta);
       std::transform(policy.begin(), policy.end(), policy.begin(),
                      [eta, delta, &params](const float x) {
-                       return params.one_minus_alpha * x + delta;
+                       return params.one_minus_exploration * x + delta;
                      });
       outcome.index = std::min(static_cast<uint8_t>(device.sample_pdf(policy)),
                                static_cast<uint8_t>(k - 1));

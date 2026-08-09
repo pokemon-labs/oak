@@ -361,24 +361,11 @@ PYBIND11_MODULE(pyoaksearch, m) {
       .def(
           "precompute",
           [](SideCache &cache, Network &network,
-             const Py::PKMN::SideProxy &side, int index) {
-            const auto precompute = [&](auto &net) {
-              using Network = typename std::remove_cvref_t<decltype(net)>;
-              constexpr auto activation = Network::act;
-              if (std::holds_alternative<NN::Battle::SideCache<float>>(
-                      cache.data)) {
-                auto &c = std::get<NN::Battle::SideCache<float>>(cache.data);
-                c.precompute<activation>(net, *side.p, index);
-              } else {
-                auto &c = std::get<NN::Battle::SideCache<uint8_t>>(cache.data);
-                c.precompute<activation>(net, *side.p, index);
-              }
-            };
-            NN::Battle::visit_network(network.get(), precompute);
-          },
+             const Py::PKMN::SideProxy &side,
+             int index) { cache.precompute(network.get(), *side.p, index); },
           py::arg("network"), py::arg("side"), py::arg("index"))
-      .def("quantize",
-           [](SideCache &cache, Network &network) { cache.quantize(network); })
+      .def("quantize", [](SideCache &cache,
+                          Network &network) { cache.quantize(network.get()); })
       .def(
           "pokemon_embedding",
           [](const SideCache &cache, std::size_t side_index, std::size_t key,

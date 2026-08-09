@@ -493,7 +493,7 @@ The Oak battle network. It always provides a value but may also return policy in
 
 #### Params
 
-The parameters ("c" for UCB, "gamma" and "alpha" for Exp3) of the bandit algorithms.
+The parameters ("c" for UCB, "lr" and "exploration" for Exp3) of the bandit algorithms.
 
 Each of these structs (e.g. `UCB::Params`, `PExp3::Params`) may be wrapped in a `MatrixUCB<typename T>` template that specifies that the MatrixUCB algorithm should be used at the root node. More on that below
 

@@ -129,7 +129,7 @@ There are 5 bandit algorithms available:
 * `exp3`
 * `pexp3`
 
-Each of these has a float parameter that comes afterwards separated by a '-', e.g. `ucb-1.0`. For the 'ucb' variants this is the exploration weight "c" and for 'exp3' variants it is the update weight "gamma". The exp3 variants have a second optional parameter which is the weight of the uniform policy noise in the forecast e.g. `pexp3-1.0-0.1`.
+Each of these has a float parameter that comes afterwards separated by a '-', e.g. `ucb-1.0`. For the 'ucb' variants this is the exploration weight "c" and for 'exp3' variants it is the update weight "lr". The exp3 variants have a second optional parameter which is the weight of the uniform policy noise in the forecast e.g. `pexp3-1.0-0.1`.
 
 Currently all evidence points to ucb being the strongest variant, despite exp3's [theoretical guarantees](https://arxiv.org/abs/1804.09045). It is probably also better suited towards low iteration searches.
 

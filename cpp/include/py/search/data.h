@@ -1,5 +1,6 @@
 #pragma once
 
+#include <libpkmn/data.h>
 #include <nn/battle/cache.h>
 #include <nn/battle/network.h>
 #include <search/bandit/exp3.h>
@@ -9,6 +10,7 @@
 #include <search/bandit/ucb1.h>
 #include <search/mcts.h>
 #include <util/file-lock.h>
+#include <util/strings.h>
 
 #include <chrono>
 #include <filesystem>
@@ -18,6 +20,8 @@
 
 namespace Py::Search {
 
+struct Eval;
+
 struct Eval {
   using Variant = std::variant<MCTS::MonteCarlo, PokeEngine::Eval,
                                std::shared_ptr<NN::Battle::NetworkBase>>;
@@ -25,6 +29,16 @@ struct Eval {
   template <class T, class... Args>
   Eval(std::in_place_type_t<T>, Args &&...args)
       : data(std::in_place_type<T>, std::forward<Args>(args)...) {}
+
+  bool is_network() const noexcept {
+    return std::holds_alternative<std::shared_ptr<NN::Battle::NetworkBase>>(
+        data);
+  }
+  Network network() {
+    Network network;
+    network.data = std::get<std::shared_ptr<NN::Battle::NetworkBase>>(data);
+    return network;
+  }
 };
 
 class Network : public Eval {
@@ -261,7 +275,7 @@ public:
   Variant data;
 
   bool is_quantized() const { return std::get_if<Cache<uint8_t>>(&data); }
-  void quantize(const Network &network) {
+  void quantize(std::shared_ptr<NN::Battle::NetworkBase> network) {
     if (!this->is_quantized()) {
       const auto &net = network.get();
       auto quantized = NN::Battle::quantize_cache(
@@ -270,20 +284,38 @@ public:
       data = std::move(quantized);
     }
   }
+  void precompute(std::shared_ptr<NN::Battle::NetworkBase> network,
+                  const ::PKMN::Side &side, uint8_t index) {
+    const auto precompute = [&](auto &net) {
+      using Network = typename std::remove_cvref_t<decltype(net)>;
+      constexpr auto activation = Network::act;
+      if (std::holds_alternative<NN::Battle::SideCache<float>>(this->data)) {
+        auto &c = std::get<NN::Battle::SideCache<float>>(this->data);
+        c.precompute<activation>(net, side, index);
+      } else {
+        auto &c = std::get<NN::Battle::SideCache<uint8_t>>(this->data);
+        c.precompute<activation>(net, side, index);
+      }
+    };
+    NN::Battle::visit_network(network, precompute);
+  }
 };
 
 namespace Parse {
 
-Eval eval(const std::string &s) {
-  if (s == "mc" || s == "montecarlo" || s == "monte_carlo") {
+Eval eval(const std::string &s, bool quantize) {
+  if (s == "mc" || s == "montecarlo") {
     return MonteCarlo{};
   }
-  if (s == "foul_play" || s == "pokeengine" || s == "poke_engine") {
+  if (s == "fp") {
     return PokeEngine{};
   }
   Network network{};
   if (!network.read_parameters(s)) {
     throw std::runtime_error{"Parse::eval: could not read parameters at: " + s};
+  }
+  if (quantize) {
+    network.quantize();
   }
   return network;
 }
@@ -295,50 +327,46 @@ BanditParams bandit(const std::string &s) {
   }
 
   const auto &name = bandit_split[0];
-  const float f1 = std::stof(bandit_split[1]);
+  const float c_or_lr = std::stof(bandit_split[1]);
 
   if (name == "ucb") {
-    return UCB{f1};
+    return UCB{c_or_lr};
   } else if (name == "ucb1") {
-    return UCB1{f1};
+    return UCB1{c_or_lr};
   } else if (name == "pucb") {
-    return PUCB{f1};
+    return PUCB{c_or_lr};
   }
-  float lr = .05f;
+  float exploration = .05f;
   if (bandit_split.size() >= 3) {
-    lr = std::stof(bandit_split[2]);
+    exploration = std::stof(bandit_split[2]);
   }
   if (name == "exp3") {
-    return Exp3{f1, lr};
+    return Exp3{c_or_lr, exploration};
   } else if (name == "pexp3") {
-    return PExp3{f1, lr};
+    return PExp3{c_or_lr, exploration};
   } else {
     throw std::runtime_error{"Could not parse bandit string: " + name};
   }
 }
 
-Heap heap(const std::string &s) {
-  // Mirrors the old `agent.table` boolean: "table" selects the Table
-  // variant, anything else falls back to Node.
-  if (s == "table") {
+Heap heap(bool use_table) {
+  if (use_table) {
     return Table{};
+  } else {
+    return Node{};
   }
-  return Node{};
 }
 
 Budget budget(const std::string &s) {
   const auto pos = s.find_first_not_of("0123456789");
   const size_t number = std::stoull(s.substr(0, pos));
   const std::string unit = (pos == std::string::npos) ? "" : s.substr(pos);
-
   if (unit.empty()) {
     return Iterations{number};
   } else if (unit == "ms" || unit == "millisec" || unit == "milliseconds") {
     return Budget{std::in_place_type<std::chrono::milliseconds>,
                   std::chrono::milliseconds{number}};
   } else if (unit == "s" || unit == "sec" || unit == "seconds") {
-    // Budget::Variant only holds milliseconds (no seconds alternative),
-    // so convert here instead of storing chrono::seconds.
     return Budget{std::in_place_type<std::chrono::milliseconds>,
                   std::chrono::milliseconds{number * 1000}};
   } else {

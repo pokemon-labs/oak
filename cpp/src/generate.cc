@@ -251,12 +251,27 @@ void generate(const ProgramArgs *args_ptr) {
         .discrete = args.use_discrete,
         .table = args.use_table,
     };
-    auto agent = RuntimeSearch::Agent{agent_params};
-    if (agent.is_network()) {
-      agent.initialize_network(battle_data.battle);
+
+    auto eval = Py::Search::Parse::eval(args.eval, args.use_discrete);
+    auto p1_cache = Py::Search::SideCache{};
+    auto p2_cache = Py::Search::SideCache{};
+    if (eval.is_network()) {
+      Network network;
+      network.data =
+          std::get<std::shared_ptr<NN::Battle::NetworkBase>>(eval.data);
+      for (auto i = 0; i < 6; ++i) {
+        p1_cache.precompute(network.get(), battle.sides[0], i);
+        p2_cache.precompute(network.get(), battle.sides[1], i);
+      }
+      if (args.use_discrete) {
+        network.quantize();
+        p1_cache.quantize(network.get());
+        p2_cache.quantize(network.get());
+      }
     }
 
-    auto heap = RuntimeSearch::Heap{};
+    const auto bandit = Py::Search::Parse::bandit(args.bandit);
+    auto heap = Py::Search::Parse::heap(args.use_table);
 
     auto policy_options =
         RuntimePolicy::Options{.mode = args.policy_mode,
@@ -300,8 +315,7 @@ void generate(const ProgramArgs *args_ptr) {
                      : args.policy_mode;
         MCTS::Output output{};
 
-        output = RuntimeSearch::run(device, battle_data, heap, agent);
-        if (battle_length == 0) {
+        output = RuntimeSearch::run() if (battle_length == 0) {
           p1_matchup = output.empirical_value;
           p2_matchup = 1 - output.empirical_value;
           if (skip_battle) {
