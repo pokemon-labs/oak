@@ -12,7 +12,7 @@
 
 #include <pkmn.h>
 
-#include <py/search/data.h>
+#include <search/data.h>
 
 #include <fstream>
 #include <string_view>
@@ -59,7 +59,7 @@ namespace {
 // --- Zero-copy tensor views over NN::Affine<> layers -----------------------
 //
 // These build a strided py::array that aliases an Affine layer's live Eigen
-// storage directly -- no copy. `self` is the owning Py::Search::Network
+// storage directly -- no copy. `self` is the owning Search::Network
 // python object; passing it as the array's `base` makes pybind11 keep it
 // (and therefore the underlying NetworkBase/Eigen buffers) alive for as long
 // as the returned array is alive.
@@ -108,7 +108,7 @@ py::array affine_biases_view(NN::Affine<Order> &affine, py::object self) {
 // layers. Throws for quantized networks, which have no float layers/no
 // Affine<float> storage to view. Order of iteration is stable and is the
 // order used by write_parameters() below, matching
-// Py::Search::Network::read_parameters()'s on-disk layer order.
+// Search::Network::read_parameters()'s on-disk layer order.
 void for_each_float_layer(NN::Battle::NetworkBase &network, const auto &F) {
   auto *main = network.main_net_float();
   if (!main) {
@@ -147,7 +147,7 @@ uint64_t fnv1a(std::string_view bytes, uint64_t h = 0xcbf29ce484222325ULL) {
 
 } // namespace
 
-namespace Py::Search {
+namespace Search {
 
 namespace py = pybind11;
 using namespace ::PKMN::Data;
@@ -193,7 +193,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
           "forward_side",
           [](Network &net, const Py::PKMN::SideProxy &side,
              const Py::PKMN::DurationProxy &duration,
-             std::optional<std::reference_wrapper<Py::Search::SideCache>> cache)
+             std::optional<std::reference_wrapper<Search::SideCache>> cache)
               -> py::array {
             auto network = net.get();
             py::array result;
@@ -521,12 +521,12 @@ PYBIND11_MODULE(pyoaksearch, m) {
       "search",
       [](const pkmn_gen1_battle &battle,
          const pkmn_gen1_chance_durations &durations,
-         const Py::Search::Budget &budget,
-         const Py::Search::BanditParams &params, Py::Search::Heap &heap,
-         Py::Search::Eval &eval, MCTS::Output output,
-         std::optional<std::reference_wrapper<Py::Search::SideCache>> p1_cache =
+         const Search::Budget &budget,
+         const Search::BanditParams &params, Search::Heap &heap,
+         Search::Eval &eval, MCTS::Output output,
+         std::optional<std::reference_wrapper<Search::SideCache>> p1_cache =
              {},
-         std::optional<std::reference_wrapper<Py::Search::SideCache>> p2_cache =
+         std::optional<std::reference_wrapper<Search::SideCache>> p2_cache =
              {}) {
         mt19937 device{std::random_device{}()};
         return RuntimeSearch::run(
@@ -540,4 +540,4 @@ PYBIND11_MODULE(pyoaksearch, m) {
       py::arg("p2_cache") = std::nullopt);
 }
 
-} // namespace Py::Search
+} // namespace Search

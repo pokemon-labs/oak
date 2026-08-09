@@ -18,7 +18,7 @@
 #include <thread>
 #include <variant>
 
-namespace Py::Search {
+namespace Search {
 
 struct Eval {
   using Variant = std::variant<MCTS::MonteCarlo, PokeEngine::Eval,
@@ -380,4 +380,4 @@ inline Budget budget(const std::string &s) {
 }
 } // namespace Parse
 
-} // namespace Py::Search
+} // namespace Search

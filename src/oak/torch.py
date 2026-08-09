@@ -372,14 +372,17 @@ class BattleNetwork(torch.nn.Module):
     # only remaining hard-coded dims
     pokemon_in_dim = oak.train.pokemon_in_dim
     active_in_dim = oak.train.active_in_dim
+    moves_in_dim = oak.train.moves_in_dim
     policy_out_dim = oak.train.policy_out_dim
 
     def __init__(
         self,
         phd=oak.train.pokemon_hidden_dim,
         ahd=oak.train.active_hidden_dim,
+        mhd=oak.train.moves_hidden_dim,
         pod=oak.train.pokemon_out_dim,
         aod=oak.train.active_out_dim,
+        mod=oak.train.moves_out_dim,
         hd=oak.train.hidden_dim,
         vhd=oak.train.value_hidden_dim,
         pohd=oak.train.policy_hidden_dim,
@@ -388,9 +391,11 @@ class BattleNetwork(torch.nn.Module):
         super().__init__()
         self.pokemon_hidden_dim = phd
         self.active_hidden_dim = ahd
+        self.moves_hidden_dim = mhd
         self.pokemon_out_dim = pod
         self.active_out_dim = aod
-        self.side_out_dim = (1 + aod) + 5 * (1 + pod)
+        self.moves_out_dim = mod
+        self.side_out_dim = aod + 5 * (pod + mod)
         self.hidden_dim = hd
         self.value_hidden_dim = vhd
         self.policy_hidden_dim = pohd
@@ -410,6 +415,13 @@ class BattleNetwork(torch.nn.Module):
             activation,
             activation,
         )
+        self.moves_net = EmbeddingNet(
+            self.moves_in_dim,
+            self.moves_hidden_dim,
+            self.moves_out_dim,
+            activation,
+            activation,
+        )
         self.main_net = MainNet(
             2 * self.side_out_dim,
             self.hidden_dim,
@@ -423,6 +435,7 @@ class BattleNetwork(torch.nn.Module):
         self.activation = act
         self.pokemon_net.set_activation(act)
         self.active_net.set_activation(act)
+        self.moves_net.set_activation(act)
         self.main_net.set_activation(act)
 
     def read_parameters(self, f):
@@ -431,19 +444,23 @@ class BattleNetwork(torch.nn.Module):
         self.set_activation(act + 1)
         self.pokemon_net.read_parameters(f)
         self.active_net.read_parameters(f)
+        self.moves_net.read_parameters(f)
         self.main_net.read_parameters(f)
 
     def write_parameters(self, f):
         f.write(struct.pack("<Q", self.activation - 1))
         self.pokemon_net.write_parameters(f)
         self.active_net.write_parameters(f)
+        self.moves_net.write_parameters(f)
         self.main_net.write_parameters(f)
 
     def clamp_parameters(self):
         self.pokemon_net.clamp_parameters()
         self.active_net.clamp_parameters()
+        self.moves_net.clamp_parameters()
         self.main_net.clamp_parameters()
 
+    # TODO
     def inference(
         self, input: EncodedBattleFrames, output: OutputBuffer, use_policy: bool = True
     ):

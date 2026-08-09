@@ -36,11 +36,11 @@ namespace RuntimeSearch {
 
 MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
                  const pkmn_gen1_chance_durations &durations,
-                 const Py::Search::Budget &budget,
-                 const Py::Search::BanditParams &params, Py::Search::Heap &heap,
-                 Py::Search::Eval &eval, MCTS::Output output,
-                 Py::Search::SideCache *p1_cache_ptr,
-                 Py::Search::SideCache *p2_cache_ptr) {
+                 const Search::Budget &budget,
+                 const Search::BanditParams &params, Search::Heap &heap,
+                 Search::Eval &eval, MCTS::Output output,
+                 Search::SideCache *p1_cache_ptr,
+                 Search::SideCache *p2_cache_ptr) {
 
   MCTS::Input input{battle, durations, PKMN::result(battle)};
 
@@ -68,16 +68,16 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
         const bool has_caches = p1_cache_ptr && p2_cache_ptr;
         if (has_caches) {
           if constexpr (std::is_same_v<output_type, float>) {
-            auto &p1_cache = std::get<Py::Search::SideCache::Cache<float>>(
+            auto &p1_cache = std::get<Search::SideCache::Cache<float>>(
                 p1_cache_ptr->data);
-            auto &p2_cache = std::get<Py::Search::SideCache::Cache<float>>(
+            auto &p2_cache = std::get<Search::SideCache::Cache<float>>(
                 p2_cache_ptr->data);
             output = s.run(device, dur, params, heap, net, input, output,
                            p1_cache, p2_cache);
           } else {
-            auto &p1_cache = std::get<Py::Search::SideCache::Cache<uint8_t>>(
+            auto &p1_cache = std::get<Search::SideCache::Cache<uint8_t>>(
                 p1_cache_ptr->data);
-            auto &p2_cache = std::get<Py::Search::SideCache::Cache<uint8_t>>(
+            auto &p2_cache = std::get<Search::SideCache::Cache<uint8_t>>(
                 p2_cache_ptr->data);
             output = s.run(device, dur, params, heap, net, input, output,
                            p1_cache, p2_cache);
@@ -99,7 +99,7 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
 
   const auto parse_params = [&](auto dur, auto bandit, auto &heap) {
     const auto *matrix_ucb_params =
-        dynamic_cast<const Py::Search::MatrixUCB *>(&params);
+        dynamic_cast<const Search::MatrixUCB *>(&params);
     using T = std::remove_cvref_t<decltype(bandit)>::Params;
     auto bandit_params = std::get<T>(params.data);
 
@@ -128,7 +128,7 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
     if (false) {
     }
 #ifndef NO_NODE
-    else if (auto *ptr = std::get_if<Py::Search::Heap::NodeVariant>(data)) {
+    else if (auto *ptr = std::get_if<Search::Heap::NodeVariant>(data)) {
       auto &node_variant = *ptr;
       if (std::holds_alternative<std::monostate>(node_variant)) {
         node_variant = Node{};
@@ -141,7 +141,7 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
       }
 #endif
 #ifndef NO_TABLE
-    } else if (auto *ptr = std::get_if<Py::Search::Heap::TableVariant>(data)) {
+    } else if (auto *ptr = std::get_if<Search::Heap::TableVariant>(data)) {
       auto &table_variant = *ptr;
       if (std::holds_alternative<std::monostate>(table_variant)) {
         table_variant = Table{};

@@ -243,12 +243,12 @@ void generate(const ProgramArgs *args_ptr) {
 
     Train::Battle::CompressedFrames training_frames{battle_data.battle};
 
-    auto eval = Py::Search::Parse::eval(args.eval, args.use_discrete);
-    auto p1_cache = Py::Search::SideCache{};
-    auto p2_cache = Py::Search::SideCache{};
+    auto eval = Search::Parse::eval(args.eval, args.use_discrete);
+    auto p1_cache = Search::SideCache{};
+    auto p2_cache = Search::SideCache{};
     const bool is_network = eval.is_network();
     if (is_network) {
-      Py::Search::Network network;
+      Search::Network network;
       network.data =
           std::get<std::shared_ptr<NN::Battle::NetworkBase>>(eval.data);
       for (auto i = 0; i < 6; ++i) {
@@ -261,13 +261,13 @@ void generate(const ProgramArgs *args_ptr) {
         p2_cache.quantize(network.get());
       }
     }
-    const auto bandit = Py::Search::Parse::bandit(args.bandit);
+    const auto bandit = Search::Parse::bandit(args.bandit);
     auto matrix_ucb =
         args.matrix_ucb.empty()
-            ? Py::Search::Parse::matrix_ucb(bandit, args.matrix_ucb)
-            : Py::Search::MatrixUCB{bandit};
-    auto budget = Py::Search::Parse::budget(args.budget);
-    auto heap = Py::Search::Parse::heap(args.use_table);
+            ? Search::MatrixUCB{bandit}
+            : Search::Parse::matrix_ucb(bandit, args.matrix_ucb);
+    auto budget = Search::Parse::budget(args.budget);
+    auto heap = Search::Parse::heap(args.use_table);
 
     auto policy_options =
         RuntimePolicy::Options{.mode = args.policy_mode,
@@ -302,7 +302,7 @@ void generate(const ProgramArgs *args_ptr) {
                                                 battle_data.durations));
 
         const bool use_fast = device.uniform() < args.fast_search_prob;
-        budget = Py::Search::Parse::budget(
+        budget = Search::Parse::budget(
             ((battle_length == 0) && skip_battle)
                 ? args.t1_budget.value()
                 : (use_fast ? args.fast_budget.value() : args.budget));

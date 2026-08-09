@@ -108,16 +108,21 @@ def test_search():
 #     b = trajectory.bytes()
 
 
+def side_out(
+    p, a, m
+):
+    return a + 6 * (p + m)
+
 def count(
-    pokemon_hidden=2**8,
-    pokemon_out=50,
-    active_hidden=2**8,
-    active_out=60,
-    moves_hidden=2**8,
-    moves_out=50,
-    main_hidden=32,
+    pokemon_hidden=2**9,
+    pokemon_out=30,
+    active_hidden=2**9,
+    active_out=54,
+    moves_hidden=2**9,
+    moves_out=25,
+    main_hidden=64,
     value_hidden=32,
-    policy_hidden=32,
+    policy_hidden=64,
 ):
     return (
         pokemon_hidden * (pokemon_out + (151 + 50 + 15))
@@ -125,11 +130,12 @@ def count(
         + moves_hidden * (6 * 160 + moves_out)
         + main_hidden
         * (main_hidden + (12 * (pokemon_out + moves_out) + 2 * active_out))
-        + main_hidden * (value_hidden + policy_hidden)
+        + main_hidden * (value_hidden + 2 * policy_hidden)
         + value_hidden
-        + policy_hidden * (151 + 160)
+        + 2 * policy_hidden * (151 + 160)
     )
 
 
-test_search()
-# print(count())
+# test_search()
+# print(count())    
+print(side_out(45, 62, 30))

@@ -21,18 +21,22 @@ namespace py = pybind11;
 struct EncodedFrames : public Target {
   py::array_t<float> pokemon;
   py::array_t<float> active;
+  py::array_t<float> moves;
   py::array_t<float> hp;
   py::array_t<int64_t> choice_indices;
 
   static constexpr size_t pokemon_in_dim = Encode::Battle::Pokemon::n_dim;
   static constexpr size_t active_in_dim = Encode::Battle::Active::n_dim;
+  static constexpr size_t moves_in_dim = Encode::Battle::Moves::n_dim;
   using PokemonEncoding = std::array<float, pokemon_in_dim>;
   using ActiveEncoding = std::array<float, active_in_dim>;
+  using MovesEncoding = std::array<float, active_in_dim>;
 
   EncodedFrames(size_t sz) : Py::Battle::Target{sz} {
     pokemon =
         py::array_t<float>(std::vector<size_t>{size, 2, 6, pokemon_in_dim});
     active = py::array_t<float>(std::vector<size_t>{size, 2, 1, active_in_dim});
+    moves = py::array_t<float>(std::vector<size_t>{size, 2, 6, moves_in_dim});
     hp = py::array_t<float>(std::vector<size_t>{size, 2, 6, 1});
     choice_indices = py::array_t<int64_t>(std::vector<size_t>{size, 2, 9});
     clear();
@@ -44,6 +48,7 @@ struct EncodedFrames : public Target {
                 int64_t(0));
     std::fill_n(pokemon.mutable_data(), pokemon.size(), 0.0f);
     std::fill_n(active.mutable_data(), active.size(), 0.0f);
+    std::fill_n(moves.mutable_data(), moves.size(), 0.0f);
     std::fill_n(hp.mutable_data(), hp.size(), 0.0f);
   }
 
@@ -55,7 +60,7 @@ struct EncodedFrames : public Target {
     Py::Battle::Target::write(index, update);
     score.mutable_data()[index] = terminal;
 
-    auto [hp_, pokemon_, active_, choice_] = view(index);
+    auto [hp_, pokemon_, active_, moves_, choice_] = view(index);
     const auto &battle = PKMN::view(b);
     const auto &durations = PKMN::view(d);
     const auto [p1_choices, p2_choices] = PKMN::choices(b, result);
@@ -133,6 +138,7 @@ struct EncodedFrames : public Target {
   auto view(const auto index) {
     using Bench = std::array<std::array<PokemonEncoding, 6>, 2>;
     using Actives = std::array<std::array<ActiveEncoding, 1>, 2>;
+    using Moves = std::array<std::array<MovesEncoding, 6>, 2>;
     using ChoiceIndices = std::array<std::array<int64_t, 9>, 2>;
     auto &hp_ = *reinterpret_cast<std::array<std::array<float, 6>, 2> *>(
         hp.mutable_data() + index * (2 * 6 * 1));
@@ -140,9 +146,11 @@ struct EncodedFrames : public Target {
         pokemon.mutable_data() + index * (2 * 6 * pokemon_in_dim));
     auto &active_ = *reinterpret_cast<Actives *>(
         active.mutable_data() + index * (2 * 1 * active_in_dim));
+    auto &moves_ = *reinterpret_cast<Moves *>(
+        moves.mutable_data() + index * (2 * 6 * moves_in_dim));
     auto &choice_ = *reinterpret_cast<ChoiceIndices *>(
         choice_indices.mutable_data() + index * (2 * 9 * 1));
-    return std::tie(hp_, pokemon_, active_, choice_);
+    return std::tie(hp_, pokemon_, active_, moves_, choice_);
   }
 };
 

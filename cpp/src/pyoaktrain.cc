@@ -433,11 +433,14 @@ PYBIND11_MODULE(pyoaktrain, m) {
 
   // Battle net hyperparams
   m.attr("pokemon_in_dim") = Encode::Battle::Pokemon::n_dim;
-  m.attr("active_in_dim") = Encode::Battle::ActivePokemon::n_dim;
+  m.attr("active_in_dim") = Encode::Battle::Active::n_dim;
+  m.attr("moves_in_dim") = Encode::Battle::Moves::n_dim;
   m.attr("pokemon_hidden_dim") = NN::Battle::Default::pokemon_hidden_dim;
   m.attr("pokemon_out_dim") = NN::Battle::Default::pokemon_out_dim;
   m.attr("active_hidden_dim") = NN::Battle::Default::active_hidden_dim;
   m.attr("active_out_dim") = NN::Battle::Default::active_out_dim;
+  m.attr("moves_hidden_dim") = NN::Battle::Default::moves_hidden_dim;
+  m.attr("moves_out_dim") = NN::Battle::Default::moves_out_dim;
   m.attr("side_out_dim") = NN::Battle::Default::side_out_dim;
   m.attr("hidden_dim") = NN::Battle::Default::hidden_dim;
   m.attr("value_hidden_dim") = NN::Battle::Default::value_hidden_dim;
@@ -448,15 +451,15 @@ PYBIND11_MODULE(pyoaktrain, m) {
   m.attr("build_policy_hidden_dim") = NN::Build::Default::policy_hidden_dim;
   m.attr("build_value_hidden_dim") = NN::Build::Default::value_hidden_dim;
   m.attr("build_max_actions") = Py::Build::Tensorizer<>::max_actions;
-  m.attr("active_dim_labels") =
-      dim_labels_to_vec(Encode::Battle::Active::dim_labels);
-  m.attr("pokemon_dim_labels") =
-      dim_labels_to_vec(Encode::Battle::Pokemon::dim_labels);
-  m.attr("active_pokemon_dim_labels") =
-      dim_labels_to_vec(Encode::Battle::ActivePokemon::dim_labels);
-  auto v = dim_labels_to_vec(Encode::Battle::Policy::dim_labels);
-  v.push_back(""); // preserve extra empty string
-  m.attr("policy_dim_labels") = v;
+  // m.attr("active_dim_labels") =
+  //     dim_labels_to_vec(Encode::Battle::Active::dim_labels);
+  // m.attr("pokemon_dim_labels") =
+  //     dim_labels_to_vec(Encode::Battle::Pokemon::dim_labels);
+  // m.attr("active_pokemon_dim_labels") =
+  //     dim_labels_to_vec(Encode::Battle::ActivePokemon::dim_labels);
+  // auto v = dim_labels_to_vec(Encode::Battle::Policy::dim_labels);
+  // v.push_back(""); // preserve extra empty string
+  // m.attr("policy_dim_labels") = v;
 }
 
 } // namespace Py::PKMN
