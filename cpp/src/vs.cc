@@ -152,19 +152,56 @@ void thread_fn(const ProgramArgs *args_ptr) {
     build_buffer.clear();
   };
   const auto play = [&](auto &p1_build_traj, auto &p2_build_traj) -> int {
-    auto p1_agent_params = RuntimeSearch::AgentParams{
-        .budget = args.p1_budget.or_else([&] { return args.budget; }).value(),
-        .bandit = args.p1_bandit.or_else([&] { return args.bandit; }).value(),
-        .eval = args.p1_eval.or_else([&] { return args.eval; }).value(),
-        .matrix_ucb =
-            args.p1_matrix_ucb.or_else([&] { return args.matrix_ucb; })
-                .value_or(""),
-        .discrete = args.use_discrete || args.p1_use_discrete,
-        .table = args.p1_use_table};
-    auto p1_agent = RuntimeSearch::Agent{p1_agent_params};
-    auto p1_agent_after = RuntimeSearch::Agent{p1_agent_params};
-    p1_agent_after.budget = args.p1_budget_after.value_or("0");
-    p1_agent_after.matrix_ucb = args.p1_matrix_ucb_after.value_or("");
+    auto p1_eval = Search::Parse::eval(
+        args.p1_eval.or_else([&] { return args.eval; }).value(),
+        args.use_discrete || args.p1_use_discrete);
+    auto p2_eval = Search::Parse::eval(
+        args.p2_eval.or_else([&] { return args.eval; }).value(),
+        args.use_discrete || args.p2_use_discrete);
+
+    auto p1_s1_cache = Search::SideCache{};
+    auto p1_s2_cache = Search::SideCache{};
+    auto p2_s1_cache = Search::SideCache{};
+    auto p2_s2_cache = Search::SideCache{};
+    const bool p1_is_network = p1_eval.is_network();
+    if (p1_is_network) {
+      Search::Network network;
+      network.data =
+          std::get<std::shared_ptr<NN::Battle::NetworkBase>>(p1_eval.data);
+      for (auto i = 0; i < 6; ++i) {
+        p1_s1_cache.precompute(network.get(), PKMN::view(battle).sides[0], i);
+        p1_s2_cache.precompute(network.get(), PKMN::view(battle).sides[1], i);
+      }
+      if (args.use_discrete || args.p1_use_discrete) {
+        network.quantize();
+        p1_s1_cache.quantize(network.get());
+        p1_s2_cache.quantize(network.get());
+      }
+    }
+    const bool p2_is_network = p2_eval.is_network();
+    if (p2_is_network) {
+      Search::Network network;
+      network.data =
+          std::get<std::shared_ptr<NN::Battle::NetworkBase>>(p2_eval.data);
+      for (auto i = 0; i < 6; ++i) {
+        p2_s1_cache.precompute(network.get(), PKMN::view(battle).sides[0], i);
+        p2_s2_cache.precompute(network.get(), PKMN::view(battle).sides[1], i);
+      }
+      if (args.use_discrete || args.p2_use_discrete) {
+        network.quantize();
+        p2_s1_cache.quantize(network.get());
+        p2_s2_cache.quantize(network.get());
+      }
+    }
+    const auto p1_bandit = Search::Parse::bandit(
+        args.p1_bandit.or_else([&] { return args.bandit; }).value());
+    const auto p2_bandit = Search::Parse::bandit(
+        args.p2_bandit.or_else([&] { return args.bandit; }).value());
+    auto p1_budget = Search::Parse::budget(
+        args.p1_budget.or_else([&] { return args.budget; }).value());
+    auto p2_budget = Search::Parse::budget(
+        args.p2_budget.or_else([&] { return args.budget; }).value());
+
     const auto p1_policy_options = RuntimePolicy::Options{
         .mode = args.p1_policy_mode.or_else([&] { return args.policy_mode; })
                     .value(),
@@ -173,19 +210,6 @@ void thread_fn(const ProgramArgs *args_ptr) {
         .min = args.p1_policy_min.or_else([&] { return args.policy_min; })
                    .value_or(0)};
 
-    auto p2_agent_params = RuntimeSearch::AgentParams{
-        .budget = args.p2_budget.or_else([&] { return args.budget; }).value(),
-        .bandit = args.p2_bandit.or_else([&] { return args.bandit; }).value(),
-        .eval = args.p2_eval.or_else([&] { return args.eval; }).value(),
-        .matrix_ucb =
-            args.p2_matrix_ucb.or_else([&] { return args.matrix_ucb; })
-                .value_or(""),
-        .discrete = args.use_discrete || args.p2_use_discrete,
-        .table = args.p2_use_table};
-    auto p2_agent = RuntimeSearch::Agent{p2_agent_params};
-    auto p2_agent_after = RuntimeSearch::Agent{p2_agent_params};
-    p2_agent_after.budget = args.p2_budget_after.value_or("0");
-    p2_agent_after.matrix_ucb = args.p2_matrix_ucb_after.value_or("");
     const auto p2_policy_options = RuntimePolicy::Options{
         .mode = args.p2_policy_mode.or_else([&] { return args.policy_mode; })
                     .value(),
@@ -194,8 +218,8 @@ void thread_fn(const ProgramArgs *args_ptr) {
         .min = args.p2_policy_min.or_else([&] { return args.policy_min; })
                    .value_or(0)};
 
-    const bool same_search =
-        (p1_agent == p2_agent) && (p1_agent_after == p2_agent_after);
+    // const bool same_search =
+    //     (p1_agent == p2_agent) && (p1_agent_after == p2_agent_after);
 
     const auto &p1_team = p1_build_traj.terminal;
     const auto &p2_team = p2_build_traj.terminal;
@@ -217,7 +241,7 @@ void thread_fn(const ProgramArgs *args_ptr) {
     auto p1_battle_frames = Train::Battle::CompressedFrames{battle};
     auto p2_battle_frames = Train::Battle::CompressedFrames{battle};
 
-    auto adjudicator = RuntimePolicy::JointValueMemory{};
+    auto adjudicator = RuntimePolicy::JointValueHistory{};
     bool adjudicated = false;
     auto adj_result = PKMN::Result::None;
 

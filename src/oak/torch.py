@@ -23,6 +23,7 @@ class EncodedBattleFrames:
         self.hp = torch.from_numpy(frames.hp)
         self.pokemon = torch.from_numpy(frames.pokemon)
         self.active = torch.from_numpy(frames.active)
+        self.moves = torch.from_numpy(frames.moves)
         self.choice_indices = torch.from_numpy(frames.choice_indices)
 
     def permute_pokemon(self):
@@ -30,8 +31,14 @@ class EncodedBattleFrames:
         perms_expanded = perms[:, None, :, None].expand(
             -1, 2, -1, oak.train.pokemon_in_dim
         )
+        perms_expanded_moves = perms[:, None, :, None].expand(
+            -1, 2, -1, oak.train.moves_in_dim
+        )
         self.pokemon[:, :, 1:, :] = torch.gather(
             self.pokemon[:, :, 1:, :], dim=2, index=perms_expanded
+        )
+        self.moves[:, :, 1:, :] = torch.gather(
+            self.moves[:, :, 1:, :], dim=2, index=perms_expanded_moves
         )
 
     def permute_sides(self, prob=0.5):
@@ -44,6 +51,7 @@ class EncodedBattleFrames:
         self.score[mask] = 1 - self.score[mask]
         self.pokemon[mask] = self.pokemon[mask].flip(dims=[1])
         self.active[mask] = self.active[mask].flip(dims=[1])
+        self.moves[mask] = self.moves[mask].flip(dims=[1])
         self.hp[mask] = self.hp[mask].flip(dims=[1])
         self.choice_indices[mask] = self.choice_indices[mask].flip(dims=[1])
 
@@ -56,6 +64,7 @@ class EncodedBattleFrames:
         self.score = self.score.to(device)
         self.pokemon = self.pokemon.to(device)
         self.active = self.active.to(device)
+        self.moves = self.moves.to(device)
         self.hp = self.hp.to(device)
         self.choice_indices = self.choice_indices.to(device)
         return self
@@ -350,7 +359,8 @@ class OutputBuffer:
         self.pokemon_out_dim = buffers.pokemon_out_dim
         self.active_out_dim = buffers.active_out_dim
         self.pokemon = torch.from_numpy(buffers.pokemon)
-        self.active_pokemon = torch.from_numpy(buffers.active_pokemon)
+        self.active = torch.from_numpy(buffers.active)
+        self.moves = torch.from_numpy(buffers.moves)
         self.sides = torch.from_numpy(buffers.sides)
         self.value = torch.from_numpy(buffers.value)
         self.logit = torch.from_numpy(buffers.logit)
@@ -359,7 +369,8 @@ class OutputBuffer:
 
     def to(self, device):
         self.pokemon = self.pokemon.to(device)
-        self.active_pokemon = self.active_pokemon.to(device)
+        self.active = self.active.to(device)
+        self.moves = self.moves.to(device)
         self.sides = self.sides.to(device)
         self.value = self.value.to(device)
         self.logit = self.logit.to(device)
@@ -395,7 +406,7 @@ class BattleNetwork(torch.nn.Module):
         self.pokemon_out_dim = pod
         self.active_out_dim = aod
         self.moves_out_dim = mod
-        self.side_out_dim = aod + 5 * (pod + mod)
+        self.side_out_dim = aod + 6 * (pod + mod)
         self.hidden_dim = hd
         self.value_hidden_dim = vhd
         self.policy_hidden_dim = pohd
@@ -465,24 +476,18 @@ class BattleNetwork(torch.nn.Module):
         self, input: EncodedBattleFrames, output: OutputBuffer, use_policy: bool = True
     ):
         size = min(input.size, output.size)
-        output.pokemon[:size] = self.pokemon_net.forward(input.pokemon[:size, :, 1:])
-        output.active_pokemon[:size] = self.active_net.forward(
-            torch.cat([input.active[:size], input.pokemon[:size, :, :1]], dim=3)
-        )
+        output.pokemon[:size] = self.pokemon_net.forward(input.pokemon[:size, :, :])
+        output.active[:size] = self.active_net.forward(input.active[:size, :, :])
+        output.moves[:size] = self.moves_net.forward(input.moves[:size, :, :])
         # mask output for hp
-        output.pokemon[:size] *= (input.hp[:size, :, 1:] != 0).float()
-        output.active_pokemon[:size] *= (input.hp[:size, :, :1] != 0).float()
-        # active hp
-        output.sides[:size, :, :, 0] = input.hp[:size, :, :1, 0]
-        # active word
-        output.sides[:size, :, :, 1 : self.active_out_dim + 1] = output.active_pokemon[
-            :size
-        ]
-        # pokemon hp/word
-        pokemon_flat = torch.cat(
-            (input.hp[:size, :, 1:], output.pokemon[:size]), dim=3
-        ).view(size, 2, 1, 5 * (1 + self.pokemon_out_dim))
-        output.sides[:size, :, :, 1 + self.active_out_dim :] = pokemon_flat[:size]
+        output.pokemon[:size] *= (input.hp[:size, :, :] != 0).float()
+        output.active[:size] *= (input.hp[:size, :, :1] != 0).float()
+        output.moves[:size] *= (input.hp[:size, :, :] != 0).float()
+
+        output.sides[:size, :, :, : self.active_out_dim] = output.active[:size]
+        output.sides[:size, :, :, self.active_out_dim :] = torch.cat(
+            [output.pokemon, output.moves], dim=3
+        ).view(size, 2, 1, -1)
         battle = output.sides[:size].view(size, 2 * self.side_out_dim)
 
         if use_policy:
@@ -500,8 +505,6 @@ class BattleNetwork(torch.nn.Module):
         output.policy_logit[:size, 1] = torch.gather(
             output.logit[:size, 1], 1, input.choice_indices[:size, 1]
         )
-
-        # print(output.sides)
 
     def hash(self) -> int:
         h = self.pokemon_net.hash()

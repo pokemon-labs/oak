@@ -1,12 +1,12 @@
 #pragma once
 
 #include <nn/battle/network.h>
-#include <search/data.h>
 #include <search/bandit/exp3.h>
 #include <search/bandit/pexp3.h>
 #include <search/bandit/pucb.h>
 #include <search/bandit/ucb.h>
 #include <search/bandit/ucb1.h>
+#include <search/data.h>
 #include <search/mcts.h>
 #include <util/random.h>
 

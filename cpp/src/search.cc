@@ -68,17 +68,17 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
         const bool has_caches = p1_cache_ptr && p2_cache_ptr;
         if (has_caches) {
           if constexpr (std::is_same_v<output_type, float>) {
-            auto &p1_cache = std::get<Search::SideCache::Cache<float>>(
-                p1_cache_ptr->data);
-            auto &p2_cache = std::get<Search::SideCache::Cache<float>>(
-                p2_cache_ptr->data);
+            auto &p1_cache =
+                std::get<Search::SideCache::Cache<float>>(p1_cache_ptr->data);
+            auto &p2_cache =
+                std::get<Search::SideCache::Cache<float>>(p2_cache_ptr->data);
             output = s.run(device, dur, params, heap, net, input, output,
                            p1_cache, p2_cache);
           } else {
-            auto &p1_cache = std::get<Search::SideCache::Cache<uint8_t>>(
-                p1_cache_ptr->data);
-            auto &p2_cache = std::get<Search::SideCache::Cache<uint8_t>>(
-                p2_cache_ptr->data);
+            auto &p1_cache =
+                std::get<Search::SideCache::Cache<uint8_t>>(p1_cache_ptr->data);
+            auto &p2_cache =
+                std::get<Search::SideCache::Cache<uint8_t>>(p2_cache_ptr->data);
             output = s.run(device, dur, params, heap, net, input, output,
                            p1_cache, p2_cache);
           }

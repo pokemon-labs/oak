@@ -275,11 +275,11 @@ template <SearchOptions Options = default_search> struct Search {
             battle_embedding.data(), PKMN::view(input.battle), eval, caches...);
         for (auto i = 0; i < output.p1.k; ++i) {
           p1_choice_index[i] = Encode::Battle::Policy::get_index(
-              PKMN::view(input.battle).sides[0], p1_choices[i]);
+              PKMN::view(input.battle).sides[0], output.p1.choices[i]);
         }
         for (auto i = 0; i < output.p2.k; ++i) {
           p2_choice_index[i] = Encode::Battle::Policy::get_index(
-              PKMN::view(input.battle).sides[1], p2_choices[i]);
+              PKMN::view(input.battle).sides[1], output.p2.choices[i]);
         }
         output.initial_value = NN::Battle::sigmoid(
             eval.main_net.template propagate<true, activation>(

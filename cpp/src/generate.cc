@@ -262,18 +262,18 @@ void generate(const ProgramArgs *args_ptr) {
       }
     }
     const auto bandit = Search::Parse::bandit(args.bandit);
-    auto matrix_ucb =
-        args.matrix_ucb.empty()
-            ? Search::MatrixUCB{bandit}
-            : Search::Parse::matrix_ucb(bandit, args.matrix_ucb);
+    auto matrix_ucb = args.matrix_ucb.empty()
+                          ? Search::MatrixUCB{bandit}
+                          : Search::Parse::matrix_ucb(bandit, args.matrix_ucb);
     auto budget = Search::Parse::budget(args.budget);
-    auto heap = Search::Parse::heap(args.use_table);
+    // auto heap = Search::Parse::heap(args.use_table);
+    auto heap = args.use_table ? Search::Table() : Search::Node();
 
     auto policy_options =
         RuntimePolicy::Options{.mode = args.policy_mode,
                                .temp = args.policy_temp.value(),
                                .min = args.policy_min.value()};
-    auto adjudicator = RuntimePolicy::JointValueMemory{};
+    auto adjudicator = RuntimePolicy::JointValueHistory{};
     bool adjudicated = false;
     auto adj_result = PKMN::Result::None;
 
@@ -344,17 +344,6 @@ void generate(const ProgramArgs *args_ptr) {
             PKMN::update(battle_data.battle, p1_choice, p2_choice, options);
         battle_data.durations = PKMN::durations(options);
 
-        // set heap
-        const auto &obs = *reinterpret_cast<const MCTS::Obs *>(
-            pkmn_gen1_battle_options_chance_actions(&options));
-        // TODO
-        // if (args.keep_node) {
-        //   const bool node_kept = heap.update(p1_index, p2_index, obs);
-        //   RuntimeData::update_with_node_counter.fetch_add(node_kept);
-        // } else {
-        //   heap = RuntimeSearch::Heap{};
-        //   // heap.reset();
-        // }
         heap.reset();
         RuntimeData::update_counter.fetch_add(1);
 

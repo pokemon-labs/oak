@@ -17,8 +17,7 @@ def timed(f, *args, **kwargs):
 
 
 def test_search():
-    iterations = 2**20  
-    print(f"iter: {iterations}")
+    iterations = 2**10  
     network = oak.search.Network(2)
     network.resize(
         pokemon_hidden=2**8,
@@ -31,8 +30,8 @@ def test_search():
         value_hidden=32,
         policy_hidden=32,
     )
-    network.initialize(seed=random.randint(0, 2**64 - 1))
-    fp = oak.search.PokeEngine()
+    network.initialize(seed=random.randint(0, 2**64 - 1))  
+    # network.read_parameters("/home/user/battle-2026-08-10-16:02:00/300.battle.net")
     ucb = oak.search.UCB(c=1.0)
     pucb = oak.search.PUCB(c=1.0)
     budget = oak.search.Iterations(iterations)
@@ -42,50 +41,25 @@ def test_search():
         p1_cache.precompute(network, battle.side(0), index)
         p2_cache.precompute(network, battle.side(1), index)
 
-    network.quantize()
-    p1_cache.quantize(network)
-    p2_cache.quantize(network)
+    # network.quantize()
+    # p1_cache.quantize(network)
+    # p2_cache.quantize(network)
 
-    output_fp = timed(
-        oak.search.search,
+    output = timed(
+        oak.search.run,
         battle,
         durations,
         budget,
-        params=ucb,
-        heap=oak.search.Node(),
-        eval=fp,
-    )
-    # output_net = timed(
-    #     oak.search.search,
-    #     battle,
-    #     durations,
-    #     budget,
-    #     params=ucb,
-    #     heap=oak.search.Node(),
-    #     eval=network,
-    # )
-    output_net = timed(
-        oak.search.search,
-        battle,
-        durations,
-        budget,
-        params=ucb,
+        bandit=oak.search.PUCB(c=1.0),
         heap=oak.search.Node(),
         eval=network,
         p1_cache=p1_cache,
         p2_cache=p2_cache,
     )
-    output_net = timed(
-        oak.search.search,
-        battle,
-        durations,
-        budget,
-        params=pucb,
-        heap=oak.search.Node(),
-        eval=network,
-        p1_cache=p1_cache,
-        p2_cache=p2_cache,
-    )
+
+    for side in [output.p1, output.p2]:
+        print(side.empirical)
+        print(side.nash)
 
 
 # def code():
@@ -107,11 +81,6 @@ def test_search():
 
 #     b = trajectory.bytes()
 
-
-def side_out(
-    p, a, m
-):
-    return a + 6 * (p + m)
 
 def count(
     pokemon_hidden=2**9,
@@ -136,6 +105,5 @@ def count(
     )
 
 
-# test_search()
+test_search()
 # print(count())    
-print(side_out(45, 62, 30))

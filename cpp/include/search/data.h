@@ -229,13 +229,13 @@ public:
   UCB1(float c) : BanditParams{std::in_place_type<::UCB1::Bandit::Params>, c} {}
 };
 struct MatrixUCB : public BanditParams {
+  float c;
   uint32_t delay;
   uint32_t interval;
   uint32_t minimum;
-  float c;
-  MatrixUCB(const BanditParams &params, uint32_t delay = 0,
-            uint32_t interval = 0, uint32_t minimum = 0, float c = 0)
-      : delay{delay}, interval{interval}, minimum{minimum}, c{c} {
+  MatrixUCB(const BanditParams &params, float c, uint32_t delay = 0,
+            uint32_t interval = 1, uint32_t minimum = 0)
+      : c{c}, delay{delay}, interval{interval}, minimum{minimum} {
     this->data = params.data;
   }
 };
@@ -347,11 +347,11 @@ inline MatrixUCB matrix_ucb(const BanditParams &params, const std::string &s) {
   if (matrix_ucb_split.size() != 4) {
     throw std::runtime_error{"Could not parse MatrixUCB name: " + s};
   }
-  const uint32_t delay = std::stoull(matrix_ucb_split[0]);
-  const uint32_t interval = std::stoull(matrix_ucb_split[1]);
-  const uint32_t minimum = std::stoull(matrix_ucb_split[2]);
-  const float c = std::stof(matrix_ucb_split[3]);
-  return MatrixUCB{params, delay, interval, minimum, c};
+  const float c = std::stof(matrix_ucb_split[0]);
+  const uint32_t delay = std::stoull(matrix_ucb_split[1]);
+  const uint32_t interval = std::stoull(matrix_ucb_split[2]);
+  const uint32_t minimum = std::stoull(matrix_ucb_split[3]);
+  return MatrixUCB{params, c, delay, interval, minimum};
 }
 
 inline Heap heap(bool use_table) {

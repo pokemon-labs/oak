@@ -358,6 +358,7 @@ PYBIND11_MODULE(pyoaktrain, m) {
       .def_readonly("score", &Py::Battle::EncodedFrames::score)
       .def_readonly("pokemon", &Py::Battle::EncodedFrames::pokemon)
       .def_readonly("active", &Py::Battle::EncodedFrames::active)
+      .def_readonly("moves", &Py::Battle::EncodedFrames::moves)
       .def_readonly("hp", &Py::Battle::EncodedFrames::hp)
       .def_readonly("choice_indices",
                     &Py::Battle::EncodedFrames::choice_indices);
@@ -371,7 +372,8 @@ PYBIND11_MODULE(pyoaktrain, m) {
                     &Py::Battle::OutputBuffer::pokemon_out_dim)
       .def_readonly("active_out_dim", &Py::Battle::OutputBuffer::active_out_dim)
       .def_readonly("pokemon", &Py::Battle::OutputBuffer::pokemon)
-      .def_readonly("active_pokemon", &Py::Battle::OutputBuffer::active_pokemon)
+      .def_readonly("active", &Py::Battle::OutputBuffer::active)
+      .def_readonly("moves", &Py::Battle::OutputBuffer::moves)
       .def_readonly("sides", &Py::Battle::OutputBuffer::sides)
       .def_readonly("value", &Py::Battle::OutputBuffer::value)
       .def_readonly("logit", &Py::Battle::OutputBuffer::logit)

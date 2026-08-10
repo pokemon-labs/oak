@@ -109,7 +109,13 @@ def add_local_args(parser, prefix: str = "", rl: bool = False):
         prefix + "active-hidden-dim",
         type=int,
         default=oak.train.active_hidden_dim,
-        help="ActivePokemon encoding net hidden dim",
+        help="Active encoding net hidden dim",
+    )
+    parser.add_argument(
+        prefix + "moves-hidden-dim",
+        type=int,
+        default=oak.train.moves_hidden_dim,
+        help="Moves encoding net hidden dim",
     )
     parser.add_argument(
         prefix + "pokemon-out-dim",
@@ -121,7 +127,13 @@ def add_local_args(parser, prefix: str = "", rl: bool = False):
         prefix + "active-out-dim",
         type=int,
         default=oak.train.active_out_dim,
-        help="ActivePokemon encoding net output dim",
+        help="Active encoding net output dim",
+    )
+    parser.add_argument(
+        prefix + "moves-out-dim",
+        type=int,
+        default=oak.train.moves_out_dim,
+        help="Moves encoding net output dim",
     )
     parser.add_argument(
         prefix + "hidden-dim",
@@ -304,8 +316,10 @@ def main():
     network = oak.torch.BattleNetwork(
         args.pokemon_hidden_dim,
         args.active_hidden_dim,
+        args.moves_hidden_dim,
         args.pokemon_out_dim,
         args.active_out_dim,
+        args.moves_out_dim,
         args.hidden_dim,
         args.value_hidden_dim,
         args.policy_hidden_dim,

@@ -4,6 +4,7 @@
 #include <py/battle/frames.h>
 #include <py/battle/output-buffer.h>
 #include <py/libpkmn/data.h>
+#include <search/data.h>
 #include <util/search.h>
 #include <util/strings.h>
 
@@ -12,47 +13,8 @@
 
 #include <pkmn.h>
 
-#include <search/data.h>
-
 #include <fstream>
 #include <string_view>
-
-consteval bool check_buckets() {
-  using PKMN::Data::Status;
-  constexpr std::array<Status, 8> status_array{
-      Status::None,      Status::Poison, Status::Burn,  Status::Freeze,
-      Status::Paralysis, Status::Rest1,  Status::Rest2, Status::Rest3};
-  PKMN::Pokemon pokemon{};
-  pokemon.stats.hp = 714;
-  // std::unordered_map<int, int> count{};
-  std::array<int, 1000> count{};
-  // TODO
-  const auto get_entry = [&count](const auto &pokemon, auto sleep) {
-    const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
-    count[key] += 1;
-  };
-
-  pokemon.hp = 1;
-  // non slept status conditions
-  for (const auto status : status_array) {
-    pokemon.status = status;
-    get_entry(pokemon, 0);
-  }
-  // slept
-  pokemon.status = Status::Sleep1;
-  for (auto sleep = 1; sleep <= 7; ++sleep) {
-    get_entry(pokemon, sleep);
-  }
-
-  for (auto k = 0; k < 15; ++k) {
-    if (count[k] != 1) {
-      return false;
-    }
-  }
-  return true;
-}
-
-static_assert(check_buckets());
 
 namespace {
 
@@ -366,6 +328,8 @@ PYBIND11_MODULE(pyoaksearch, m) {
           py::arg("network"), py::arg("side"), py::arg("index"))
       .def("quantize", [](SideCache &cache,
                           Network &network) { cache.quantize(network.get()); })
+      .def("is_quantized",
+           [](SideCache &cache) { return cache.is_quantized(); })
       .def(
           "pokemon_embedding",
           [](const SideCache &cache, std::size_t side_index, std::size_t key,
@@ -403,110 +367,54 @@ PYBIND11_MODULE(pyoaksearch, m) {
   py::class_<Budget>(m, "Budget");
   py::class_<Iterations, Budget>(m, "Iterations").def(py::init<size_t>());
   // Params
-  py::class_<BanditParams>(m, "BanditParams");
+  py::class_<BanditParams>(m, "Bandit");
   py::class_<UCB, BanditParams>(m, "UCB").def(py::init<float>(), py::arg("c"));
   py::class_<PUCB, BanditParams>(m, "PUCB").def(py::init<float>(),
                                                 py::arg("c"));
   py::class_<UCB1, BanditParams>(m, "UCB1").def(py::init<float>(),
                                                 py::arg("c"));
-  // py::class_<UCB, BanditParams>(m, "Exp3").def(py::init<float, float>(),
-  // py::arg("lr"), py::arg("c"));
+  py::class_<Exp3, BanditParams>(m, "Exp3").def(
+      py::init<float, float>(), py::arg("lr"), py::arg("exploration"));
+  py::class_<PExp3, BanditParams>(m, "PExp3")
+      .def(py::init<float, float>(), py::arg("lr"), py::arg("exploration"));
+  py::class_<MatrixUCB, BanditParams>(m, "MatrixUCB")
+      .def(py::init<BanditParams, float, uint32_t, uint32_t, uint32_t>(),
+           py::arg("bandit"), py::arg("c"), py::arg("delay") = 0,
+           py::arg("interval") = 1, py::arg("minimum") = 0);
+
+  py::class_<MCTS::Output::Side>(m, "SideOutput")
+      .def(py::init<>())
+      .def_readonly("k", &MCTS::Output::Side::k)
+      .def_readonly("choices", &MCTS::Output::Side::choices)
+      .def_readonly("logit", &MCTS::Output::Side::logit)
+      .def_readonly("prior", &MCTS::Output::Side::prior)
+      .def_readonly("empirical", &MCTS::Output::Side::empirical)
+      .def_readonly("nash", &MCTS::Output::Side::nash);
 
   py::class_<MCTS::Output>(m, "Output")
       .def(py::init<>())
       .def_readonly("iterations", &MCTS::Output::iterations)
+      .def_readonly("duration", &MCTS::Output::duration)
+      .def_readonly("initial_value", &MCTS::Output::initial_value)
       .def_readonly("empirical_value", &MCTS::Output::empirical_value)
       .def_readonly("nash_value", &MCTS::Output::nash_value)
-      .def_property_readonly("m", [](const MCTS::Output &o) { return o.p1.k; })
-      .def_property_readonly("n", [](const MCTS::Output &o) { return o.p2.k; })
-      .def_property_readonly(
-          "duration_ms",
-          [](const MCTS::Output &o) { return o.duration.count(); })
-      .def_property_readonly("visit_matrix",
-                             [](const MCTS::Output &o) {
-                               auto arr = py::array_t<size_t>({9, 9});
-                               auto r = arr.mutable_unchecked<2>();
-                               for (size_t i = 0; i < 9; ++i)
-                                 for (size_t j = 0; j < 9; ++j)
-                                   r(i, j) = (i < o.p1.k && j < o.p2.k)
-                                                 ? o.visit_matrix[i][j]
-                                                 : 0;
-                               return arr;
-                             })
-      .def_property_readonly("value_matrix",
-                             [](const MCTS::Output &o) {
-                               auto arr = py::array_t<double>({9, 9});
-                               auto r = arr.mutable_unchecked<2>();
-                               for (size_t i = 0; i < 9; ++i)
-                                 for (size_t j = 0; j < 9; ++j)
-                                   r(i, j) = (i < o.p1.k && j < o.p2.k)
-                                                 ? o.value_matrix[i][j]
-                                                 : 0.0;
-                               return arr;
-                             })
-      .def_property_readonly(
-          "empirical_matrix",
-          [](const MCTS::Output &o) {
-            auto arr = py::array_t<double>({9, 9});
-            auto r = arr.mutable_unchecked<2>();
-            for (size_t i = 0; i < 9; ++i)
-              for (size_t j = 0; j < 9; ++j)
-                r(i, j) = (i < o.p1.k && j < o.p2.k)
-                              ? (o.visit_matrix[i][j] ? o.value_matrix[i][j] /
-                                                            o.visit_matrix[i][j]
-                                                      : 0.5)
-                              : 0.0;
-            return arr;
-          })
-      // 1D vectors
-      .def_property_readonly("p1_prior",
-                             [](const MCTS::Output &o) {
-                               auto arr = py::array_t<double>(9);
-                               auto r = arr.mutable_unchecked<1>();
-                               for (size_t i = 0; i < 9; ++i)
-                                 r(i) = o.p1.prior[i];
-                               return arr;
-                             })
-      .def_property_readonly("p2_prior",
-                             [](const MCTS::Output &o) {
-                               auto arr = py::array_t<double>(9);
-                               auto r = arr.mutable_unchecked<1>();
-                               for (size_t i = 0; i < 9; ++i)
-                                 r(i) = o.p2.prior[i];
-                               return arr;
-                             })
-      .def_property_readonly("p1_empirical",
-                             [](const MCTS::Output &o) {
-                               auto arr = py::array_t<double>(9);
-                               auto r = arr.mutable_unchecked<1>();
-                               for (size_t i = 0; i < 9; ++i)
-                                 r(i) = o.p1.empirical[i];
-                               return arr;
-                             })
-      .def_property_readonly("p2_empirical",
-                             [](const MCTS::Output &o) {
-                               auto arr = py::array_t<double>(9);
-                               auto r = arr.mutable_unchecked<1>();
-                               for (size_t i = 0; i < 9; ++i)
-                                 r(i) = o.p2.empirical[i];
-                               return arr;
-                             })
-      .def_property_readonly("p1_nash",
-                             [](const MCTS::Output &o) {
-                               auto arr = py::array_t<double>(9);
-                               auto r = arr.mutable_unchecked<1>();
-                               for (size_t i = 0; i < 9; ++i)
-                                 r(i) = o.p1.nash[i];
-                               return arr;
-                             })
-
-      .def_property_readonly("p2_nash", [](const MCTS::Output &o) {
-        auto arr = py::array_t<double>(9);
-        auto r = arr.mutable_unchecked<1>();
+      .def_readonly("p1", &MCTS::Output::p1)
+      .def_readonly("p2", &MCTS::Output::p2)
+      .def_readonly("visit_matrix", &MCTS::Output::visit_matrix)
+      .def_readonly("value_matrix", &MCTS::Output::value_matrix)
+      .def_property_readonly("empirical_matrix", [](const MCTS::Output &o) {
+        auto arr = py::array_t<double>({9, 9});
+        auto r = arr.mutable_unchecked<2>();
         for (size_t i = 0; i < 9; ++i)
-          r(i) = o.p2.nash[i];
+          for (size_t j = 0; j < 9; ++j)
+            r(i, j) = (i < o.p1.k && j < o.p2.k)
+                          ? (o.visit_matrix[i][j]
+                                 ? o.value_matrix[i][j] / o.visit_matrix[i][j]
+                                 : 0.5)
+                          : 0.0;
         return arr;
       });
+
   m.def(
       "output_string",
       [](const pkmn_gen1_battle &battle,
@@ -518,24 +426,22 @@ PYBIND11_MODULE(pyoaksearch, m) {
       py::arg("battle"), py::arg("durations"), py::arg("result"),
       py::arg("output"));
   m.def(
-      "search",
+      "run",
       [](const pkmn_gen1_battle &battle,
          const pkmn_gen1_chance_durations &durations,
-         const Search::Budget &budget,
-         const Search::BanditParams &params, Search::Heap &heap,
-         Search::Eval &eval, MCTS::Output output,
-         std::optional<std::reference_wrapper<Search::SideCache>> p1_cache =
-             {},
+         const Search::Budget &budget, const Search::BanditParams &bandit,
+         Search::Heap &heap, Search::Eval &eval, MCTS::Output output,
+         std::optional<std::reference_wrapper<Search::SideCache>> p1_cache = {},
          std::optional<std::reference_wrapper<Search::SideCache>> p2_cache =
              {}) {
         mt19937 device{std::random_device{}()};
         return RuntimeSearch::run(
-            device, battle, durations, budget, params, heap, eval, output,
+            device, battle, durations, budget, bandit, heap, eval, output,
             p1_cache.has_value() ? &p1_cache.value().get() : nullptr,
             p2_cache.has_value() ? &p2_cache.value().get() : nullptr);
       },
       py::arg("battle"), py::arg("durations"), py::arg("budget"),
-      py::arg("params"), py::arg("heap"), py::arg("eval"),
+      py::arg("bandit"), py::arg("heap"), py::arg("eval"),
       py::arg("output") = MCTS::Output{}, py::arg("p1_cache") = std::nullopt,
       py::arg("p2_cache") = std::nullopt);
 }

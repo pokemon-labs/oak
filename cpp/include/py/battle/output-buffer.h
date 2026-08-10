@@ -15,9 +15,11 @@ struct OutputBuffer {
   size_t size;
   size_t pokemon_out_dim;
   size_t active_out_dim;
+  size_t moves_out_dim;
   size_t side_out_dim;
   py::array_t<float> pokemon;
-  py::array_t<float> active_pokemon;
+  py::array_t<float> active;
+  py::array_t<float> moves;
   py::array_t<float> sides;
   py::array_t<float> value;
   py::array_t<float> logit;        // raw
@@ -28,13 +30,16 @@ struct OutputBuffer {
   static constexpr size_t policy_out_dim = Encode::Battle::Policy::n_dim + 1;
 
   OutputBuffer(size_t size, size_t pod = NN::Battle::Default::pokemon_out_dim,
-               size_t aod = NN::Battle::Default::active_out_dim)
+               size_t aod = NN::Battle::Default::active_out_dim,
+               size_t mod = NN::Battle::Default::moves_out_dim)
       : size{size}, pokemon_out_dim{pod}, active_out_dim{aod},
-        side_out_dim{(1 + active_out_dim) + 5 * (1 + pokemon_out_dim)} {
+        moves_out_dim{mod},
+        side_out_dim{active_out_dim + 6 * (pokemon_out_dim + moves_out_dim)} {
     pokemon =
-        py::array_t<float>(std::vector<size_t>{size, 2, 5, pokemon_out_dim});
-    active_pokemon =
+        py::array_t<float>(std::vector<size_t>{size, 2, 6, pokemon_out_dim});
+    active =
         py::array_t<float>(std::vector<size_t>{size, 2, 1, active_out_dim});
+    moves = py::array_t<float>(std::vector<size_t>{size, 2, 6, moves_out_dim});
     sides = py::array_t<float>(std::vector<size_t>{size, 2, 1, side_out_dim});
     value = py::array_t<float>(std::vector<size_t>{size, 1});
     logit = py::array_t<float>(std::vector<size_t>{size, 2, policy_out_dim});
@@ -45,7 +50,8 @@ struct OutputBuffer {
 
   void clear() {
     std::fill_n(pokemon.mutable_data(), pokemon.size(), 0.0f);
-    std::fill_n(active_pokemon.mutable_data(), active_pokemon.size(), 0.0f);
+    std::fill_n(active.mutable_data(), active.size(), 0.0f);
+    std::fill_n(moves.mutable_data(), moves.size(), 0.0f);
     std::fill_n(sides.mutable_data(), sides.size(), 0.0f);
     std::fill_n(value.mutable_data(), value.size(), 0.0f);
     std::fill_n(logit.mutable_data(), logit.size(), 0.0f);

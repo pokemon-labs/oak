@@ -210,4 +210,41 @@ inline auto quantize_cache(const SideCache<float> &cache, uint32_t pokemon_dim,
   return quantized;
 }
 
+consteval bool check_buckets() {
+  using PKMN::Data::Status;
+  constexpr std::array<Status, 8> status_array{
+      Status::None,      Status::Poison, Status::Burn,  Status::Freeze,
+      Status::Paralysis, Status::Rest1,  Status::Rest2, Status::Rest3};
+  PKMN::Pokemon pokemon{};
+  pokemon.stats.hp = 714;
+  // std::unordered_map<int, int> count{};
+  std::array<int, 1000> count{};
+  // TODO
+  const auto get_entry = [&count](const auto &pokemon, auto sleep) {
+    const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
+    count[key] += 1;
+  };
+
+  pokemon.hp = 1;
+  // non slept status conditions
+  for (const auto status : status_array) {
+    pokemon.status = status;
+    get_entry(pokemon, 0);
+  }
+  // slept
+  pokemon.status = Status::Sleep1;
+  for (auto sleep = 1; sleep <= 7; ++sleep) {
+    get_entry(pokemon, sleep);
+  }
+
+  for (auto k = 0; k < 15; ++k) {
+    if (count[k] != 1) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static_assert(check_buckets());
+
 } // namespace NN::Battle

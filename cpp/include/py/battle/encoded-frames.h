@@ -72,14 +72,16 @@ struct EncodedFrames : public Target {
 
       if (stored.hp == 0) {
         hp_[s][0] = {};
-        active_[s][0] = {};
         pokemon_[s][0] = {};
+        active_[s][0] = {};
+        moves_[s][0] = {};
       } else {
-        hp_[s][0] = (float)stored.hp / stored.stats.hp;
-        Encode::Battle::Active::write(side.active, duration,
-                                      active_[s][0].data());
+        // hp_[s][0] = (float)stored.hp / stored.stats.hp;
         Encode::Battle::Pokemon::write(stored, duration.sleep(0),
                                        pokemon_[s][0].data());
+        Encode::Battle::Active::write(side.active, duration,
+                                      active_[s][0].data());
+        Encode::Battle::Moves::write(side.active.moves, moves_[s][0].data());
       }
 
       for (auto slot = 2; slot <= 6; ++slot) {
@@ -92,11 +94,14 @@ struct EncodedFrames : public Target {
           if (poke.hp == 0) {
             hp_[s][slot - 1] = {};
             pokemon_[s][slot - 1] = {};
+            moves_[s][slot - 1] = {};
           } else {
             const auto sleep = duration.sleep(slot - 1);
             hp_[s][slot - 1] = (float)poke.hp / poke.stats.hp;
             Encode::Battle::Pokemon::write(poke, sleep,
                                            pokemon_[s][slot - 1].data());
+            Encode::Battle::Moves::write(poke.moves,
+                                         moves_[s][slot - 1].data());
           }
         }
       }
@@ -146,8 +151,8 @@ struct EncodedFrames : public Target {
         pokemon.mutable_data() + index * (2 * 6 * pokemon_in_dim));
     auto &active_ = *reinterpret_cast<Actives *>(
         active.mutable_data() + index * (2 * 1 * active_in_dim));
-    auto &moves_ = *reinterpret_cast<Moves *>(
-        moves.mutable_data() + index * (2 * 6 * moves_in_dim));
+    auto &moves_ = *reinterpret_cast<Moves *>(moves.mutable_data() +
+                                              index * (2 * 6 * moves_in_dim));
     auto &choice_ = *reinterpret_cast<ChoiceIndices *>(
         choice_indices.mutable_data() + index * (2 * 9 * 1));
     return std::tie(hp_, pokemon_, active_, moves_, choice_);
