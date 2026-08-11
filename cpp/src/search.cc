@@ -48,16 +48,6 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
     MCTS::Search s{};
     if (false) {
     }
-#ifndef NO_MONTE_CARLO
-    else if (auto *ptr = std::get_if<MCTS::MonteCarlo>(&eval.data)) {
-      return s.run(device, dur, params, heap, *ptr, input, output);
-    }
-#endif
-#ifndef NO_POKE_ENGINE
-    else if (auto *ptr = std::get_if<PokeEngine::Eval>(&eval.data)) {
-      return s.run(device, dur, params, heap, *ptr, input, output);
-    }
-#endif
 #ifndef NO_NETWORK
     else if (auto *ptr = std::get_if<std::shared_ptr<NN::Battle::NetworkBase>>(
                  &eval.data)) {
@@ -83,7 +73,8 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
                            p1_cache, p2_cache);
           }
         } else {
-          output = s.run(device, dur, params, heap, net, input, output);
+          // output = s.run(device, dur, params, heap, net, input, output);
+          throw std::runtime_error{"Network search must use caches."};
         }
       };
       auto net = *ptr; // shared ptr to base
@@ -92,38 +83,57 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
     }
 #endif
     else {
-      throw std::runtime_error{"Invalid Eval"};
-      return output;
+      if constexpr (MCTS::is_contextual_bandit<decltype(MCTS::get_bandit_params(
+                        params))>) {
+        throw std::runtime_error{"Contextual bandits must use network eval"};
+        return output;
+      } else {
+        if (false) {
+        }
+#ifndef NO_MONTE_CARLO
+        else if (auto *ptr = std::get_if<MCTS::MonteCarlo>(&eval.data)) {
+          return s.run(device, dur, params, heap, *ptr, input, output);
+        }
+#endif
+#ifndef NO_POKE_ENGINE
+        else if (auto *ptr = std::get_if<PokeEngine::Eval>(&eval.data)) {
+          return s.run(device, dur, params, heap, *ptr, input, output);
+        }
+#endif
+        else {
+          throw std::runtime_error{"Invalid Eval"};
+          return output;
+        }
+      }
     }
   };
 
-  const auto parse_params = [&](auto dur, auto bandit, auto &heap) {
+  const auto parse_matrix_ucb_params = [&](auto dur, auto bandit, auto &heap) {
     const auto *matrix_ucb_params =
         dynamic_cast<const Search::MatrixUCB *>(&params);
-    using T = std::remove_cvref_t<decltype(bandit)>::Params;
-    auto bandit_params = std::get<T>(params.data);
+    using T = std::remove_cvref_t<decltype(bandit)>;
 
     if (false) {
     }
 #ifndef NO_MATRIX_UCB
     else if (matrix_ucb_params) {
-      auto eee = MCTS::MatrixUCBParams<T>{};
-      eee.bandit_params = bandit_params;
-      eee.delay = matrix_ucb_params->delay;
-      eee.interval = matrix_ucb_params->interval;
-      eee.minimum = matrix_ucb_params->minimum;
-      eee.c = matrix_ucb_params->c;
-      return parse_eval(dur, eee, heap);
+      auto matrix_ucb = MCTS::MatrixUCBParams<T>{};
+      matrix_ucb.bandit = bandit;
+      matrix_ucb.c = matrix_ucb_params->c;
+      matrix_ucb.delay = matrix_ucb_params->delay;
+      matrix_ucb.interval = matrix_ucb_params->interval;
+      matrix_ucb.minimum = matrix_ucb_params->minimum;
+      return parse_eval(dur, matrix_ucb, heap);
     }
 #endif
     else {
-      return parse_eval(dur, bandit_params, heap);
+      return parse_eval(dur, bandit, heap);
     }
   };
 
   const auto parse_heap = [&](auto dur, auto bandit) {
-    using Node = MCTS::Node<Joint<std::remove_cvref_t<decltype(bandit)>>>;
-    using Table = MCTS::Table<Joint<std::remove_cvref_t<decltype(bandit)>>>;
+    using Node = MCTS::Node<std::remove_cvref_t<decltype(bandit)>>;
+    using Table = MCTS::Table<std::remove_cvref_t<decltype(bandit)>>;
     auto *data = &heap.data;
     if (false) {
     }
@@ -134,7 +144,8 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
         node_variant = Node{};
       }
       if (std::holds_alternative<Node>(node_variant)) {
-        return parse_params(dur, bandit, std::get<Node>(node_variant));
+        return parse_matrix_ucb_params(dur, bandit,
+                                       std::get<Node>(node_variant));
       } else {
         throw std::runtime_error{"Node exists but does not match bandit"};
         return output;
@@ -147,7 +158,8 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
         table_variant = Table{};
       }
       if (std::holds_alternative<Table>(table_variant)) {
-        return parse_params(dur, bandit, std::get<Table>(table_variant));
+        return parse_matrix_ucb_params(dur, bandit,
+                                       std::get<Table>(table_variant));
       } else {
         throw std::runtime_error{"Node exists but does not match bandit"};
         return output;
@@ -163,24 +175,24 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
     const auto *data = &params.data;
     if (false) {
 #ifndef NO_EXP3
-    } else if (auto *ptr = std::get_if<Exp3::Bandit::Params>(data)) {
-      return parse_heap(dur, Exp3::Bandit{});
+    } else if (auto *ptr = std::get_if<MCTS::Exp3>(data)) {
+      return parse_heap(dur, *ptr);
 #endif
 #ifndef NO_PEXP3
-    } else if (auto *ptr = std::get_if<PExp3::Bandit::Params>(data)) {
-      return parse_heap(dur, PExp3::Bandit{});
+    } else if (auto *ptr = std::get_if<MCTS::PExp3>(data)) {
+      return parse_heap(dur, *ptr);
 #endif
 #ifndef NO_UCB
-    } else if (auto *ptr = std::get_if<UCB::Bandit::Params>(data)) {
-      return parse_heap(dur, UCB::Bandit{});
+    } else if (auto *ptr = std::get_if<MCTS::UCB>(data)) {
+      return parse_heap(dur, *ptr);
 #endif
 #ifndef NO_PUCB
-    } else if (auto *ptr = std::get_if<PUCB::Bandit::Params>(data)) {
-      return parse_heap(dur, PUCB::Bandit{});
+    } else if (auto *ptr = std::get_if<MCTS::PUCB>(data)) {
+      return parse_heap(dur, *ptr);
 #endif
 #ifndef NO_UCB1
-    } else if (auto *ptr = std::get_if<UCB::Bandit::Params>(data)) {
-      return parse_heap(dur, UCB1::Bandit{});
+    } else if (auto *ptr = std::get_if<MCTS::UCB1>(data)) {
+      return parse_heap(dur, *ptr);
 #endif
     } else {
       throw std::runtime_error{"Invalid bandit"};

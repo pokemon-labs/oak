@@ -117,7 +117,7 @@ public:
     }
     return false;
   }
-  bool is_quantized() const { return false; }
+  bool is_quantized() const { return get()->main_net_float() == nullptr; }
 };
 
 class MonteCarlo : public Eval {
@@ -146,11 +146,10 @@ struct Heap {
   using TableVariantT = std::variant<std::monostate, MCTS::Table<T>...>;
 
   using NodeVariant =
-      NodeVariantT<Exp3::JointBandit, PExp3::JointBandit, UCB::JointBandit,
-                   PUCB::JointBandit, UCB1::JointBandit>;
+      NodeVariantT<MCTS::Exp3, MCTS::PExp3, MCTS::UCB, MCTS::PUCB, MCTS::UCB1>;
   using TableVariant =
-      TableVariantT<Exp3::JointBandit, PExp3::JointBandit, UCB::JointBandit,
-                    PUCB::JointBandit, UCB1::JointBandit>;
+      TableVariantT<MCTS::Exp3, MCTS::PExp3, MCTS::UCB, MCTS::PUCB, MCTS::UCB1>;
+
   using Variant = std::variant<NodeVariant, TableVariant>;
   Variant data;
 
@@ -193,9 +192,9 @@ public:
 };
 
 struct BanditParams {
-  template <typename... T> using VariantT = std::variant<typename T::Params...>;
-  using Variant = VariantT<Exp3::Bandit, PExp3::Bandit, UCB::Bandit,
-                           PUCB::Bandit, UCB1::Bandit>;
+  template <typename... T> using VariantT = std::variant<T...>;
+  using Variant =
+      VariantT<MCTS::Exp3, MCTS::PExp3, MCTS::UCB, MCTS::PUCB, MCTS::UCB1>;
   Variant data;
   BanditParams() = default;
   template <class T, class... Args>
@@ -207,26 +206,24 @@ struct BanditParams {
 class Exp3 : public BanditParams {
 public:
   Exp3(float lr, float exploration)
-      : BanditParams{std::in_place_type<::Exp3::Bandit::Params>, lr,
-                     exploration} {}
+      : BanditParams{std::in_place_type<MCTS::Exp3>, lr, exploration} {}
 };
 class PExp3 : public BanditParams {
 public:
   PExp3(float lr, float exploration)
-      : BanditParams{std::in_place_type<::PExp3::Bandit::Params>, lr,
-                     exploration} {}
+      : BanditParams{std::in_place_type<MCTS::PExp3>, lr, exploration} {}
 };
 class UCB : public BanditParams {
 public:
-  UCB(float c) : BanditParams{std::in_place_type<::UCB::Bandit::Params>, c} {}
+  UCB(float c) : BanditParams{std::in_place_type<MCTS::UCB>, c} {}
 };
 class PUCB : public BanditParams {
 public:
-  PUCB(float c) : BanditParams{std::in_place_type<::PUCB::Bandit::Params>, c} {}
+  PUCB(float c) : BanditParams{std::in_place_type<MCTS::PUCB>, c} {}
 };
 class UCB1 : public BanditParams {
 public:
-  UCB1(float c) : BanditParams{std::in_place_type<::UCB1::Bandit::Params>, c} {}
+  UCB1(float c) : BanditParams{std::in_place_type<MCTS::UCB1>, c} {}
 };
 struct MatrixUCB : public BanditParams {
   float c;

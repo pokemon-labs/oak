@@ -4,16 +4,11 @@
 
 #pragma pack(push, 1)
 template <typename Bandit> struct Joint {
-  using Params = typename Bandit::Params;
+  using Stats = typename Bandit::Stats;
   using Outcome = typename Bandit::Outcome;
-
-  struct JointOutcome {
-    Outcome p1;
-    Outcome p2;
-  };
-
-  Bandit p1;
-  Bandit p2;
+  using JointOutcome = std::pair<Outcome, Outcome>;
+  Stats p1;
+  Stats p2;
 
   void init(const auto m, const auto n) noexcept {
     p1.init(m);
@@ -22,18 +17,18 @@ template <typename Bandit> struct Joint {
 
   bool is_init() const noexcept { return p1.is_init(); }
 
-  void select(auto &device, const Params &params,
+  void select(auto &device, const Bandit &params,
               JointOutcome &outcome) const noexcept {
-    p1.select(device, params, outcome.p1);
-    p2.select(device, params, outcome.p2);
+    p1.select(device, params, outcome.first);
+    p2.select(device, params, outcome.second);
   }
 
   void update(const JointOutcome &outcome) noexcept {
-    p1.update(outcome.p1);
-    p2.update(outcome.p2);
+    p1.update(outcome.first);
+    p2.update(outcome.second);
   }
 
-  void softmax_logits(const Params &params, const float *p1_priors,
+  void softmax_logits(const Bandit &params, const float *p1_priors,
                       const float *p2_priors) noexcept
     requires requires(const float *ptr) {
       std::declval<Bandit>().softmax_logits(params, ptr);

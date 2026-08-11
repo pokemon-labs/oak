@@ -58,11 +58,19 @@ inline constexpr bool is_contextual_bandit =
 
 template <typename T>
 inline constexpr bool is_matrix_ucb =
-    requires(std::remove_cvref_t<T> &params) { params.bandit_params; };
+    requires(std::remove_cvref_t<T> &params) { params.bandit; };
 } // namespace TypeTraits
 
 namespace MCTS {
 using namespace TypeTraits;
+
+const auto get_bandit_params = [](const auto &params) -> const auto & {
+  if constexpr (requires { params.bandit; }) {
+    return params.bandit;
+  } else {
+    return params;
+  }
+};
 
 struct Input {
   pkmn_gen1_battle battle;
@@ -97,10 +105,11 @@ struct Output {
 // for std::map compatibility
 using Obs = std::array<uint8_t, 16>;
 
-template <typename JointBandit> struct Node {
+template <typename Bandit> struct Node {
   using Key = std::tuple<uint8_t, uint8_t, Obs>;
-  JointBandit stats;
-  std::map<Key, Node<JointBandit>> children;
+  using JointStats = typename Bandit::JointStats;
+  JointStats stats;
+  std::map<Key, Node<Bandit>> children;
 };
 
 // template <typename JointBandit, typename strategy_type = uint16_t>
@@ -120,7 +129,7 @@ template <typename JointBandit> struct Node {
 //   };
 //   Stats stats;
 
-//   void init(const auto m, const auto n) noexcept {
+//   void init(const auto m,children const auto n) noexcept {
 //     p1.init(m);
 //     p2.init(n);
 //   }
@@ -129,8 +138,8 @@ template <typename JointBandit> struct Node {
 
 //   void select(auto &device, const Params &params,
 //               JointOutcome &outcome) const noexcept {
-//     p1.select(device, params, outcome.p1);
-//     p2.select(device, params, outcome.p2);
+//     p1.select(device, params, outcome.first);
+//     p2.select(device, params, outcome.second);
 //   }
 
 //   auto sample(auto &device, const auto &s) {
@@ -157,7 +166,7 @@ template <typename JointBandit> struct Node {
 //   std::array<std::array<Entry, 9>, 9> matrix;
 
 //   void update(const auto &outcome) {
-//     auto entry = matrix[outcome.p1.index][outcome.p2.index];
+//     auto entry = matrix[outcome.first.index][outcome.second.index];
 //     ++entry.visits;
 //     total_value += outcome.value;
 //   }
@@ -170,8 +179,8 @@ template <typename JointBandit> struct Table {
 };
 
 // wrapper to use for enabling matrix ucb at root heap
-template <typename BanditParams> struct MatrixUCBParams {
-  BanditParams bandit_params;
+template <typename Bandit> struct MatrixUCBParams {
+  Bandit bandit;
   uint32_t delay;
   uint32_t interval;
   uint32_t minimum;
@@ -231,7 +240,7 @@ template <SearchOptions Options = default_search> struct Search {
     output.p2.k = pkmn_gen1_battle_choices(
         &input.battle, PKMN_PLAYER_P2, pkmn_result_p2(input.result),
         output.p2.choices.data(), PKMN_GEN1_MAX_CHOICES);
-    if constexpr (requires { params.bandit_params; }) {
+    if constexpr (requires { params.bandit; }) {
       ucb_weight = std::log(2 * output.p1.k * output.p2.k);
     }
 
@@ -252,14 +261,6 @@ template <SearchOptions Options = default_search> struct Search {
     if (!stats.is_init()) {
 
       stats.init(output.p1.k, output.p2.k);
-
-      const auto bandit_params = [](const auto &params) -> const auto & {
-        if constexpr (requires { params.bandit_params; }) {
-          return params.bandit_params;
-        } else {
-          return params;
-        }
-      };
 
       if constexpr (is_contextual_bandit<decltype(stats)> &&
                     is_network<decltype(eval)>) {
@@ -285,11 +286,15 @@ template <SearchOptions Options = default_search> struct Search {
             eval.main_net.template propagate<true, activation>(
                 battle_embedding.data(), output.p1.k, output.p2.k,
                 p1_choice_index, p2_choice_index, p1_logits, p2_logits));
-        stats.softmax_logits(bandit_params(params), p1_logits, p2_logits);
+        stats.softmax_logits(get_bandit_params(params), p1_logits, p2_logits);
         std::copy_n(p1_logits, output.p1.k, output.p1.logit.data());
         std::copy_n(p2_logits, output.p2.k, output.p2.logit.data());
         softmax(output.p1.prior.data(), p1_logits, output.p1.k);
         softmax(output.p2.prior.data(), p2_logits, output.p2.k);
+        // use policy inference instead of solving
+        softmax(p1_nash.data(), p1_logits, output.p1.k);
+        softmax(p2_nash.data(), p2_logits, output.p2.k);
+        initial_solve = true;
       }
     }
 
@@ -354,8 +359,8 @@ template <SearchOptions Options = default_search> struct Search {
           .first;
     } else {
       if ((output.iterations < params.delay)) {
-        return run_iteration(device, params.bandit_params, heap, copy, eval,
-                             output, 0, caches...)
+        return run_iteration(device, params.bandit, heap, copy, eval, output, 0,
+                             caches...)
             .first;
       } else {
         const auto [p1_index, p2_index] =
@@ -370,10 +375,10 @@ template <SearchOptions Options = default_search> struct Search {
             const auto &obs = *reinterpret_cast<const Obs *>(
                 pkmn_gen1_battle_options_chance_actions(&options));
             auto &child = heap.children[{p1_index, p2_index, obs}];
-            return run_iteration(device, params.bandit_params, child, copy,
-                                 eval, output, 1, caches...);
+            return run_iteration(device, params.bandit, child, copy, eval,
+                                 output, 1, caches...);
           } else {
-            return run_iteration(device, params.bandit_params, heap, copy, eval,
+            return run_iteration(device, params.bandit, heap, copy, eval,
                                  output, 1, caches...);
           }
         }();
@@ -390,7 +395,7 @@ template <SearchOptions Options = default_search> struct Search {
   // we return value for each player because it's slightly faster than calcing 1
   // - value at each heap
   template <typename... Caches>
-  std::pair<float, float> run_iteration(auto &device, const auto &bandit_params,
+  std::pair<float, float> run_iteration(auto &device, const auto &bandit,
                                         auto &heap, auto &input, auto &eval,
                                         Output &output, size_t depth,
                                         Caches &...caches) noexcept {
@@ -416,21 +421,22 @@ template <SearchOptions Options = default_search> struct Search {
     }();
 
     if (stats.is_init() && !error) {
-      using Bandit = std::remove_reference_t<decltype(stats)>;
-      using JointOutcome = typename Bandit::JointOutcome;
+      using Bandit = std::remove_reference_t<decltype(bandit)>;
+      using Outcome = typename Bandit::Outcome;
+      using JointOutcome = std::pair<Outcome, Outcome>;
 
       // do bandit
       JointOutcome outcome;
 
-      stats.select(device, bandit_params, outcome);
+      stats.select(device, bandit, outcome);
       pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P1, pkmn_result_p1(result),
                                p1_choices.data(), PKMN_GEN1_MAX_CHOICES);
-      assert(outcome.p1.index < 9);
-      assert(outcome.p2.index < 9);
-      const auto c1 = p1_choices[outcome.p1.index];
+      assert(outcome.first.index < 9);
+      assert(outcome.second.index < 9);
+      const auto c1 = p1_choices[outcome.first.index];
       pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P2, pkmn_result_p2(result),
                                p2_choices.data(), PKMN_GEN1_MAX_CHOICES);
-      const auto c2 = p2_choices[outcome.p2.index];
+      const auto c2 = p2_choices[outcome.second.index];
 
       if constexpr (is_node<decltype(heap)>) {
         battle_options_set(battle, depth);
@@ -449,16 +455,16 @@ template <SearchOptions Options = default_search> struct Search {
           const auto &obs = *reinterpret_cast<const Obs *>(
               pkmn_gen1_battle_options_chance_actions(&options));
           auto &child =
-              heap.children[{outcome.p1.index, outcome.p2.index, obs}];
-          return run_iteration(device, bandit_params, child, input, eval,
-                               output, depth + 1, caches...);
+              heap.children[{outcome.first.index, outcome.second.index, obs}];
+          return run_iteration(device, bandit, child, input, eval, output,
+                               depth + 1, caches...);
         } else {
-          return run_iteration(device, bandit_params, heap, input, eval, output,
+          return run_iteration(device, bandit, heap, input, eval, output,
                                depth + 1, caches...);
         }
       }();
-      outcome.p1.value = value.first;
-      outcome.p2.value = value.second;
+      outcome.first.value = value.first;
+      outcome.second.value = value.second;
 
       if constexpr (is_node<decltype(heap)>) {
         stats.update(outcome);
@@ -472,8 +478,9 @@ template <SearchOptions Options = default_search> struct Search {
       }
 
       if (depth == 0) {
-        ++output.visit_matrix[outcome.p1.index][outcome.p2.index];
-        output.value_matrix[outcome.p1.index][outcome.p2.index] += value.first;
+        ++output.visit_matrix[outcome.first.index][outcome.second.index];
+        output.value_matrix[outcome.first.index][outcome.second.index] +=
+            value.first;
       }
 
       return value;
@@ -525,7 +532,7 @@ template <SearchOptions Options = default_search> struct Search {
                   eval.main_net.template propagate<true, activation>(
                       battle_embedding.data(), m, n, p1_choice_index,
                       p2_choice_index, p1_logits, p2_logits));
-              stats.softmax_logits(bandit_params, p1_logits, p2_logits);
+              stats.softmax_logits(bandit, p1_logits, p2_logits);
             } else {
               value = NN::Battle::sigmoid(
                   eval.main_net.template propagate<activation>(
@@ -611,7 +618,8 @@ template <SearchOptions Options = default_search> struct Search {
                                            auto &copy,
                                            const auto &output) noexcept {
     uint8_t p1_index{}, p2_index{};
-    const bool periodic_solve = ((output.iterations % params.interval) == 0);
+    const bool periodic_solve =
+        (((output.iterations + 1) % params.interval) == 0);
     if (periodic_solve || !initial_solve) {
       // get ucb matrices
       std::array<int, 9 * 9> p1_ucb_matrix;
