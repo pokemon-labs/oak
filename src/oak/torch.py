@@ -124,6 +124,36 @@ class Affine(nn.Module):
         self.layer = torch.nn.Linear(in_dim, out_dim)
         self.activation = activation
 
+    def bind_live(self, weight_view, bias_view):
+        """Replace this layer's Parameters with zero-copy views over a live
+        pyoaksearch.Network's Eigen buffers (as returned by
+        Network.named_parameters()/weights()/biases()).
+
+        After this call, self.layer.weight / .bias ARE the C++ network's
+        storage -- no torch.Tensor copy exists anywhere. optimizer.step()
+        mutates the C++ network in place; no read_parameters()/
+        write_parameters() round trip is needed to keep them in sync.
+
+        Caller must not call resize() on the source Network afterwards --
+        that reallocates the underlying Eigen matrices and silently
+        invalidates weight_view/bias_view (see pyoaksearch.cc).
+        """
+        out_dim, in_dim = weight_view.shape
+        assert (out_dim, in_dim) == (self.out_dim, self.in_dim), (
+            f"bind_live: shape mismatch, layer is ({self.out_dim}, {self.in_dim}) "
+            f"but view is ({out_dim}, {in_dim})"
+        )
+        # torch.from_numpy shares memory; it does not copy, even when the
+        # numpy view is strided (e.g. embedding nets' ColMajor fc0 layers --
+        # see affine_weights_view in pyoaksearch.cc). Non-contiguous
+        # Parameters work fine with nn.Linear/F.linear; PyTorch will
+        # transparently materialize a contiguous copy where needed for a
+        # given op, and autograd still routes gradients back to this
+        # Parameter's original storage, so optimizer updates land in the
+        # right place.
+        self.layer.weight = nn.Parameter(torch.from_numpy(weight_view))
+        self.layer.bias = nn.Parameter(torch.from_numpy(bias_view))
+
     def read_parameters(self, f):
         dims = f.read(8)
         in_dim, out_dim = struct.unpack("<II", dims)
@@ -193,6 +223,10 @@ class EmbeddingNet(nn.Module):
     def set_activation(self, act):
         self.fc0.activation = act
         self.fc1.activation = act
+
+    def bind_live(self, params: Dict[str, "tuple"], prefix: str):
+        self.fc0.bind_live(*params[f"{prefix}.fc0"])
+        self.fc1.bind_live(*params[f"{prefix}.fc1"])
 
     def read_parameters(self, f):
         self.fc0.read_parameters(f)
@@ -281,6 +315,26 @@ class MainNet(nn.Module):
         self.value_fc1.activation = act
         self.policy1_fc1.activation = act
         self.policy2_fc1.activation = act
+
+    # Maps this module's attribute names to the layer names used by
+    # pyoaksearch.Network.named_parameters() (see for_each_float_layer in
+    # pyoaksearch.cc). The trunk (fc0/fc1) is numbered fc0/fc1 on both
+    # sides; each head restarts its own fc2/fc3 numbering C++-side instead
+    # of continuing fc1's local _fc1/_fc2 naming.
+    _CPP_LAYER_NAMES = {
+        "fc0": "main_net.fc0",
+        "fc1": "main_net.fc1",
+        "value_fc1": "main_net.value_fc2",
+        "value_fc2": "main_net.value_fc3",
+        "policy1_fc1": "main_net.p1_policy_fc2",
+        "policy1_fc2": "main_net.p1_policy_fc3",
+        "policy2_fc1": "main_net.p2_policy_fc2",
+        "policy2_fc2": "main_net.p2_policy_fc3",
+    }
+
+    def bind_live(self, params: Dict[str, "tuple"]):
+        for attr, cpp_name in self._CPP_LAYER_NAMES.items():
+            getattr(self, attr).bind_live(*params[cpp_name])
 
     def read_parameters(self, f):
         self.fc0.read_parameters(f)
@@ -442,6 +496,52 @@ class BattleNetwork(torch.nn.Module):
             activation=activation,
         )
 
+        # Set once bind_live() succeeds. When present, write_parameters()/
+        # hash() delegate to the C++ Network object instead of the legacy
+        # Python re-implementations below, and read_parameters() is not a
+        # valid way to load new weights any more (the params ARE the C++
+        # network's storage; use pyoaksearch.Network.read_parameters()
+        # against the bound network instead, before binding).
+        self._bound_network = None
+
+    def bind_live(self, network):
+        """Bind every Affine layer's weight/bias Parameters to zero-copy
+        views over `network`'s (a pyoaksearch.Network) live Eigen storage.
+
+        This is the intended replacement for the read_parameters()/
+        write_parameters()/hash() struct.pack byte-plumbing below: once
+        bound, training this module (e.g. loss.backward(); optimizer.step())
+        mutates `network`'s C++ weights directly -- the same object usable
+        for search/MCTS -- with no serialize-to-disk-and-reload step in the
+        training loop.
+
+        Preconditions (caller's responsibility, not checked here beyond
+        what named_parameters() itself checks):
+          - `network` must already be at its final architecture (resize()
+            called, and read_parameters()/initialize() done) BEFORE this
+            call. Do not call network.resize() again afterwards -- that
+            reallocates the Eigen matrices and silently invalidates every
+            Parameter bound here (dangling storage, not a Python exception).
+          - `network` must not be quantized (named_parameters() raises for
+            quantized networks -- there are no float layers to view).
+          - If `network` is concurrently used for search (e.g. self-play
+            workers calling forward_side()/run() on it) while this module
+            is being trained, the caller is responsible for synchronizing
+            reads vs. writes -- there is no locking here, and none in the
+            C++ side either.
+        """
+        params = network.named_parameters()
+        self.pokemon_net.bind_live(params, "pokemon_net")
+        self.active_net.bind_live(params, "active_net")
+        self.moves_net.bind_live(params, "moves_net")
+        self.main_net.bind_live(params)
+        self._bound_network = network
+        return self
+
+    @property
+    def is_bound(self) -> bool:
+        return self._bound_network is not None
+
     def set_activation(self, act):
         self.activation = act
         self.pokemon_net.set_activation(act)
@@ -450,6 +550,14 @@ class BattleNetwork(torch.nn.Module):
         self.main_net.set_activation(act)
 
     def read_parameters(self, f):
+        assert not self.is_bound, (
+            "read_parameters: this module is bound to a live C++ Network "
+            "(bind_live()); its Parameters ARE that network's storage, so "
+            "loading new weights here would either no-op onto a stale copy "
+            "or corrupt the binding. Load new weights via "
+            "network.read_parameters(path) on the (unbound) Network before "
+            "calling bind_live(), instead."
+        )
         header = f.read(8)
         act = struct.unpack("<BBBBBBBB", header)[0]
         self.set_activation(act + 1)
@@ -459,6 +567,27 @@ class BattleNetwork(torch.nn.Module):
         self.main_net.read_parameters(f)
 
     def write_parameters(self, f):
+        if self.is_bound:
+            # pyoaksearch.Network.write_parameters() takes a path (it opens
+            # its own std::ofstream), not a file object like the legacy
+            # Python path below -- it isn't a drop-in signature match, so
+            # callers writing `with open(p, "wb") as f: net.write_parameters(f)`
+            # need `net.write_parameters(p)` instead when bound. Verified
+            # the on-disk format itself is identical either way: 8-byte
+            # header (byte 0 = 0 relu / 1 clamp), then each float layer as
+            # (in_dim: u32, out_dim: u32, biases: f32[out_dim],
+            # weights: f32[out_dim*in_dim] row-major), same layer order as
+            # for_each_float_layer() in pyoaksearch.cc -- so files written
+            # bound vs. unbound are interchangeable.
+            if not isinstance(f, (str, os.PathLike)):
+                raise TypeError(
+                    "write_parameters: this module is bound to a live C++ "
+                    "Network, whose write_parameters() writes directly to a "
+                    "path (it opens its own file), not an already-open file "
+                    "object. Pass a path string/PathLike, not a file handle."
+                )
+            self._bound_network.write_parameters(str(f))
+            return
         f.write(struct.pack("<Q", self.activation - 1))
         self.pokemon_net.write_parameters(f)
         self.active_net.write_parameters(f)
@@ -507,6 +636,14 @@ class BattleNetwork(torch.nn.Module):
         )
 
     def hash(self) -> int:
+        if self.is_bound:
+            # NOTE: this is the C++ FNV-1a hash (Network::hash() in
+            # pyoaksearch.cc), NOT the blake2b-based hash below. They are
+            # different algorithms and will NOT agree on the same weights --
+            # do not compare a bound network's hash() against one recorded
+            # from an unbound/legacy-loaded BattleNetwork as a "did the
+            # weights change" check across that boundary.
+            return self._bound_network.hash()
         h = self.pokemon_net.hash()
         h = combine_hash(h, self.active_net.hash())
         h = combine_hash(h, self.main_net.hash())
