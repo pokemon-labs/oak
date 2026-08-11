@@ -292,6 +292,18 @@ PYBIND11_MODULE(pyoaksearch, m) {
           "Serialize this network to disk in the format read_parameters() "
           "expects. New counterpart to read_parameters() -- previously "
           "only implemented Python-side in oak.torch.")
+      .def_property_readonly(
+          "is_clamped",
+          [](Network &net) {
+            auto network = net.get();
+            return dynamic_cast<NN::Battle::NetworkClamped *>(network.get()) !=
+                   nullptr;
+          },
+          "True if this Network uses the clamp activation (same runtime "
+          "check write_parameters() uses for its header byte), false for "
+          "relu. Lets Python read back which activation a loaded/"
+          "constructed Network actually has instead of the caller having "
+          "to separately track it.")
       .def(
           "hash",
           [](Network &net) {

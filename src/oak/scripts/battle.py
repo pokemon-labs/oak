@@ -190,13 +190,14 @@ def main():
 
     import torch
     import oak.torch
+    import pyoaksearch
 
     torch.set_num_threads(args.threads)
     torch.set_num_interop_threads(args.threads)
 
     class Optimizer:
-        def __init__(self, nets: "oak.torch.BattleNets", lr):
-            self.opt = torch.optim.Adam(oak.torch.battle_parameters(nets), lr=lr)
+        def __init__(self, params: "oak.torch.BattleParams", lr):
+            self.opt = torch.optim.Adam(oak.torch.battle_parameters(params), lr=lr)
 
         def step(self):
             self.opt.step()
@@ -304,6 +305,15 @@ def main():
     if args.device is None:
         args.device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(args.device)
+    if device.type != "cpu":
+        # bind_live_params() wraps pyoaksearch.Network's live Eigen storage
+        # (host memory) directly as the training Parameters -- there is no
+        # copy to move. A non-CPU device would mean either silently
+        # dropping the binding (defeating the point of this refactor) or
+        # copying host<->device every step (defeating it differently), so
+        # this is CPU-only now.
+        print(f"Requested device {device} ignored: live-bound training is CPU-only.")
+        device = torch.device("cpu")
     print(f"Using device: {device}")
 
     if args.dir is None:
@@ -313,31 +323,47 @@ def main():
     os.makedirs(args.dir, exist_ok=False)
     oak.util.save_args(args, args.dir)
 
-    nets = oak.torch.build_battle_nets(
-        args.pokemon_hidden_dim,
-        args.active_hidden_dim,
-        args.moves_hidden_dim,
-        args.pokemon_out_dim,
-        args.active_out_dim,
-        args.moves_out_dim,
-        args.hidden_dim,
-        args.value_hidden_dim,
-        args.policy_hidden_dim,
-        activation=(
-            oak.torch.Activation.clamp if args.discrete else oak.torch.Activation.relu
-        ),
+    activation = (
+        oak.torch.Activation.clamp if args.discrete else oak.torch.Activation.relu
     )
-    nets = oak.torch.battle_nets_to(nets, device)
-
+    # activation ints match oak.torch.Activation's values directly (see
+    # pyoaksearch.cc's Network ctor).
+    network = pyoaksearch.Network(activation=activation)
     if args.network_path:
-        with open(args.network_path, "rb") as f:
-            oak.torch.read_battle_parameters(nets, f)
+        # Resizes internally, then loads -- no separate resize() call, and
+        # no Python-side struct.unpack of the file.
+        network.read_parameters(args.network_path)
+        activation = (
+            oak.torch.Activation.clamp if network.is_clamped else oak.torch.Activation.relu
+        )
+        if activation != (
+            oak.torch.Activation.clamp if args.discrete else oak.torch.Activation.relu
+        ):
+            print(
+                f"Note: loaded network's own activation ({activation}) overrides "
+                f"--discrete ({args.discrete})."
+            )
+    else:
+        network.resize(
+            args.pokemon_hidden_dim,
+            args.pokemon_out_dim,
+            args.active_hidden_dim,
+            args.active_out_dim,
+            args.moves_hidden_dim,
+            args.moves_out_dim,
+            args.hidden_dim,
+            args.value_hidden_dim,
+            args.policy_hidden_dim,
+        )
+        seed = args.seed if args.seed is not None else random.getrandbits(64)
+        network.initialize(seed)
 
-    # Optimizer must be constructed after read_battle_parameters:
-    # Affine.read_parameters rebuilds each layer's nn.Linear submodule with
-    # fresh Parameter objects, so building the optimizer beforehand would
-    # bind it to discarded tensors that are no longer part of the network.
-    optimizer = Optimizer(nets, args.lr)
+    params = oak.torch.bind_live_params(network)
+
+    # Optimizer must be constructed after read_parameters()/initialize():
+    # both happen before bind_live_params(), which is what actually
+    # produces the Parameter objects the optimizer needs to hold.
+    optimizer = Optimizer(params, args.lr)
     print(args.network_path)
     start_step = 0
     if args.network_path:
@@ -345,11 +371,9 @@ def main():
             oak.common_args.train_state_path(args.network_path), optimizer.opt
         )
 
-    with open(os.path.join(args.dir, "initial.battle.net"), "wb") as f:
-        oak.torch.write_battle_parameters(nets, f)
-        print("Saved initial network in output directory.")
-
-    print(f"Initial network hash: {oak.torch.hash_battle_parameters(nets)}")
+    network.write_parameters(os.path.join(args.dir, "initial.battle.net"))
+    print("Saved initial network in output directory.")
+    print(f"Initial network hash: {network.hash()}")
 
     encoded_frames = oak.train.EncodedBattleFrames(args.batch_size)
     encoded_frames_torch = oak.torch.EncodedBattleFrames(encoded_frames).to(device)
@@ -404,7 +428,11 @@ def main():
 
         output_buffer_torch = oak.torch.OutputBuffer(output_buffer).to(device)
         oak.torch.battle_forward(
-            nets, encoded_frames_torch, output_buffer_torch, not args.no_policy_loss
+            params,
+            encoded_frames_torch,
+            output_buffer_torch,
+            activation=activation,
+            use_policy=not args.no_policy_loss,
         )
 
         optimizer.zero_grad()
@@ -419,15 +447,18 @@ def main():
         optimizer.step()
 
         if args.discrete or args.clamp_parameters:
-            oak.torch.clamp_battle_parameters(nets)
+            oak.torch.clamp_battle_parameters(params)
 
         oak.common_args.save_and_decay(
             args,
-            nets,
+            network,
             optimizer.opt,
             step,
             ".battle.net",
-            write_parameters_fn=oak.torch.write_battle_parameters,
+            # network.write_parameters() takes a path (opens its own
+            # ofstream), not an open file object -- f.name recovers the
+            # path save_and_decay already open()'d.
+            write_parameters_fn=lambda net, f: net.write_parameters(f.name),
         )
 
 

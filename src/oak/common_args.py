@@ -181,9 +181,10 @@ def load_train_state(path: str, opt) -> int:
 
 def save_and_decay(args, network, opt, step: int, ext: str, write_parameters_fn=None):
     """write_parameters_fn(network, file_obj), if given, is used instead of
-    network.write_parameters(file_obj) -- needed for callers passing a plain
-    oak.torch.BattleNets tuple (no write_parameters method) rather than an
-    nn.Module like BattleNetwork used to be / BuildNetwork still is.
+    network.write_parameters(file_obj) -- needed for callers passing e.g. a
+    pyoaksearch.Network (whose write_parameters takes a path, not a file
+    object) rather than an nn.Module like BuildNetwork, which still has a
+    write_parameters(file_obj) method.
     """
     if write_parameters_fn is None:
         write_parameters_fn = lambda n, f: n.write_parameters(f)
