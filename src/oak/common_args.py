@@ -179,7 +179,15 @@ def load_train_state(path: str, opt) -> int:
     return step
 
 
-def save_and_decay(args, network, opt, step: int, ext: str):
+def save_and_decay(args, network, opt, step: int, ext: str, write_parameters_fn=None):
+    """write_parameters_fn(network, file_obj), if given, is used instead of
+    network.write_parameters(file_obj) -- needed for callers passing a plain
+    oak.torch.BattleNets tuple (no write_parameters method) rather than an
+    nn.Module like BattleNetwork used to be / BuildNetwork still is.
+    """
+    if write_parameters_fn is None:
+        write_parameters_fn = lambda n, f: n.write_parameters(f)
+
     if step >= args.lr_decay_start:
         if (step % args.lr_decay_interval) == 0:
             for group in opt.param_groups:
@@ -190,7 +198,7 @@ def save_and_decay(args, network, opt, step: int, ext: str):
         tmp_path = ckpt_path + ".tmp"
         with open(tmp_path, "wb") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
-            network.write_parameters(f)
+            write_parameters_fn(network, f)
             fcntl.flock(f, fcntl.LOCK_UN)
         os.replace(tmp_path, ckpt_path)
         save_train_state(train_state_path(ckpt_path), opt, step + 1)
@@ -198,7 +206,7 @@ def save_and_decay(args, network, opt, step: int, ext: str):
     if (step + 1) % args.checkpoint == 0:
         ckpt_path = os.path.join(args.dir, f"{step + 1}{ext}")
         with open(ckpt_path, "wb") as f:
-            network.write_parameters(f)
+            write_parameters_fn(network, f)
         save_train_state(train_state_path(ckpt_path), opt, step + 1)
         print(f"Checkpoint saved at step {step + 1}: {ckpt_path}")
 

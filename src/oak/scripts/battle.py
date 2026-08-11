@@ -195,8 +195,8 @@ def main():
     torch.set_num_interop_threads(args.threads)
 
     class Optimizer:
-        def __init__(self, network: torch.nn.Module, lr):
-            self.opt = torch.optim.Adam(network.parameters(), lr=lr)
+        def __init__(self, nets: "oak.torch.BattleNets", lr):
+            self.opt = torch.optim.Adam(oak.torch.battle_parameters(nets), lr=lr)
 
         def step(self):
             self.opt.step()
@@ -313,7 +313,7 @@ def main():
     os.makedirs(args.dir, exist_ok=False)
     oak.util.save_args(args, args.dir)
 
-    network = oak.torch.BattleNetwork(
+    nets = oak.torch.build_battle_nets(
         args.pokemon_hidden_dim,
         args.active_hidden_dim,
         args.moves_hidden_dim,
@@ -326,17 +326,18 @@ def main():
         activation=(
             oak.torch.Activation.clamp if args.discrete else oak.torch.Activation.relu
         ),
-    ).to(device)
+    )
+    nets = oak.torch.battle_nets_to(nets, device)
 
     if args.network_path:
         with open(args.network_path, "rb") as f:
-            network.read_parameters(f)
+            oak.torch.read_battle_parameters(nets, f)
 
-    # Optimizer must be constructed after read_parameters: read_parameters
-    # rebuilds each Affine's nn.Linear submodule with fresh Parameter
-    # objects, so building the optimizer beforehand would bind it to
-    # discarded tensors that are no longer part of the network.
-    optimizer = Optimizer(network, args.lr)
+    # Optimizer must be constructed after read_battle_parameters:
+    # Affine.read_parameters rebuilds each layer's nn.Linear submodule with
+    # fresh Parameter objects, so building the optimizer beforehand would
+    # bind it to discarded tensors that are no longer part of the network.
+    optimizer = Optimizer(nets, args.lr)
     print(args.network_path)
     start_step = 0
     if args.network_path:
@@ -345,10 +346,10 @@ def main():
         )
 
     with open(os.path.join(args.dir, "initial.battle.net"), "wb") as f:
-        network.write_parameters(f)
+        oak.torch.write_battle_parameters(nets, f)
         print("Saved initial network in output directory.")
 
-    print(f"Initial network hash: {network.hash()}")
+    print(f"Initial network hash: {oak.torch.hash_battle_parameters(nets)}")
 
     encoded_frames = oak.train.EncodedBattleFrames(args.batch_size)
     encoded_frames_torch = oak.torch.EncodedBattleFrames(encoded_frames).to(device)
@@ -402,8 +403,8 @@ def main():
             encoded_frames_torch.permute_sides()
 
         output_buffer_torch = oak.torch.OutputBuffer(output_buffer).to(device)
-        network.inference(
-            encoded_frames_torch, output_buffer_torch, not args.no_policy_loss
+        oak.torch.battle_forward(
+            nets, encoded_frames_torch, output_buffer_torch, not args.no_policy_loss
         )
 
         optimizer.zero_grad()
@@ -418,10 +419,15 @@ def main():
         optimizer.step()
 
         if args.discrete or args.clamp_parameters:
-            network.clamp_parameters()
+            oak.torch.clamp_battle_parameters(nets)
 
         oak.common_args.save_and_decay(
-            args, network, optimizer.opt, step, ".battle.net"
+            args,
+            nets,
+            optimizer.opt,
+            step,
+            ".battle.net",
+            write_parameters_fn=oak.torch.write_battle_parameters,
         )
 
 

@@ -446,6 +446,20 @@ class OutputBuffer:
 BattleNets = namedtuple("BattleNets", ["pokemon_net", "active_net", "moves_net", "main_net"])
 
 
+def battle_nets_to(nets: BattleNets, device) -> BattleNets:
+    """Move every sub-net in `nets` to `device`. Free-function replacement
+    for the .to(device) BattleNetwork used to inherit from nn.Module --
+    BattleNets is a plain namedtuple, it has no .to() of its own.
+
+    Do not use this on a `nets` produced by bind_battle_nets_live(): moving
+    device would replace the Parameters with new tensors, breaking the
+    aliasing with the C++ Network's storage. Live-bound training is CPU-only
+    (it aliases host Eigen memory) -- this is only for the from-scratch/
+    checkpoint-file training path.
+    """
+    return BattleNets(*(net.to(device) for net in nets))
+
+
 def build_battle_nets(
     phd=oak.train.pokemon_hidden_dim,
     ahd=oak.train.active_hidden_dim,
