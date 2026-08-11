@@ -2,6 +2,8 @@ import sys
 import os
 import struct
 import hashlib
+import itertools
+from collections import namedtuple
 from typing import Dict, List
 
 import torch
@@ -433,221 +435,177 @@ class OutputBuffer:
         return self
 
 
-class BattleNetwork(torch.nn.Module):
-    # only remaining hard-coded dims
-    pokemon_in_dim = oak.train.pokemon_in_dim
-    active_in_dim = oak.train.active_in_dim
-    moves_in_dim = oak.train.moves_in_dim
-    policy_out_dim = oak.train.policy_out_dim
+# BattleNetwork is gone. There is no class holding pokemon_net/active_net/
+# moves_net/main_net and a forward()/inference() method anymore -- just a
+# plain, behaviorless tuple of the four sub-nets' Parameters, and free
+# functions that operate on it. This matches how the C++ side already
+# works: Search::Network is a plain data owner, not a hand-written forward
+# pass -- the "forward pass" for TRAINING lives here, functionally, and
+# gets its Parameters either freshly initialized or bound in place onto
+# a live pyoaksearch.Network via bind_battle_nets_live().
+BattleNets = namedtuple("BattleNets", ["pokemon_net", "active_net", "moves_net", "main_net"])
 
-    def __init__(
-        self,
-        phd=oak.train.pokemon_hidden_dim,
-        ahd=oak.train.active_hidden_dim,
-        mhd=oak.train.moves_hidden_dim,
-        pod=oak.train.pokemon_out_dim,
-        aod=oak.train.active_out_dim,
-        mod=oak.train.moves_out_dim,
-        hd=oak.train.hidden_dim,
-        vhd=oak.train.value_hidden_dim,
-        pohd=oak.train.policy_hidden_dim,
-        activation=Activation.relu,
-    ):
-        super().__init__()
-        self.pokemon_hidden_dim = phd
-        self.active_hidden_dim = ahd
-        self.moves_hidden_dim = mhd
-        self.pokemon_out_dim = pod
-        self.active_out_dim = aod
-        self.moves_out_dim = mod
-        self.side_out_dim = aod + 6 * (pod + mod)
-        self.hidden_dim = hd
-        self.value_hidden_dim = vhd
-        self.policy_hidden_dim = pohd
-        self.activation = activation
 
-        self.pokemon_net = EmbeddingNet(
-            self.pokemon_in_dim,
-            self.pokemon_hidden_dim,
-            self.pokemon_out_dim,
-            activation,
-            activation,
-        )
-        self.active_net = EmbeddingNet(
-            self.active_in_dim,
-            self.active_hidden_dim,
-            self.active_out_dim,
-            activation,
-            activation,
-        )
-        self.moves_net = EmbeddingNet(
-            self.moves_in_dim,
-            self.moves_hidden_dim,
-            self.moves_out_dim,
-            activation,
-            activation,
-        )
-        self.main_net = MainNet(
-            2 * self.side_out_dim,
-            self.hidden_dim,
-            self.value_hidden_dim,
-            self.policy_hidden_dim,
-            self.policy_out_dim,
-            activation=activation,
-        )
+def build_battle_nets(
+    phd=oak.train.pokemon_hidden_dim,
+    ahd=oak.train.active_hidden_dim,
+    mhd=oak.train.moves_hidden_dim,
+    pod=oak.train.pokemon_out_dim,
+    aod=oak.train.active_out_dim,
+    mod=oak.train.moves_out_dim,
+    hd=oak.train.hidden_dim,
+    vhd=oak.train.value_hidden_dim,
+    pohd=oak.train.policy_hidden_dim,
+    activation=Activation.relu,
+) -> BattleNets:
+    """Construct a fresh (randomly-initialized-by-nn.Linear) BattleNets.
+    Equivalent to the old BattleNetwork(...) constructor, minus the class.
+    """
+    side_out_dim = aod + 6 * (pod + mod)
+    pokemon_net = EmbeddingNet(
+        oak.train.pokemon_in_dim, phd, pod, activation, activation
+    )
+    active_net = EmbeddingNet(oak.train.active_in_dim, ahd, aod, activation, activation)
+    moves_net = EmbeddingNet(oak.train.moves_in_dim, mhd, mod, activation, activation)
+    main_net = MainNet(
+        2 * side_out_dim, hd, vhd, pohd, oak.train.policy_out_dim, activation=activation
+    )
+    return BattleNets(pokemon_net, active_net, moves_net, main_net)
 
-        # Set once bind_live() succeeds. When present, write_parameters()/
-        # hash() delegate to the C++ Network object instead of the legacy
-        # Python re-implementations below, and read_parameters() is not a
-        # valid way to load new weights any more (the params ARE the C++
-        # network's storage; use pyoaksearch.Network.read_parameters()
-        # against the bound network instead, before binding).
-        self._bound_network = None
 
-    def bind_live(self, network):
-        """Bind every Affine layer's weight/bias Parameters to zero-copy
-        views over `network`'s (a pyoaksearch.Network) live Eigen storage.
+def bind_battle_nets_live(nets: BattleNets, network) -> BattleNets:
+    """Bind every Affine layer across `nets` to zero-copy views over
+    `network`'s (a pyoaksearch.Network) live Eigen storage. See
+    Affine.bind_live() for the aliasing/lifetime rules -- in particular:
+    do not call network.resize() again after this, and `network` must not
+    be quantized. Mutates `nets` in place and returns it for chaining.
+    """
+    params = network.named_parameters()
+    nets.pokemon_net.bind_live(params, "pokemon_net")
+    nets.active_net.bind_live(params, "active_net")
+    nets.moves_net.bind_live(params, "moves_net")
+    nets.main_net.bind_live(params)
+    return nets
 
-        This is the intended replacement for the read_parameters()/
-        write_parameters()/hash() struct.pack byte-plumbing below: once
-        bound, training this module (e.g. loss.backward(); optimizer.step())
-        mutates `network`'s C++ weights directly -- the same object usable
-        for search/MCTS -- with no serialize-to-disk-and-reload step in the
-        training loop.
 
-        Preconditions (caller's responsibility, not checked here beyond
-        what named_parameters() itself checks):
-          - `network` must already be at its final architecture (resize()
-            called, and read_parameters()/initialize() done) BEFORE this
-            call. Do not call network.resize() again afterwards -- that
-            reallocates the Eigen matrices and silently invalidates every
-            Parameter bound here (dangling storage, not a Python exception).
-          - `network` must not be quantized (named_parameters() raises for
-            quantized networks -- there are no float layers to view).
-          - If `network` is concurrently used for search (e.g. self-play
-            workers calling forward_side()/run() on it) while this module
-            is being trained, the caller is responsible for synchronizing
-            reads vs. writes -- there is no locking here, and none in the
-            C++ side either.
-        """
-        params = network.named_parameters()
-        self.pokemon_net.bind_live(params, "pokemon_net")
-        self.active_net.bind_live(params, "active_net")
-        self.moves_net.bind_live(params, "moves_net")
-        self.main_net.bind_live(params)
-        self._bound_network = network
-        return self
+def battle_parameters(nets: BattleNets):
+    """Flat iterator of every torch.nn.Parameter in `nets`, e.g. for
+    torch.optim.Adam(battle_parameters(nets), lr=...).
+    """
+    return itertools.chain(
+        nets.pokemon_net.parameters(),
+        nets.active_net.parameters(),
+        nets.moves_net.parameters(),
+        nets.main_net.parameters(),
+    )
 
-    @property
-    def is_bound(self) -> bool:
-        return self._bound_network is not None
 
-    def set_activation(self, act):
-        self.activation = act
-        self.pokemon_net.set_activation(act)
-        self.active_net.set_activation(act)
-        self.moves_net.set_activation(act)
-        self.main_net.set_activation(act)
+def set_battle_activation(nets: BattleNets, act):
+    nets.pokemon_net.set_activation(act)
+    nets.active_net.set_activation(act)
+    nets.moves_net.set_activation(act)
+    nets.main_net.set_activation(act)
 
-    def read_parameters(self, f):
-        assert not self.is_bound, (
-            "read_parameters: this module is bound to a live C++ Network "
-            "(bind_live()); its Parameters ARE that network's storage, so "
-            "loading new weights here would either no-op onto a stale copy "
-            "or corrupt the binding. Load new weights via "
-            "network.read_parameters(path) on the (unbound) Network before "
-            "calling bind_live(), instead."
-        )
-        header = f.read(8)
-        act = struct.unpack("<BBBBBBBB", header)[0]
-        self.set_activation(act + 1)
-        self.pokemon_net.read_parameters(f)
-        self.active_net.read_parameters(f)
-        self.moves_net.read_parameters(f)
-        self.main_net.read_parameters(f)
 
-    def write_parameters(self, f):
-        if self.is_bound:
-            # pyoaksearch.Network.write_parameters() takes a path (it opens
-            # its own std::ofstream), not a file object like the legacy
-            # Python path below -- it isn't a drop-in signature match, so
-            # callers writing `with open(p, "wb") as f: net.write_parameters(f)`
-            # need `net.write_parameters(p)` instead when bound. Verified
-            # the on-disk format itself is identical either way: 8-byte
-            # header (byte 0 = 0 relu / 1 clamp), then each float layer as
-            # (in_dim: u32, out_dim: u32, biases: f32[out_dim],
-            # weights: f32[out_dim*in_dim] row-major), same layer order as
-            # for_each_float_layer() in pyoaksearch.cc -- so files written
-            # bound vs. unbound are interchangeable.
-            if not isinstance(f, (str, os.PathLike)):
-                raise TypeError(
-                    "write_parameters: this module is bound to a live C++ "
-                    "Network, whose write_parameters() writes directly to a "
-                    "path (it opens its own file), not an already-open file "
-                    "object. Pass a path string/PathLike, not a file handle."
-                )
-            self._bound_network.write_parameters(str(f))
-            return
-        f.write(struct.pack("<Q", self.activation - 1))
-        self.pokemon_net.write_parameters(f)
-        self.active_net.write_parameters(f)
-        self.moves_net.write_parameters(f)
-        self.main_net.write_parameters(f)
+def clamp_battle_parameters(nets: BattleNets):
+    nets.pokemon_net.clamp_parameters()
+    nets.active_net.clamp_parameters()
+    nets.moves_net.clamp_parameters()
+    nets.main_net.clamp_parameters()
 
-    def clamp_parameters(self):
-        self.pokemon_net.clamp_parameters()
-        self.active_net.clamp_parameters()
-        self.moves_net.clamp_parameters()
-        self.main_net.clamp_parameters()
 
-    # TODO
-    def inference(
-        self, input: EncodedBattleFrames, output: OutputBuffer, use_policy: bool = True
-    ):
-        size = min(input.size, output.size)
-        output.pokemon[:size] = self.pokemon_net.forward(input.pokemon[:size, :, :])
-        output.active[:size] = self.active_net.forward(input.active[:size, :, :])
-        output.moves[:size] = self.moves_net.forward(input.moves[:size, :, :])
-        # mask output for hp
-        output.pokemon[:size] *= (input.hp[:size, :, :] != 0).float()
-        output.active[:size] *= (input.hp[:size, :, :1] != 0).float()
-        output.moves[:size] *= (input.hp[:size, :, :] != 0).float()
+def read_battle_parameters(nets: BattleNets, f) -> BattleNets:
+    """Legacy struct-packed loader. Do not call this on a `nets` that was
+    passed through bind_battle_nets_live() -- its Parameters ARE a live
+    C++ Network's storage, not a loadable copy; load new weights via
+    network.read_parameters(path) on the (unbound) Network instead, before
+    binding.
+    """
+    header = f.read(8)
+    act = struct.unpack("<BBBBBBBB", header)[0]
+    set_battle_activation(nets, act + 1)
+    nets.pokemon_net.read_parameters(f)
+    nets.active_net.read_parameters(f)
+    nets.moves_net.read_parameters(f)
+    nets.main_net.read_parameters(f)
+    return nets
 
-        output.sides[:size, :, :, : self.active_out_dim] = output.active[:size]
-        output.sides[:size, :, :, self.active_out_dim :] = torch.cat(
-            [output.pokemon, output.moves], dim=3
-        ).view(size, 2, 1, -1)
-        battle = output.sides[:size].view(size, 2 * self.side_out_dim)
 
-        if use_policy:
-            (
-                output.value[:size],
-                output.logit[:size, 0, :-1],
-                output.logit[:size, 1, :-1],
-            ) = self.main_net.forward(battle)
-        else:
-            output.value = self.main_net.forward_value_only(battle)
+def write_battle_parameters(nets: BattleNets, f):
+    """Legacy struct-packed writer, for `nets` NOT bound to a live C++
+    Network. If `nets` is bound (bind_battle_nets_live()), call
+    network.write_parameters(path) on the underlying Network directly
+    instead -- same on-disk format, written straight from the Eigen
+    buffers, but it takes a path (not an open file object).
+    """
+    # fc0's activation stands in for "the" network-wide hidden activation
+    # (matches the old BattleNetwork.activation attribute / set_activation()
+    # contract: every hidden layer shares one activation, output layers
+    # keep Activation.none regardless).
+    f.write(struct.pack("<Q", nets.pokemon_net.fc0.activation - 1))
+    nets.pokemon_net.write_parameters(f)
+    nets.active_net.write_parameters(f)
+    nets.moves_net.write_parameters(f)
+    nets.main_net.write_parameters(f)
 
-        output.policy_logit[:size, 0] = torch.gather(
-            output.logit[:size, 0], 1, input.choice_indices[:size, 0]
-        )
-        output.policy_logit[:size, 1] = torch.gather(
-            output.logit[:size, 1], 1, input.choice_indices[:size, 1]
-        )
 
-    def hash(self) -> int:
-        if self.is_bound:
-            # NOTE: this is the C++ FNV-1a hash (Network::hash() in
-            # pyoaksearch.cc), NOT the blake2b-based hash below. They are
-            # different algorithms and will NOT agree on the same weights --
-            # do not compare a bound network's hash() against one recorded
-            # from an unbound/legacy-loaded BattleNetwork as a "did the
-            # weights change" check across that boundary.
-            return self._bound_network.hash()
-        h = self.pokemon_net.hash()
-        h = combine_hash(h, self.active_net.hash())
-        h = combine_hash(h, self.main_net.hash())
-        return h & 0xFFFFFFFFFFFFFFFF
+def hash_battle_parameters(nets: BattleNets) -> int:
+    """blake2b-based hash, for `nets` NOT bound to a live C++ Network. If
+    `nets` is bound, call network.hash() on the underlying Network instead
+    -- NOT bit-compatible with this one (FNV-1a vs. blake2b), do not
+    compare the two.
+    """
+    h = nets.pokemon_net.hash()
+    h = combine_hash(h, nets.active_net.hash())
+    h = combine_hash(h, nets.main_net.hash())
+    return h & 0xFFFFFFFFFFFFFFFF
+
+
+def battle_forward(
+    nets: BattleNets,
+    input: "EncodedBattleFrames",
+    output: "OutputBuffer",
+    use_policy: bool = True,
+):
+    """The forward pass formerly known as BattleNetwork.inference(). Free
+    function, no class, no `self` -- operates on whatever `nets` you hand
+    it, freshly built or bound live onto a pyoaksearch.Network.
+    """
+    size = min(input.size, output.size)
+    output.pokemon[:size] = nets.pokemon_net.forward(input.pokemon[:size, :, :])
+    output.active[:size] = nets.active_net.forward(input.active[:size, :, :])
+    output.moves[:size] = nets.moves_net.forward(input.moves[:size, :, :])
+    # mask output for hp
+    output.pokemon[:size] *= (input.hp[:size, :, :] != 0).float()
+    output.active[:size] *= (input.hp[:size, :, :1] != 0).float()
+    output.moves[:size] *= (input.hp[:size, :, :] != 0).float()
+
+    active_out_dim = output.active_out_dim
+    output.sides[:size, :, :, :active_out_dim] = output.active[:size]
+    output.sides[:size, :, :, active_out_dim:] = torch.cat(
+        [output.pokemon, output.moves], dim=3
+    ).view(size, 2, 1, -1)
+    # side_out_dim taken from the buffer's own allocated width rather than
+    # recomputed from aod/pod/mod -- one less place for those to drift out
+    # of sync with what OutputBuffer was actually constructed with.
+    side_out_dim = output.sides.shape[-1]
+    battle = output.sides[:size].view(size, 2 * side_out_dim)
+
+    if use_policy:
+        (
+            output.value[:size],
+            output.logit[:size, 0, :-1],
+            output.logit[:size, 1, :-1],
+        ) = nets.main_net.forward(battle)
+    else:
+        output.value = nets.main_net.forward_value_only(battle)
+
+    output.policy_logit[:size, 0] = torch.gather(
+        output.logit[:size, 0], 1, input.choice_indices[:size, 0]
+    )
+    output.policy_logit[:size, 1] = torch.gather(
+        output.logit[:size, 1], 1, input.choice_indices[:size, 1]
+    )
 
 
 class BuildNetwork(nn.Module):

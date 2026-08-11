@@ -1,25 +1,31 @@
 """
-Illustrates binding oak.torch.BattleNetwork directly to a live
-pyoaksearch.Network, instead of the legacy read_parameters()/
-write_parameters() disk round trip.
+Illustrates binding oak.torch's battle nets directly to a live
+pyoaksearch.Network, instead of the legacy read/write_battle_parameters()
+disk round trip.
 
 NOT exercised against a build in this change -- pyoaksearch/pyoaktrain are
 compiled pybind11 extensions and this script wasn't run here. Treat it as a
 worked example of the intended call sequence / a starting point for wiring
 into oak/scripts/rl.py, not as tested code.
 
-Old flow (per scripts/rl.py):
+There is no BattleNetwork class. oak.torch.BattleNets is a plain
+(pokemon_net, active_net, moves_net, main_net) namedtuple; build_battle_nets()
+constructs one, bind_battle_nets_live() binds it onto a live C++ Network's
+storage, and battle_forward() is the free-function forward pass (no `self`,
+no class) that used to be BattleNetwork.inference().
+
+Old flow (per scripts/rl.py, before this change):
     network = oak.torch.BattleNetwork(...)             # fresh nn.Linear weights
     network.read_parameters(open(path, "rb"))           # struct.unpack into them
     optimizer = torch.optim.Adam(network.parameters())
-    ...train...
+    ...train via network.inference(...)...
     network.write_parameters(open(out_path, "wb"))       # struct.pack back out
     # separately: a Search::Network used for MCTS reads that same file back
     # in via its own read_parameters(path) to pick up the new weights.
 
 New flow (this script): one Search::Network is both the training target and
 the search/inference network -- no file round trip between train step and
-next self-play batch.
+next self-play batch, and no class wrapping the four sub-nets.
 """
 
 import pyoaksearch
@@ -27,7 +33,7 @@ import oak.torch as ot
 import torch
 
 
-def build_live_network(
+def build_live_battle_nets(
     seed: int,
     activation: ot.Activation = ot.Activation.relu,
     pokemon_hidden_dim=None,
@@ -37,10 +43,10 @@ def build_live_network(
     value_hidden_dim=None,
     policy_hidden_dim=None,
 ):
-    """Create a pyoaksearch.Network at a given architecture + a
-    oak.torch.BattleNetwork bound to its live storage. Returns both --
-    keep `cpp_network` around for search/MCTS, and `py_network` for
-    training. They are the same weights in memory.
+    """Create a pyoaksearch.Network at a given architecture + an
+    oak.torch.BattleNets bound to its live storage. Returns both -- keep
+    `cpp_network` around for search/MCTS, and `nets` for training. They are
+    the same weights in memory.
     """
     import oak.train as ot_train  # default dims live here (see pyoaktrain.cc)
 
@@ -56,10 +62,11 @@ def build_live_network(
     # with the `activation` this function was called with if you use clamp.
     cpp_network = pyoaksearch.Network(activation=1)
 
-    # IMPORTANT: resize() must happen BEFORE bind_live(). Any resize() call
-    # AFTER binding silently invalidates every Parameter bound below
-    # (reallocates the Eigen matrices the numpy/torch views alias) --
-    # see the resize()/named_parameters() lifetime note in pyoaksearch.cc.
+    # IMPORTANT: resize() must happen BEFORE bind_battle_nets_live(). Any
+    # resize() call AFTER binding silently invalidates every Parameter
+    # bound below (reallocates the Eigen matrices the numpy/torch views
+    # alias) -- see the resize()/named_parameters() lifetime note in
+    # pyoaksearch.cc.
     cpp_network.resize(
         pokemon_hidden_dim,
         ot_train.pokemon_out_dim,
@@ -73,26 +80,26 @@ def build_live_network(
     )
     cpp_network.initialize(seed)
 
-    py_network = ot.BattleNetwork(
-        pokemon_hidden_dim,
-        active_hidden_dim,
-        moves_hidden_dim,
-        ot_train.pokemon_out_dim,
-        ot_train.active_out_dim,
-        ot_train.moves_out_dim,
-        hidden_dim,
-        value_hidden_dim,
-        policy_hidden_dim,
+    nets = ot.build_battle_nets(
+        phd=pokemon_hidden_dim,
+        ahd=active_hidden_dim,
+        mhd=moves_hidden_dim,
+        pod=ot_train.pokemon_out_dim,
+        aod=ot_train.active_out_dim,
+        mod=ot_train.moves_out_dim,
+        hd=hidden_dim,
+        vhd=value_hidden_dim,
+        pohd=policy_hidden_dim,
         activation=activation,
     )
-    py_network.bind_live(cpp_network)
+    ot.bind_battle_nets_live(nets, cpp_network)
 
-    return cpp_network, py_network
+    return cpp_network, nets
 
 
-def load_live_network(path: str, activation: ot.Activation = ot.Activation.relu):
-    """Same as build_live_network, but loads weights from an existing
-    checkpoint file (produced by either the old Python write_parameters()
+def load_live_battle_nets(path: str, activation: ot.Activation = ot.Activation.relu):
+    """Same as build_live_battle_nets, but loads weights from an existing
+    checkpoint file (produced by either the old write_battle_parameters()
     or the new Network.write_parameters() -- on-disk format is identical).
     """
     cpp_network = pyoaksearch.Network(activation=1)
@@ -109,30 +116,30 @@ def load_live_network(path: str, activation: ot.Activation = ot.Activation.relu)
     value_w, _ = dims["main_net.value_fc2"]
     policy_w, _ = dims["main_net.p1_policy_fc2"]
 
-    py_network = ot.BattleNetwork(
-        pokemon_hidden_dim=pokemon_w.shape[0],
-        active_hidden_dim=active_w.shape[0],
-        moves_hidden_dim=moves_w.shape[0],
-        pokemon_out_dim=pokemon_out_w.shape[0],
-        active_out_dim=active_out_w.shape[0],
-        moves_out_dim=moves_out_w.shape[0],
-        hidden_dim=main_w.shape[0],
-        value_hidden_dim=value_w.shape[0],
-        policy_hidden_dim=policy_w.shape[0],
+    nets = ot.build_battle_nets(
+        phd=pokemon_w.shape[0],
+        ahd=active_w.shape[0],
+        mhd=moves_w.shape[0],
+        pod=pokemon_out_w.shape[0],
+        aod=active_out_w.shape[0],
+        mod=moves_out_w.shape[0],
+        hd=main_w.shape[0],
+        vhd=value_w.shape[0],
+        pohd=policy_w.shape[0],
         activation=activation,
     )
-    py_network.bind_live(cpp_network)
-    return cpp_network, py_network
+    ot.bind_battle_nets_live(nets, cpp_network)
+    return cpp_network, nets
 
 
-def example_train_step(cpp_network, py_network, frames, output_buffer):
+def example_train_step(cpp_network, nets, frames, output_buffer):
     """One training step against live weights -- no read/write_parameters
     call anywhere in this loop. `cpp_network` is immediately usable for
     search/MCTS again the instant optimizer.step() returns.
     """
-    optimizer = torch.optim.Adam(py_network.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(ot.battle_parameters(nets), lr=1e-4)
 
-    py_network.inference(frames, output_buffer, use_policy=True)
+    ot.battle_forward(nets, frames, output_buffer, use_policy=True)
     value_loss = torch.nn.functional.mse_loss(
         output_buffer.value[: frames.size], frames.empirical_value[: frames.size]
     )
@@ -145,7 +152,7 @@ def example_train_step(cpp_network, py_network, frames, output_buffer):
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    py_network.clamp_parameters()  # in-place .data.clamp_, safe under binding
+    ot.clamp_battle_parameters(nets)  # in-place .data.clamp_, safe under binding
 
     # cpp_network's Eigen buffers were just mutated by optimizer.step().
     # No write_parameters()/read_parameters() call needed before running
