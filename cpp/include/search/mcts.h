@@ -105,13 +105,6 @@ struct Output {
 // for std::map compatibility
 using Obs = std::array<uint8_t, 16>;
 
-template <typename Bandit> struct Node {
-  using Key = std::tuple<uint8_t, uint8_t, Obs>;
-  using JointStats = typename Bandit::JointStats;
-  JointStats stats;
-  std::map<Key, Node<Bandit>> children;
-};
-
 // template <typename JointBandit, typename strategy_type = uint16_t>
 // struct MatrixUCBNode {
 //   struct Side {
@@ -172,10 +165,18 @@ template <typename Bandit> struct Node {
 //   }
 // };
 
-template <typename JointBandit> struct Table {
+template <typename Bandit> struct Node {
+  using Key = std::tuple<uint8_t, uint8_t, Obs>;
+  using JointStats = typename Bandit::JointStats;
+  JointStats stats;
+  std::map<Key, Node<Bandit>> children;
+};
+
+template <typename Bandit> struct Table {
   using Key = uint64_t;
+  using JointStats = typename Bandit::JointStats;
   Hash::Battle hasher;
-  std::unordered_map<Key, JointBandit> entries;
+  std::unordered_map<Key, JointStats> entries;
 };
 
 // wrapper to use for enabling matrix ucb at root heap
