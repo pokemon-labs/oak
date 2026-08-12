@@ -27,8 +27,8 @@ struct PExp3 {
     std::array<float, 9> gains;
     uint8_t k;
 
-    void softmax_logits(const PExp3 &params, const float *logits) noexcept {
-      const float eta{params.lr / k};
+    void softmax_logits(const PExp3 &bandit, const float *logits) noexcept {
+      const float eta{bandit.lr / k};
       std::transform(logits, logits + k, this->gains.data(),
                      [eta](const auto x) { return x / eta; });
     }
@@ -42,19 +42,19 @@ struct PExp3 {
 
     bool is_init() const noexcept { return k; }
 
-    void select(auto &device, const PExp3 &params,
+    void select(auto &device, const PExp3 &bandit,
                 auto &outcome) const noexcept {
       std::array<float, 9> policy;
       if (k == 1) {
         outcome.index = 0;
         outcome.prob = 1;
       } else {
-        const float eta{params.lr / k};
-        const float delta{params.exploration / k};
+        const float eta{bandit.lr / k};
+        const float delta{bandit.exploration / k};
         softmax(policy, gains, eta);
         std::transform(policy.begin(), policy.end(), policy.begin(),
-                       [eta, delta, &params](const float x) {
-                         return params.one_minus_exploration * x + delta;
+                       [eta, delta, &bandit](const float x) {
+                         return bandit.one_minus_exploration * x + delta;
                        });
         outcome.index =
             std::min(static_cast<uint8_t>(device.sample_pdf(policy)),

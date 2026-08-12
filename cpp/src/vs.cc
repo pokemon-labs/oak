@@ -257,7 +257,8 @@ void thread_fn(const ProgramArgs *args_ptr) {
       const auto [p1_choices, p2_choices] = PKMN::choices(battle, result);
 
       const auto print_search_outputs = (device.uniform() < args.print_prob);
-      const auto [p1_labels, p2_labels] = [&battle, result, print_search_outputs]() {
+      const auto [p1_labels, p2_labels] = [&battle, result,
+                                           print_search_outputs]() {
         if (print_search_outputs) {
           return PKMN::choice_labels(battle, result);
         }
@@ -268,9 +269,9 @@ void thread_fn(const ProgramArgs *args_ptr) {
       int p1_index{}, p2_index{};
       if (p1_choices.size() > 1) {
         Search::Node heap{};
-        p1_output = RuntimeSearch::run(device, battle, PKMN::durations(options), p1_budget,
-                                       p1_bandit, heap, p1_eval, p1_output,
-                                       &p1_s1_cache, &p1_s2_cache);
+        p1_output = RuntimeSearch::run(device, battle, PKMN::durations(options),
+                                       p1_budget, p1_bandit, heap, p1_eval,
+                                       p1_output, &p1_s1_cache, &p1_s2_cache);
         p1_index = process_and_sample(device, p1_output.p1, p1_policy_options);
         if (print_search_outputs) {
           print("P1:");
@@ -284,9 +285,9 @@ void thread_fn(const ProgramArgs *args_ptr) {
           p2_output = p1_output;
         } else {
           Search::Node heap{};
-          p2_output = RuntimeSearch::run(device, battle, PKMN::durations(options), p2_budget,
-                                         p2_bandit, heap, p2_eval, p2_output,
-                                         &p2_s1_cache, &p2_s2_cache);
+          p2_output = RuntimeSearch::run(
+              device, battle, PKMN::durations(options), p2_budget, p2_bandit,
+              heap, p2_eval, p2_output, &p2_s1_cache, &p2_s2_cache);
           if (print_search_outputs) {
             print("P2:");
             std::cout << MCTS::output_string(p2_output, battle, p1_labels,

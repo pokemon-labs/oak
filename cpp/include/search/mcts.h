@@ -50,10 +50,10 @@ inline constexpr bool is_monte_carlo =
 
 template <typename T>
 inline constexpr bool is_contextual_bandit =
-    requires(std::remove_cvref_t<T> &stats) {
-      stats.softmax_logits(
-          std::declval<typename std::remove_cvref_t<T>::Params>(),
-          std::declval<const float *>(), std::declval<const float *>());
+    requires(std::remove_cvref_t<T> &bandit) {
+      std::declval(std::remove_cvref_t<T>::Stats)
+          .softmax_logits(std::declval<const std::remove_cvref_t<T> &>(),
+                          std::declval<const float *>());
     };
 
 template <typename T>
@@ -263,8 +263,8 @@ template <SearchOptions Options = default_search> struct Search {
 
       stats.init(output.p1.k, output.p2.k);
 
-      if constexpr (is_contextual_bandit<decltype(stats)> &&
-                    is_network<decltype(eval)>) {
+      if constexpr (is_contextual_bandit<decltype(get_bandit_params(params))>) {
+        static_assert(is_network<decltype(eval)>);
         using output_type = std::remove_cvref_t<decltype(eval)>::T;
         constexpr auto activation = std::remove_cvref_t<decltype(eval)>::act;
         static thread_local uint16_t p1_choice_index[9];
@@ -516,7 +516,7 @@ template <SearchOptions Options = default_search> struct Search {
             write_battle_embedding<activation>(
                 battle_embedding.data(), PKMN::view(battle), eval, caches...);
 
-            if constexpr (is_contextual_bandit<decltype(stats)>) {
+            if constexpr (is_contextual_bandit<decltype(bandit)>) {
               static thread_local uint16_t p1_choice_index[9];
               static thread_local uint16_t p2_choice_index[9];
               static thread_local float p1_logits[9];

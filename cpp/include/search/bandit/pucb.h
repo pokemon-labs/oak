@@ -45,7 +45,7 @@ struct PUCB {
       ++visits[outcome.index];
     }
 
-    void select(auto &device, const PUCB &params,
+    void select(auto &device, const PUCB &bandit,
                 auto &outcome) const noexcept {
       if (k == 1) {
         outcome.index = 0;
@@ -57,7 +57,7 @@ struct PUCB {
         float sqrtN = std::sqrt(N);
         float max = 0;
         for (auto i = 0; i < k; ++i) {
-          float e = params.c * priors[i] * sqrtN;
+          float e = bandit.c * priors[i] * sqrtN;
           float a = (e + scores[i]) / visits[i];
           if (a > max) {
             max = a;

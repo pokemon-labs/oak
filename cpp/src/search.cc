@@ -85,6 +85,8 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
     else {
       if constexpr (MCTS::is_contextual_bandit<decltype(MCTS::get_bandit_params(
                         params))>) {
+        using T = std::remove_cvref_t<decltype(eval)>;
+        static_assert(!std::is_same_v<T, T>);
         throw std::runtime_error{"Contextual bandits must use network eval"};
         return output;
       } else {

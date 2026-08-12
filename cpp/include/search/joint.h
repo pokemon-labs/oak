@@ -17,10 +17,10 @@ template <typename Bandit> struct Joint {
 
   bool is_init() const noexcept { return p1.is_init(); }
 
-  void select(auto &device, const Bandit &params,
+  void select(auto &device, const Bandit &bandit,
               JointOutcome &outcome) const noexcept {
-    p1.select(device, params, outcome.first);
-    p2.select(device, params, outcome.second);
+    p1.select(device, bandit, outcome.first);
+    p2.select(device, bandit, outcome.second);
   }
 
   void update(const JointOutcome &outcome) noexcept {
@@ -28,14 +28,14 @@ template <typename Bandit> struct Joint {
     p2.update(outcome.second);
   }
 
-  void softmax_logits(const Bandit &params, const float *p1_priors,
+  void softmax_logits(const Bandit &bandit, const float *p1_priors,
                       const float *p2_priors) noexcept
     requires requires(const float *ptr) {
-      std::declval<Bandit>().softmax_logits(params, ptr);
+      std::declval<Stats>().softmax_logits(bandit, ptr);
     }
   {
-    p1.softmax_logits(params, p1_priors);
-    p2.softmax_logits(params, p2_priors);
+    p1.softmax_logits(bandit, p1_priors);
+    p2.softmax_logits(bandit, p2_priors);
   }
 
   void print_priors() const
