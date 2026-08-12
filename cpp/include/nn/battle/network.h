@@ -343,7 +343,7 @@ T *write_side_embedding(T *embedding, const PKMN::Side &side,
   const auto active_dim = network.active_out_dim();
   const auto moves_dim = network.moves_out_dim();
 
-  const auto write_zero = [embedding](auto dim) {
+  const auto write_zero = [&embedding](auto dim) {
     std::fill_n(embedding, dim, T{0});
     return embedding + dim;
   };
@@ -367,11 +367,11 @@ T *write_side_embedding(T *embedding, const PKMN::Side &side,
   for (auto slot = 2; slot <= 6; ++slot) {
     const auto index = side.order[slot - 1];
     if (index == 0) {
-      write_zero(pokemon_dim + moves_dim);
+      embedding = write_zero(pokemon_dim + moves_dim);
     } else {
       const auto &pokemon = side.pokemon[index - 1];
       if (pokemon.hp == 0) {
-        write_zero(pokemon_dim + moves_dim);
+        embedding = write_zero(pokemon_dim + moves_dim);
       } else {
         embedding = write_pokemon<T, activation>(embedding, index - 1, pokemon,
                                                  duration.sleep(slot - 1),
