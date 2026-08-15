@@ -18,6 +18,62 @@
 
 namespace {
 
+Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
+                                       Search::Network &network,
+                                       Search::SideCache *p1_cache,
+                                       Search::SideCache *p2_cache,
+                                       Search::Budget budget) {
+
+  auto battle =
+      *reinterpret_cast<const pkmn_gen1_battle *>(battle_frames.battle.data());
+
+  auto options = ::PKMN::options();
+  auto result = ::PKMN::result();
+  mt19937 device{std::random_device{}()};
+
+  Py::Battle::OutputBuffer buffer{battle_frames.size};
+  auto *value = buffer.value.mutable_data();
+  auto *p1_logit = buffer.policy_logit.mutable_data();
+  auto *p2_logit = buffer.policy_logit.mutable_data() + 9;
+  auto *p1_policy = buffer.policy.mutable_data();
+  auto *p2_policy = buffer.policy.mutable_data() + 9;
+  auto *battle_ptr = battle_frames.battle.data();
+  auto *durations_ptr = battle_frames.durations.data();
+  auto *k = battle_frames.k.data();
+
+  auto *choice = battle_frames.choice.data();
+  auto *p1_choices = battle_frames.choices.data();
+  auto *p2_choices = battle_frames.choices.data() + 9;
+
+  for (auto i = 0; i < battle_frames.size; ++i) {
+    auto heap = Search::Node{};
+    const auto output = RuntimeSearch::run(
+        device, battle, PKMN::durations(options), budget, Search::UCB{1.0},
+        heap, network, MCTS::Output{}, p1_cache, p2_cache);
+    *value = output.initial_value;
+    std::copy_n(output.p1.logit.data(), output.p1.k, p1_logit);
+    std::copy_n(output.p2.logit.data(), output.p2.k, p2_logit);
+    std::copy_n(output.p1.prior.data(), output.p1.k, p1_policy);
+    std::copy_n(output.p2.prior.data(), output.p2.k, p2_policy);
+    result = ::PKMN::update(battle, choice[0], choice[1], options);
+    // out
+    value += 1;
+    p1_logit += 18;
+    p2_logit += 18;
+    p1_policy += 18;
+    p2_policy += 18;
+    // in
+    battle_ptr += sizeof(pkmn_gen1_battle);
+    durations_ptr += sizeof(pkmn_gen1_chance_durations);
+    k += 2;
+    choice += 2;
+    p1_choices += 18;
+    p2_choices += 18;
+  }
+
+  return buffer;
+}
+
 // --- Zero-copy tensor views over NN::Affine<> layers -----------------------
 //
 // These build a strided py::array that aliases an Affine layer's live Eigen
@@ -444,6 +500,21 @@ PYBIND11_MODULE(pyoaksearch, m) {
       py::arg("bandit"), py::arg("heap"), py::arg("eval"),
       py::arg("output") = MCTS::Output{}, py::arg("p1_cache") = std::nullopt,
       py::arg("p2_cache") = std::nullopt);
+
+  m.def(
+      "cpp_inference",
+      [](const Py::Battle::Frames &battle_frames, Search::Network &network,
+         Search::Budget budget,
+         std::optional<std::reference_wrapper<Search::SideCache>> p1_cache = {},
+         std::optional<std::reference_wrapper<Search::SideCache>> p2_cache =
+             {}) {
+        return cpp_inference(
+            battle_frames, network,
+            p1_cache.has_value() ? &p1_cache.value().get() : nullptr,
+            p2_cache.has_value() ? &p2_cache.value().get() : nullptr, budget);
+      },
+      py::arg("battle_frames"), py::arg("network"), py::arg("budget"),
+      py::arg("p1_cache") = std::nullopt, py::arg("p2_cache") = std::nullopt);
 }
 
 } // namespace Search

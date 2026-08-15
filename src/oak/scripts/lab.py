@@ -23,6 +23,7 @@ def test_consistency():
     fn_parser.add_argument("--games", default=None, type=int)
     fn_parser.add_argument("--discrete", default=False, type=bool)
     fn_parser.add_argument("--eps", default=0.0, type=float)
+    fn_parser.add_argument("--cache", default=True, type=bool)
     args = parser.parse_args()
     assert args.data_path, "Provide path to data file to inspect"
     assert args.network, "Provide path to network to test"
@@ -32,16 +33,17 @@ def test_consistency():
     import oak.torch
     import oak.search
 
-    activation = (
-        oak.torch.Activation.clamp if args.discrete else oak.torch.Activation.relu
-    )
-    network = oak.torch.BattleNetwork(activation=activation)
+    network = oak.search.Network()
+    network.read_parameters(args.network)
 
+    torch_network = oak.torch.BattleNetwork()
     with open(args.network, "rb") as f:
-        network.read_parameters(f)
+        torch_network.read_parameters(f)
+
+    if args.discrete:
+        network.quantize()
 
     buffer_list = oak.train.read_battle_data(args.data_path)
-
     max_games = min(args.games or len(buffer_list), len(buffer_list))
 
     for buffer, n_frames in buffer_list[:max_games]:
@@ -49,15 +51,33 @@ def test_consistency():
         encoded_frames_torch = oak.torch.EncodedBattleFrames(encoded_frames)
         o1 = oak.train.OutputBuffer(encoded_frames.size)
         python_output = oak.torch.OutputBuffer(o1)
-        network.inference(encoded_frames_torch, python_output)
+        torch_network.inference(encoded_frames_torch, python_output)
         python_output.policy_logit[torch.isneginf(python_output.policy_logit)] = 0.0
 
-        o2 = oak.search.cpp_inference(
-            oak.train.BattleFrames.from_bytes(buffer, n_frames),
-            args.network,
-            args.discrete,
-            "0",
+        battle_frames = oak.train.BattleFrames.from_bytes(buffer, n_frames)
+        battle = oak.Battle(battle_frames.battle[0].tobytes())
+
+        output = oak.search.run(
+            battle,
+            oak.Durations(),
+            oak.search.Iterations(1000),
+            oak.search.UCB(1.0),
+            oak.search.Node(),
+            oak.search.PokeEngine(),
         )
+        exit()
+        # oak.update(battle, oak.Durations(), 10, 18)
+
+        print(oak.battle_string(battle, oak.Durations()))
+        print(battle.side(0).active.stats())
+
+        p1_cache = oak.search.SideCache()
+        p2_cache = oak.search.SideCache()
+        for i in range(6):
+            p1_cache.precompute(network, battle.side(0), i)
+            p2_cache.precompute(network, battle.side(1), i)
+
+        o2 = oak.search.cpp_inference(battle_frames, network, p1_cache, p2_cache)
         cpp_output = oak.torch.OutputBuffer(o2)
 
         value_diff = torch.abs(python_output.value - cpp_output.value)

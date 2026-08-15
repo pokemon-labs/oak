@@ -51,9 +51,8 @@ inline constexpr bool is_monte_carlo =
 template <typename T>
 inline constexpr bool is_contextual_bandit =
     requires(typename std::remove_cvref_t<T>::Stats &stats,
-             const std::remove_cvref_t<T> &bandit, const float *logits) {
-      stats.softmax_logits(bandit, logits);
-    };
+             const std::remove_cvref_t<T> &bandit,
+             const float *logits) { stats.softmax_logits(bandit, logits); };
 
 template <typename T>
 inline constexpr bool is_matrix_ucb =

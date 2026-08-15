@@ -42,7 +42,7 @@ struct UCB {
       ++visits[outcome.index];
     }
 
-    void select(auto &device, const UCB &params, auto &outcome) const noexcept {
+    void select(auto &device, const UCB &bandit, auto &outcome) const noexcept {
       if (k == 1) {
         outcome.index = 0;
       } else {
@@ -53,7 +53,7 @@ struct UCB {
         float sqrtN = std::sqrt(N);
         float max = 0;
         for (auto i = 0; i < k; ++i) {
-          float e = params.c * sqrtN / k;
+          float e = bandit.c * sqrtN / k;
           float a = (e + scores[i]) / visits[i];
           if (a > max) {
             max = a;
