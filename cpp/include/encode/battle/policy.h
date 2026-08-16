@@ -8,22 +8,28 @@
 
 namespace Encode::Battle::Policy {
 
+using PKMN::Data::Move;
+using PKMN::Data::Species;
+
 static constexpr int n_dim =
-    static_cast<int>(PKMN::Data::Species::Mew) +
-    (static_cast<int>(PKMN::Data::Move::Struggle) - 1); // no Struggle, None
+    static_cast<int>(Species::Mew) +
+    (static_cast<int>(Move::Struggle) - 1); // no Struggle, None
 
 inline uint16_t get_index(const PKMN::Side &side, auto choice) {
+  // assert(false);
   const auto choice_type = choice & 3;
   const auto choice_data = choice >> 2;
   switch (choice_type) {
   case 1: {
     assert(choice_data >= 0 && choice_data <= 4);
-    auto moveid =
-        static_cast<uint16_t>(side.stored().moves[choice_data - 1].id);
-    // assert(moveid < static_cast<uint16_t>(Data::Move::Struggle));
-    if (moveid == 0) {
+    if (choice_data == 0) {
+      // struggle
       return 0;
     }
+    auto moveid =
+        static_cast<uint16_t>(side.stored().moves[choice_data - 1].id);
+    assert(moveid < static_cast<uint16_t>(Move::Struggle));
+    assert(moveid > 0);
     return moveid - 1;
   }
   case 2: {

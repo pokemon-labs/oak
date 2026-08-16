@@ -15,7 +15,6 @@ parser.add_argument(
 )
 fn_parser = parser.add_argument_group("")
 fn_parser.add_argument("--games", default=None, type=int)
-fn_parser.add_argument("--frames", default=284580975809273, type=int)
 fn_parser.add_argument("--discrete", default=False, type=bool)
 fn_parser.add_argument("--eps", default=0.0, type=float)
 fn_parser.add_argument("--cache", default=True, type=bool)
@@ -98,41 +97,16 @@ for buffer, n_frames in buffer_list[:max_games]:
     #     p1_cache.precompute(network, battle.side(0), i)
     #     p2_cache.precompute(network, battle.side(1), i)
 
-    o2 = oak.search.cpp_inference(battle_frames, network, oak.search.Iterations(0), args.frames)
+    o2 = oak.search.cpp_inference(battle_frames, network, oak.search.Iterations(0), 1000000)
     cpp_output = oak.torch.OutputBuffer(o2)
 
-    print(torch.sum(encoded_frames_torch.moves[0, 0, 0].view(6, -1), dim=0))
-
-    # print(cpp_output.sides[0, 0, 0, :54] - python_output.active[0, 0, 0])
-    # print(python_output.active[0, 0, 0])
-
-    # pokemon_eq = (cpp_output.active[:args.frames] == python_output.active[:args.frames])
-    # print(pokemon_eq)
-    sides_eq = torch.abs(cpp_output.sides[:args.frames] - python_output.sides[:args.frames])[:, :, :, 54 :]
-    print(sides_eq > .0001)
-    # print(torch.max(torch.abs(sides_eq)))
-    # assert torch.all(sides_eq < 1e-6)
-    # assert torch.all(cpp_output.sides[:args.frames] == python_output.sides[:args.frames])
-    # print(encoded_frames_torch.pokemon[0, 0, 0])
-    exit()
-    print(sides_eq)
-    print(cpp_output.sides[0, 0, 0, :10])
-    print(python_output.sides[0, 0, 0, :10])
-
-
-
-    print(cpp_output.value[:args.frames])
-    print(python_output.value[:args.frames])
-
-    value_diff = torch.abs(python_output.value - cpp_output.value)[:args.frames]
-    logit_diff = torch.abs(python_output.policy_logit - cpp_output.policy_logit)[:args.frames]
+    value_diff = torch.abs(python_output.value - cpp_output.value)
+    logit_diff = torch.abs(python_output.policy_logit - cpp_output.policy_logit)
 
     print(f"Max value diff: {torch.max(value_diff).item()}")
     print(f"Max logit diff: {torch.max(logit_diff).item()}")
     print(f"Avg value diff: {torch.mean(value_diff).item()}")
     print(f"Avg logit diff: {(torch.sum(logit_diff) / torch.sum(logit_diff != 0))}")
-
-    # print(value_diff[:5])
 
     assert torch.all(value_diff < args.eps)
     assert torch.all(logit_diff < args.eps)

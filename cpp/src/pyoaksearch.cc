@@ -55,12 +55,15 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
         heap, network, MCTS::Output{}, p1_cache, p2_cache);
     *value = output.initial_value;
 
-    auto& net = *std::dynamic_pointer_cast<NN::Battle::NetworkClamped>(network.get());
+    auto &net =
+        *std::dynamic_pointer_cast<NN::Battle::NetworkClamped>(network.get());
 
     NN::Battle::write_side_embedding<float, NN::Activation::clamp>(
-        p1_side, PKMN::view(battle).sides[0], PKMN::view(PKMN::durations(options)).get(0), net);
+        p1_side, PKMN::view(battle).sides[0],
+        PKMN::view(PKMN::durations(options)).get(0), net);
     NN::Battle::write_side_embedding<float, NN::Activation::clamp>(
-        p2_side, PKMN::view(battle).sides[1], PKMN::view(PKMN::durations(options)).get(1), net);
+        p2_side, PKMN::view(battle).sides[1],
+        PKMN::view(PKMN::durations(options)).get(1), net);
 
     std::copy_n(output.p1.logit.data(), output.p1.k, p1_logit);
     std::copy_n(output.p2.logit.data(), output.p2.k, p2_logit);
