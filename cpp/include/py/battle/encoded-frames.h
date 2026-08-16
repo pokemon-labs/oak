@@ -30,7 +30,7 @@ struct EncodedFrames : public Target {
   static constexpr size_t moves_in_dim = Encode::Battle::Moves::n_dim;
   using PokemonEncoding = std::array<float, pokemon_in_dim>;
   using ActiveEncoding = std::array<float, active_in_dim>;
-  using MovesEncoding = std::array<float, active_in_dim>;
+  using MovesEncoding = std::array<float, moves_in_dim>;
 
   EncodedFrames(size_t sz) : Py::Battle::Target{sz} {
     pokemon =
@@ -89,6 +89,7 @@ struct EncodedFrames : public Target {
         if (id == 0) {
           hp_[s][slot - 1] = {};
           pokemon_[s][slot - 1] = {};
+          moves_[s][slot - 1] = {};
         } else {
           const auto &poke = side.pokemon[id - 1];
           if (poke.hp == 0) {
