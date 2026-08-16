@@ -480,6 +480,7 @@ class BattleNetwork(torch.nn.Module):
         output.active[:size] = self.active_net.forward(input.active[:size, :, :])
         output.moves[:size] = self.moves_net.forward(input.moves[:size, :, :])
         # mask output for hp
+
         output.pokemon[:size] *= (input.hp[:size, :, :] != 0).float()
         output.active[:size] *= (input.hp[:size, :, :1] != 0).float()
         output.moves[:size] *= (input.hp[:size, :, :] != 0).float()

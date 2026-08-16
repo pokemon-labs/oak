@@ -19,19 +19,19 @@ def timed(f, *args, **kwargs):
 def test_search():
     iterations = 2**17
     network = oak.search.Network(2)
-    # network.resize(
-    #     pokemon_hidden=2**8,
-    #     pokemon_out=30,
-    #     active_hidden=2**8,
-    #     active_out=54,
-    #     moves_hidden=2**8,
-    #     moves_out=25,
-    #     main_hidden=32,
-    #     value_hidden=32,
-    #     policy_hidden=32,
-    # )
-    # network.initialize(seed=random.randint(0, 2**64 - 1))  
-    network.read_parameters("/home/user/battle-2026-08-10-16:02:00/300.battle.net")
+    network.resize(
+        pokemon_hidden=2**8,
+        pokemon_out=30,
+        active_hidden=2**8,
+        active_out=54,
+        moves_hidden=2**8,
+        moves_out=25,
+        main_hidden=32,
+        value_hidden=32,
+        policy_hidden=32,
+    )
+    network.initialize(seed=random.randint(0, 2**64 - 1))  
+    # network.read_parameters("/home/user/battle-2026-08-10-16:02:00/300.battle.net")
 
     p1_cache = oak.search.SideCache()
     p2_cache = oak.search.SideCache()
@@ -42,19 +42,21 @@ def test_search():
     # network.quantize()
     # p1_cache.quantize(network)
     # p2_cache.quantize(network)
-
-    output = timed(
-        oak.search.run,
-        battle,
-        durations,
-        oak.search.Iterations(iterations),
-        bandit=oak.search.Exp3(lr=.5, exploration=.5),
-        heap=oak.search.Node(),
-        eval=oak.search.PokeEngine(),
-        # p1_cache=p1_cache,
-        # p2_cache=p2_cache,
-    )
-
+    for b in [oak.search.UCB(1.0), oak.search.PUCB(1.0), oak.search.UCB1(1.0), oak.search.Exp3(1.0, 0.1), oak.search.PExp3(1.0, 0.1)][::-1]:
+        try:
+            output = timed(
+                oak.search.run,
+                battle,
+                durations,
+                oak.search.Iterations(iterations),
+                bandit=b,
+                heap=oak.search.Node(),
+                eval=network,
+                p1_cache=p1_cache,
+                p2_cache=p2_cache,
+            )   
+        except:
+            print("FOO")
     for s, side in zip([output.p1, output.p2], [battle.side(0), battle.side(1)]):
         print("___")
         for i in range(s.k):

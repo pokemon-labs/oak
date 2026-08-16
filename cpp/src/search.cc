@@ -73,8 +73,8 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
                            p1_cache, p2_cache);
           }
         } else {
-          // output = s.run(device, dur, params, heap, net, input, output);
-          throw std::runtime_error{"Network search must use caches."};
+          output = s.run(device, dur, params, heap, net, input, output);
+          // throw std::runtime_error{"Network search must use caches."};
         }
       };
       auto net = *ptr; // shared ptr to base

@@ -20,6 +20,7 @@ struct NetworkBase {
   virtual std::tuple<int, int, int, int> shape() const noexcept = 0;
   virtual ~NetworkBase() = default;
   virtual MainNet *main_net_float() = 0;
+  virtual int activation_type() const = 0;
   EmbeddingNet pokemon_net;
   EmbeddingNet active_net;
   EmbeddingNet moves_net;
@@ -102,6 +103,7 @@ public:
       return nullptr;
     }
   }
+  int activation_type() const { return static_cast<int>(act); }
 };
 
 template <Activation activation>
@@ -342,7 +344,8 @@ T *write_side_embedding(T *embedding, const PKMN::Side &side,
   const auto pokemon_dim = network.pokemon_out_dim();
   const auto active_dim = network.active_out_dim();
   const auto moves_dim = network.moves_out_dim();
-
+  // const auto side_dim = (active_dim + 6 * (pokemon_dim + moves_dim));
+  // const auto *e = embedding;
   const auto write_zero = [&embedding](auto dim) {
     std::fill_n(embedding, dim, T{0});
     return embedding + dim;

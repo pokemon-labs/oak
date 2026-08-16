@@ -22,7 +22,7 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
                                        Search::Network &network,
                                        Search::SideCache *p1_cache,
                                        Search::SideCache *p2_cache,
-                                       Search::Budget budget) {
+                                       Search::Budget budget, int frames) {
 
   auto battle =
       *reinterpret_cast<const pkmn_gen1_battle *>(battle_frames.battle.data());
@@ -45,12 +45,23 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
   auto *p1_choices = battle_frames.choices.data();
   auto *p2_choices = battle_frames.choices.data() + 9;
 
-  for (auto i = 0; i < battle_frames.size; ++i) {
+  auto *p1_side = buffer.sides.mutable_data();
+  auto *p2_side = buffer.sides.mutable_data() + buffer.side_out_dim;
+
+  for (auto i = 0; i < std::min(frames, (int)battle_frames.size); ++i) {
     auto heap = Search::Node{};
     const auto output = RuntimeSearch::run(
-        device, battle, PKMN::durations(options), budget, Search::UCB{1.0},
+        device, battle, PKMN::durations(options), budget, Search::PUCB{1.0},
         heap, network, MCTS::Output{}, p1_cache, p2_cache);
     *value = output.initial_value;
+
+    auto& net = *std::dynamic_pointer_cast<NN::Battle::NetworkClamped>(network.get());
+
+    NN::Battle::write_side_embedding<float, NN::Activation::clamp>(
+        p1_side, PKMN::view(battle).sides[0], PKMN::view(PKMN::durations(options)).get(0), net);
+    NN::Battle::write_side_embedding<float, NN::Activation::clamp>(
+        p2_side, PKMN::view(battle).sides[1], PKMN::view(PKMN::durations(options)).get(1), net);
+
     std::copy_n(output.p1.logit.data(), output.p1.k, p1_logit);
     std::copy_n(output.p2.logit.data(), output.p2.k, p2_logit);
     std::copy_n(output.p1.prior.data(), output.p1.k, p1_policy);
@@ -69,6 +80,8 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
     choice += 2;
     p1_choices += 18;
     p2_choices += 18;
+    p1_side += buffer.side_out_dim;
+    p2_side += buffer.side_out_dim;
   }
 
   return buffer;
@@ -206,6 +219,10 @@ PYBIND11_MODULE(pyoaksearch, m) {
             network->initialize(device);
           },
           py::arg("seed"))
+      .def("activation",
+           [](const Network &network) -> int {
+             return network.get()->activation_type();
+           })
       .def("quantize", &Network::quantize)
       .def(
           "forward_side",
@@ -504,17 +521,19 @@ PYBIND11_MODULE(pyoaksearch, m) {
   m.def(
       "cpp_inference",
       [](const Py::Battle::Frames &battle_frames, Search::Network &network,
-         Search::Budget budget,
+         Search::Budget budget, int frames,
          std::optional<std::reference_wrapper<Search::SideCache>> p1_cache = {},
          std::optional<std::reference_wrapper<Search::SideCache>> p2_cache =
              {}) {
         return cpp_inference(
             battle_frames, network,
             p1_cache.has_value() ? &p1_cache.value().get() : nullptr,
-            p2_cache.has_value() ? &p2_cache.value().get() : nullptr, budget);
+            p2_cache.has_value() ? &p2_cache.value().get() : nullptr, budget,
+            frames);
       },
       py::arg("battle_frames"), py::arg("network"), py::arg("budget"),
-      py::arg("p1_cache") = std::nullopt, py::arg("p2_cache") = std::nullopt);
+      py::arg("frames"), py::arg("p1_cache") = std::nullopt,
+      py::arg("p2_cache") = std::nullopt);
 }
 
 } // namespace Search

@@ -76,7 +76,7 @@ struct EncodedFrames : public Target {
         active_[s][0] = {};
         moves_[s][0] = {};
       } else {
-        // hp_[s][0] = (float)stored.hp / stored.stats.hp;
+        hp_[s][0] = (float)stored.hp / stored.stats.hp;
         Encode::Battle::Pokemon::write(stored, duration.sleep(0),
                                        pokemon_[s][0].data());
         Encode::Battle::Active::write(side.active, duration,

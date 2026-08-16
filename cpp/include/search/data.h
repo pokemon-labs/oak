@@ -68,6 +68,10 @@ public:
       network->active_net.read_parameters(file);
       network->moves_net.read_parameters(file);
       network->main_net_float()->read_parameters(file);
+      if (file.peek() != std::char_traits<char>::eof()) {
+        throw std::runtime_error{"Agent: trailing data in parameter file: " +
+                                 path};
+      }
       this->data = network;
       return true;
     };
