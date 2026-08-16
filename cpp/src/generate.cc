@@ -334,26 +334,6 @@ void generate(const ProgramArgs *args_ptr) {
 
         // update battle, durations, result (state info)
         result = PKMN::update(battle, p1_choice, p2_choice, options);
-        // result = pkmn_gen1_battle_update(&battle, p1_choice, p2_choice, &options);
-
-        {
-          std::cout << PKMN::battle_data_to_string(battle, PKMN::durations(options)) << std::endl;
-          const auto &b = PKMN::view(battle);
-          const auto &d = PKMN::view(PKMN::durations(options));
-          for (auto s = 0; s < 2; ++s) {
-            const auto &side = b.sides[s];
-            const auto &duration = d.get(s);
-            for (auto p = 0; p < 6; ++p) {
-              const auto &pokemon = side.pokemon[side.order[p] - 1];
-              if (PKMN::Data::is_sleep(pokemon.status) &&
-                  !PKMN::Data::self(pokemon.status)) {
-                assert(duration.sleep(p) > 0);
-              }
-            }
-          }
-        }
-
-        // durations = PKMN::durations(options);
 
         heap.reset();
         RuntimeData::update_counter.fetch_add(1);
