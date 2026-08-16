@@ -269,6 +269,9 @@ template <SearchOptions Options = default_search> struct Search {
         static thread_local uint16_t p2_choice_index[9];
         static thread_local float p1_logits[9];
         static thread_local float p2_logits[9];
+        chance_options.durations = input.durations;
+        pkmn_gen1_battle_options_set(&options, nullptr, &chance_options,
+                                     nullptr);
         static thread_local std::vector<output_type> battle_embedding;
         battle_embedding.reserve(2 * eval.side_embedding_dim());
         write_battle_embedding<activation>(
