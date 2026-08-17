@@ -814,7 +814,8 @@ template <SearchOptions Options = default_search> struct Search {
 
   template <NN::Activation activation, typename T, typename... Caches>
   void write_battle_embedding(T *embedding, const PKMN::Battle &battle,
-                              auto &eval, Caches &...caches) {
+                              NN::Battle::NetworkBase &eval,
+                              Caches &...caches) {
     const auto &d = PKMN::view(durations());
     if constexpr (sizeof...(Caches) == 2) {
       auto &p1_cache = std::get<0>(std::tie(caches...));

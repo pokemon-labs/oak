@@ -26,20 +26,25 @@ class EncodedBattleFrames:
         self.moves = torch.from_numpy(frames.moves)
         self.choice_indices = torch.from_numpy(frames.choice_indices)
 
-    def permute_pokemon(self):
-        perms = torch.stack([torch.randperm(5) for _ in range(self.size)], dim=0)
-        perms_expanded = perms[:, None, :, None].expand(
-            -1, 2, -1, oak.train.pokemon_in_dim
-        )
-        perms_expanded_moves = perms[:, None, :, None].expand(
-            -1, 2, -1, oak.train.moves_in_dim
-        )
-        self.pokemon[:, :, 1:, :] = torch.gather(
-            self.pokemon[:, :, 1:, :], dim=2, index=perms_expanded
-        )
-        self.moves[:, :, 1:, :] = torch.gather(
-            self.moves[:, :, 1:, :], dim=2, index=perms_expanded_moves
-        )
+
+def permute_pokemon(self):
+    perms = torch.stack([torch.randperm(5) for _ in range(self.size)], dim=0)
+    perms_expanded_pokemon = perms[:, None, :, None].expand(
+        -1, 2, -1, oak.train.pokemon_in_dim
+    )
+    perms_expanded_moves = perms[:, None, :, None].expand(
+        -1, 2, -1, oak.train.moves_in_dim
+    )
+    perms_expanded_hp = perms[:, None, :, None].expand(-1, 2, -1, 1)
+    self.pokemon[:, :, 1:, :] = torch.gather(
+        self.pokemon[:, :, 1:, :], dim=2, index=perms_expanded_pokemon
+    )
+    self.moves[:, :, 1:, :] = torch.gather(
+        self.moves[:, :, 1:, :], dim=2, index=perms_expanded_moves
+    )
+    self.hp[:, :, 1:, :] = torch.gather(
+        self.hp[:, :, 1:, :], dim=2, index=perms_expanded_hp
+    )
 
     def permute_sides(self, prob=0.5):
         mask = torch.rand(self.size) < prob

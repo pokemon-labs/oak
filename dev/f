@@ -9,4 +9,4 @@ clang-format -i \
     cpp/include/format/*.h cpp/include/format/cart/*.h cpp/include/format/ou/*.h  cpp/include/format/random-battles/*.h \
     cpp/include/teams/*.h \
     cpp/include/util/*.h;
-black src/oak/**.py setup.py
+black src/oak/*.py  src/oak/scripts/*.py setup.py

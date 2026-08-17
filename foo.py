@@ -83,21 +83,13 @@ for buffer, n_frames in buffer_list[:max_games]:
     battle_frames = oak.train.BattleFrames.from_bytes(buffer, n_frames)
     battle = oak.Battle(battle_frames.battle[0].tobytes())
 
-    oak.search.run(
-        battle,
-        oak.Durations(),
-        oak.search.Iterations(0),
-        oak.search.PUCB(1.0),
-        oak.search.Node(),
-        network,
-    )
-    # p1_cache = oak.search.SideCache()
-    # p2_cache = oak.search.SideCache()
-    # for i in range(6):
-    #     p1_cache.precompute(network, battle.side(0), i)
-    #     p2_cache.precompute(network, battle.side(1), i)
+    p1_cache = oak.search.SideCache()
+    p2_cache = oak.search.SideCache()
+    for i in range(6):
+        p1_cache.precompute(network, battle.side(0), i)
+        p2_cache.precompute(network, battle.side(1), i)
 
-    o2 = oak.search.cpp_inference(battle_frames, network, oak.search.Iterations(0), 1000000)
+    o2 = oak.search.cpp_inference(battle_frames, network, p1_cache, p2_cache)
     cpp_output = oak.torch.OutputBuffer(o2)
 
     value_diff = torch.abs(python_output.value - cpp_output.value)
