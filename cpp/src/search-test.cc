@@ -28,7 +28,7 @@ struct Test {
         .bandit = args.bandit.value_or("exp3-1.0-0.1"),
         .eval = args.eval.value_or("mc"),
         .matrix_ucb = args.matrix_ucb.value_or(""),
-        .discrete = args.use_discrete};
+        .discrete = args.quantize};
     auto agent = RuntimeSearch::Agent{agent_params};
     auto output = RuntimeSearch::run(device, battle_data, heap, agent);
     bool success = std::abs(output.empirical_value - expected) <= error;

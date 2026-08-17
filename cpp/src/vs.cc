@@ -162,10 +162,10 @@ void thread_fn(const ProgramArgs *args_ptr) {
 
     auto p1_eval = Search::Parse::eval(
         args.p1_eval.or_else([&] { return args.eval; }).value(),
-        args.use_discrete || args.p1_use_discrete);
+        args.quantize || args.p1_quantize);
     auto p2_eval = Search::Parse::eval(
         args.p2_eval.or_else([&] { return args.eval; }).value(),
-        args.use_discrete || args.p2_use_discrete);
+        args.quantize || args.p2_quantize);
 
     auto p1_s1_cache = Search::SideCache{};
     auto p1_s2_cache = Search::SideCache{};
@@ -180,7 +180,7 @@ void thread_fn(const ProgramArgs *args_ptr) {
         p1_s1_cache.precompute(network.get(), PKMN::view(battle).sides[0], i);
         p1_s2_cache.precompute(network.get(), PKMN::view(battle).sides[1], i);
       }
-      if (args.use_discrete || args.p1_use_discrete) {
+      if (args.quantize || args.p1_quantize) {
         network.quantize();
         p1_s1_cache.quantize(network.get());
         p1_s2_cache.quantize(network.get());
@@ -195,7 +195,7 @@ void thread_fn(const ProgramArgs *args_ptr) {
         p2_s1_cache.precompute(network.get(), PKMN::view(battle).sides[0], i);
         p2_s2_cache.precompute(network.get(), PKMN::view(battle).sides[1], i);
       }
-      if (args.use_discrete || args.p2_use_discrete) {
+      if (args.quantize || args.p2_quantize) {
         network.quantize();
         p2_s1_cache.quantize(network.get());
         p2_s2_cache.quantize(network.get());

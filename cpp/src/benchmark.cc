@@ -13,7 +13,7 @@ int benchmark(int argc, char **argv) {
       .bandit = args.bandit.value_or("ucb-1.0"),
       .eval = args.eval.value_or("mc"),
       .matrix_ucb = args.matrix_ucb.value_or(""),
-      .discrete = args.use_discrete,
+      .discrete = args.quantize,
       .table = args.use_table};
   auto agent = RuntimeSearch::Agent{agent_params};
   const uint32_t seed = 1111111;

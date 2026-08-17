@@ -336,7 +336,7 @@ def main():
     )
 
     if args.discrete:
-        generate_cmd.append("--use-discrete")
+        generate_cmd.append("--quantize")
         battle_cmd.append("--discrete")
 
     generate_proc = subprocess.Popen(

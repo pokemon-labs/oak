@@ -36,8 +36,8 @@ struct TeamBuildingArgs : public argparse::Args {
     WRAPPER<std::string> &A##eval =                                            \
         kwarg(B "eval", "Eval mc/fp/<network-path>");                          \
                                                                                \
-    bool &A##use_discrete =                                                    \
-        flag(B "use-discrete", "Use quantized main subnet");                   \
+    bool &A##quantize =                                                    \
+        flag(B "quantize", "Use quantized main subnet");                   \
                                                                                \
     bool &A##use_table =                                                       \
         flag(B "use-table", "Use a transposition table instead of a tree");    \

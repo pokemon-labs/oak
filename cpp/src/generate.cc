@@ -240,7 +240,7 @@ void generate(const ProgramArgs *args_ptr) {
 
     Train::Battle::CompressedFrames training_frames{battle};
 
-    auto eval = Search::Parse::eval(args.eval, args.use_discrete);
+    auto eval = Search::Parse::eval(args.eval, args.quantize);
     const bool is_network = eval.is_network();
     auto p1_cache = std::shared_ptr<Search::SideCache>{};
     auto p2_cache = std::shared_ptr<Search::SideCache>{};
@@ -248,7 +248,7 @@ void generate(const ProgramArgs *args_ptr) {
       Search::Network network;
       network.data =
           std::get<std::shared_ptr<NN::Battle::NetworkBase>>(eval.data);
-      if (args.use_discrete) {
+      if (args.quantize) {
         network.quantize();
       }
       p1_cache =
