@@ -33,7 +33,6 @@ While a Oak-installed virtual environment is active, the following binaries will
 * `lab`
 * `battle`
 * `build`
-* `evo`
 
 The usage of all these programs will be covered in this tutorial.
 
