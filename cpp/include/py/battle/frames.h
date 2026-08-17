@@ -1,5 +1,6 @@
 #pragma once
 
+#include <libpkmn/layout.h>
 #include <py/battle/target.h>
 #include <train/battle/compressed-frame.h>
 
@@ -10,16 +11,19 @@
 namespace Py::Battle {
 
 namespace py = pybind11;
+using namespace PKMN::Layout;
 
 struct Frames : public Target {
+
   py::array_t<uint8_t> battle;
   py::array_t<uint8_t> durations;
   py::array_t<uint8_t> result;
   py::array_t<uint8_t> choices;
 
   Frames(size_t size) : Target{size} {
-    battle = py::array_t<uint8_t>(std::vector<size_t>{size, 384});
-    durations = py::array_t<uint8_t>(std::vector<size_t>{size, 8});
+    battle = py::array_t<uint8_t>(std::vector<size_t>{size, Sizes::Battle});
+    durations =
+        py::array_t<uint8_t>(std::vector<size_t>{size, Sizes::Durations});
     result = py::array_t<uint8_t>(std::vector<size_t>{size, 1});
     choices = py::array_t<uint8_t>(std::vector<size_t>{size, 2, 9});
     clear();
@@ -39,8 +43,10 @@ struct Frames : public Target {
              float terminal) {
     Target::write(index, update);
     score.mutable_data()[index] = terminal;
-    std::memcpy(battle.mutable_data() + (index * 384), b.bytes, 384);
-    std::memcpy(durations.mutable_data() + (index * 8), d.bytes, 8);
+    std::memcpy(battle.mutable_data() + (index * Sizes::Battle), b.bytes,
+                Sizes::Battle);
+    std::memcpy(durations.mutable_data() + (index * Sizes::Durations), d.bytes,
+                Sizes::Durations);
     const auto [p1_choices, p2_choices] = PKMN::choices(b, r);
     std::fill_n(choices.mutable_data() + (index * 18), 0, 18);
     // std::copy()

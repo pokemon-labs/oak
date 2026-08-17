@@ -221,6 +221,7 @@ template <SearchOptions Options = default_search> struct Search {
   // beta
   size_t beta_n = 10;
 
+  // info
   size_t total_depth;
   size_t errors;
 
@@ -340,9 +341,9 @@ template <SearchOptions Options = default_search> struct Search {
   }
 
   template <typename... Caches>
-  float run_root_iteration(auto &device, const auto &params, auto &heap,
-                           const auto &input, auto &eval, Output &output,
-                           Caches &...caches) noexcept {
+  void run_root_iteration(auto &device, const auto &params, auto &heap,
+                          const auto &input, auto &eval, Output &output,
+                          Caches &...caches) noexcept {
 
     auto copy = input;
     auto *rng = reinterpret_cast<uint64_t *>(
@@ -356,14 +357,11 @@ template <SearchOptions Options = default_search> struct Search {
     }
 
     if constexpr (!is_matrix_ucb<decltype(params)>) {
-      return run_iteration(device, params, heap, copy, eval, output, 0,
-                           caches...)
-          .first;
+      run_iteration(device, params, heap, copy, eval, output, 0, caches...);
     } else {
       if ((output.iterations < params.delay)) {
-        return run_iteration(device, params.bandit, heap, copy, eval, output, 0,
-                             caches...)
-            .first;
+        run_iteration(device, params.bandit, heap, copy, eval, output, 0,
+                      caches...);
       } else {
         const auto [p1_index, p2_index] =
             solve_root_matrix_and_sample(device, params, copy, output);
@@ -388,14 +386,13 @@ template <SearchOptions Options = default_search> struct Search {
         // TODO error check
         ++output.visit_matrix[p1_index][p2_index];
         output.value_matrix[p1_index][p2_index] += value.first;
-        return value.first;
       }
     }
   }
 
   // typical recursive mcts function
-  // we return value for each player because it's slightly faster than calcing 1
-  // - value at each heap
+  // we return value for each player because it's slightly faster than calcing
+  // 1 - value for each bandit update
   template <typename... Caches>
   std::pair<float, float> run_iteration(auto &device, const auto &bandit,
                                         auto &heap, auto &input, auto &eval,
@@ -429,12 +426,12 @@ template <SearchOptions Options = default_search> struct Search {
 
       // do bandit
       JointOutcome outcome;
-
       stats.select(device, bandit, outcome);
-      pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P1, pkmn_result_p1(result),
-                               p1_choices.data(), PKMN_GEN1_MAX_CHOICES);
       assert(outcome.first.index < 9);
       assert(outcome.second.index < 9);
+
+      pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P1, pkmn_result_p1(result),
+                               p1_choices.data(), PKMN_GEN1_MAX_CHOICES);
       const auto c1 = p1_choices[outcome.first.index];
       pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P2, pkmn_result_p2(result),
                                p2_choices.data(), PKMN_GEN1_MAX_CHOICES);
@@ -443,6 +440,7 @@ template <SearchOptions Options = default_search> struct Search {
       if constexpr (is_node<decltype(heap)>) {
         battle_options_set(battle, depth);
       } else {
+        // slightly stronger to not clamp rolls when using a table?
         // battle_options_set(battle, depth);
         pkmn_gen1_battle_options_set(&options, nullptr, nullptr, nullptr);
       }
