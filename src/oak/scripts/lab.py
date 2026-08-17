@@ -21,9 +21,8 @@ parser.add_argument(
 def test_consistency():
     fn_parser = parser.add_argument_group("")
     fn_parser.add_argument("--games", default=None, type=int)
-    fn_parser.add_argument("--discrete", default=False, type=bool)
+    fn_parser.add_argument("--quantize", action="store_true")
     fn_parser.add_argument("--eps", default=0.0, type=float)
-    fn_parser.add_argument("--cache", default=True, type=bool)
     fn_parser.add_argument("--use-cache", action="store_true")
 
     args = parser.parse_args()
@@ -142,12 +141,13 @@ def test_consistency():
         == torch_network.main_net.policy2_fc2.layer.bias
     )
 
-    if args.discrete:
+    if args.quantize:
+        print("Using quantized network.")
         network.quantize()
-    print(args.data_path)
+    if args.use_cache:
+        print("Using embedding cache.")
+
     buffer_list = oak.train.read_battle_data(args.data_path)
-    # assert len(buffer_list), "No .battle.data files foun"
-    print(len(buffer_list))
     max_games = min(args.games or len(buffer_list), len(buffer_list))
 
     for buffer, n_frames in buffer_list[:max_games]:
@@ -169,7 +169,7 @@ def test_consistency():
                 p1_cache.precompute(network, battle.side(0), i)
                 p2_cache.precompute(network, battle.side(1), i)
 
-            if args.discrete:
+            if args.quantize:
                 p1_cache.quantize(network)
                 p2_cache.quantize(network)
 

@@ -47,11 +47,14 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
   auto *p1_side = buffer.sides.mutable_data();
   auto *p2_side = buffer.sides.mutable_data() + buffer.side_out_dim;
 
+  // This is only used to populate the `side` tensor. The value/policy do not
+  // use this embedding and will use the cache if provided.
   const auto write_battle_embedding = [&]<int act>() {
-    NN::Battle::write_side_embedding<float, NN::Activation::clamp>(
+    constexpr auto activation = static_cast<NN::Activation>(act);
+    NN::Battle::write_side_embedding<float, activation>(
         p1_side, PKMN::view(battle).sides[0],
         PKMN::view(PKMN::durations(options)).get(0), *network.get());
-    NN::Battle::write_side_embedding<float, NN::Activation::clamp>(
+    NN::Battle::write_side_embedding<float, activation>(
         p2_side, PKMN::view(battle).sides[1],
         PKMN::view(PKMN::durations(options)).get(1), *network.get());
   };
@@ -66,9 +69,11 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
     switch (network.get()->activation_type()) {
     case 1: {
       write_battle_embedding.operator()<1>();
+      break;
     }
     case 2: {
       write_battle_embedding.operator()<2>();
+      break;
     }
     default: {
       assert(false);
@@ -191,11 +196,10 @@ uint64_t fnv1a(std::string_view bytes, uint64_t h = 0xcbf29ce484222325ULL) {
 
 } // namespace
 
-namespace Search {
-
 namespace py = pybind11;
 using namespace ::PKMN::Data;
 using namespace Py::PKMN;
+using namespace Search;
 
 PYBIND11_MODULE(pyoaksearch, m) {
   py::module_::import("oak");
@@ -207,7 +211,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
 
   // Eval
   py::class_<Eval>(m, "Eval");
-  py::class_<PokeEngine, Eval>(m, "PokeEngine").def(py::init<>());
+  py::class_<Search::PokeEngine, Eval>(m, "PokeEngine").def(py::init<>());
   py::class_<MonteCarlo, Eval>(m, "MonteCarlo").def(py::init<>());
   py::class_<Network, Eval>(m, "Network")
       .def(py::init<int>(), py::arg("activation") = 1)
@@ -545,5 +549,3 @@ PYBIND11_MODULE(pyoaksearch, m) {
       py::arg("battle_frames"), py::arg("network"),
       py::arg("p1_cache") = std::nullopt, py::arg("p2_cache") = std::nullopt);
 }
-
-} // namespace Search
