@@ -17,20 +17,44 @@ struct Test {
 
   void operator()(const auto &args) {
     mt19937 device{std::random_device{}()};
-    auto battle_data = parse_input(position, std::random_device{}());
+    auto [battle, durations] =
+        Parse::parse_battle(position, std::random_device{}());
     auto options = PKMN::options();
     pkmn_gen1_chance_options chance_options{};
-    chance_options.durations = battle_data.durations;
+    chance_options.durations = durations;
     pkmn_gen1_battle_options_set(&options, nullptr, &chance_options, nullptr);
-    RuntimeSearch::Heap heap{};
-    auto agent_params = RuntimeSearch::AgentParams{
-        .budget = args.budget.value_or(std::to_string(1 << 20)),
-        .bandit = args.bandit.value_or("exp3-1.0-0.1"),
-        .eval = args.eval.value_or("mc"),
-        .matrix_ucb = args.matrix_ucb.value_or(""),
-        .discrete = args.use_discrete};
-    auto agent = RuntimeSearch::Agent{agent_params};
-    auto output = RuntimeSearch::run(device, battle_data, heap, agent);
+    auto eval = Search::Parse::eval(args.eval.value_or("mc"), args.quantize);
+    const bool is_network = eval.is_network();
+    auto p1_cache = std::shared_ptr<Search::SideCache>{};
+    auto p2_cache = std::shared_ptr<Search::SideCache>{};
+    if (is_network) {
+      Search::Network network;
+      network.data =
+          std::get<std::shared_ptr<NN::Battle::NetworkBase>>(eval.data);
+      if (args.quantize) {
+        network.quantize();
+      }
+      p1_cache = std::make_shared<Search::SideCache>();
+      p2_cache = std::make_shared<Search::SideCache>();
+      for (auto i = 0; i < 6; ++i) {
+        p1_cache->precompute(network.get(), PKMN::view(battle).sides[0], i);
+        p2_cache->precompute(network.get(), PKMN::view(battle).sides[1], i);
+      }
+    }
+    auto bandit = Search::Parse::bandit(args.bandit.value_or("exp3-1.0-0.1"));
+    auto matrix_ucb =
+        args.matrix_ucb.has_value()
+            ? Search::Parse::matrix_ucb(bandit, args.matrix_ucb.value())
+            : Search::MatrixUCB(bandit, 0);
+    auto &params = args.matrix_ucb.has_value()
+                       ? static_cast<Search::BanditParams &>(matrix_ucb)
+                       : bandit;
+    auto budget =
+        Search::Parse::budget(args.budget.value_or(std::to_string(1 << 20)));
+    auto heap = Search::Node{};
+    auto output = RuntimeSearch::run(device, battle, PKMN::durations(options),
+                                     budget, params, heap, eval, {},
+                                     p1_cache.get(), p2_cache.get());
     bool success = std::abs(output.empirical_value - expected) <= error;
     if (!success) {
       std::cerr << position << std::endl;
@@ -38,12 +62,6 @@ struct Test {
                 << " - expected: " << expected << std::endl;
       throw std::runtime_error{""};
     }
-  }
-
-private:
-  static MCTS::Input parse_input(const std::string &line, uint64_t seed) {
-    auto [battle, durations] = Parse::parse_battle(line, seed);
-    return {battle, durations, PKMN::result(battle)};
   }
 };
 

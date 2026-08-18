@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <mutex>
 #include <thread>
 
 #include <fcntl.h>
@@ -58,46 +59,43 @@ struct ProgramArgs : public GenerateArgs {
       kwarg("teams", "Path to teams file").set_default("");
 };
 
-// Stats for sample team matchup matrix
-struct MatchupMatrix {
-
-  struct Entry {
-    std::atomic<size_t> n;
-    std::atomic<size_t> v;
-  };
-
-  size_t n_teams;
-  size_t n_entries;
-  Entry *entries;
-
-  void resize(const auto n) {
-    n_teams = n;
-    n_entries = n_teams * (n_teams - 1) / 2;
-    entries = new Entry[n_entries]{};
-  }
-
-  ~MatchupMatrix() { delete[] entries; }
-
-  size_t flat(auto i, auto j) {
-    if (i < j) {
-      return flat(j, i);
+struct CachePool {
+  // struct Set {
+  //   PKMN::Data::Species species;
+  //   std::array<PKMN::Data::Move, 4> moves;
+  // };
+  using Set = std::pair<PKMN::Data::Species, std::array<PKMN::Data::Move, 4>>;
+  using Team = std::array<Set, 6>;
+  // we don't use PKMN::Set because those are unordered
+  static constexpr auto get_team(const PKMN::Side &side) {
+    Team team;
+    for (auto i = 0; i < 6; ++i) {
+      const auto &pokemon = side.pokemon[i];
+      auto &set = team[i];
+      set.first = pokemon.species;
+      for (auto m = 0; m < 4; ++m) {
+        set.second[m] = pokemon.moves[m].id;
+      }
     }
-    const auto index = i * (i - 1) / 2 + j;
-    assert(index < n_entries);
-    return index;
+    return team;
   }
-
-  Entry &operator()(auto i, auto j) { return entries[flat(i, j)]; }
-
-  void update(auto i, auto j, auto score) {
-    if (i == j) {
-      return;
-    } else if (i < j) {
-      return update(j, i, 2 - score);
+  std::mutex mutex;
+  using CachePtr = std::shared_ptr<Search::SideCache>;
+  std::map<Team, CachePtr> caches;
+  std::shared_ptr<Search::SideCache> access(Search::Network &network,
+                                            const PKMN::Side &side) {
+    auto lock = std::unique_lock{mutex};
+    auto cache = caches[get_team(side)];
+    if (!cache) {
+      cache = std::make_shared<Search::SideCache>();
+      if (network.is_quantized()) {
+        cache->quantize(network.get());
+      }
+      for (auto i = 0; i < 6; ++i) {
+        cache->precompute(network.get(), side, i);
+      }
     }
-    auto &entry = (*this)(i, j);
-    entry.n.fetch_add(1);
-    entry.v.fetch_add(score);
+    return cache;
   }
 };
 
@@ -116,9 +114,10 @@ std::atomic<size_t> update_counter{};
 std::atomic<size_t> update_with_node_counter{};
 // teams
 TeamBuilding::Provider provider;
-MatchupMatrix matchup_matrix;
 std::vector<size_t> battle_lengths;
 std::atomic<size_t> thread_id{};
+// caches
+CachePool cache_pool;
 }; // namespace RuntimeData
 
 // gengar mirrors going to turn 999
@@ -237,39 +236,45 @@ void generate(const ProgramArgs *args_ptr) {
 
     auto battle = PKMN::battle(p1_team, p2_team, device.uniform_64());
     auto options = PKMN::options();
-    const auto result = PKMN::update(battle, 0, 0, options);
+    auto result = PKMN::update(battle, 0, 0, options);
 
-    MCTS::Input battle_data{battle, PKMN::durations(), result};
+    Train::Battle::CompressedFrames training_frames{battle};
 
-    Train::Battle::CompressedFrames training_frames{battle_data.battle};
-
-    auto agent_params = RuntimeSearch::AgentParams{
-        .budget = args.budget,
-        .bandit = args.bandit,
-        .eval = args.eval,
-        .matrix_ucb = args.matrix_ucb,
-        .discrete = args.use_discrete,
-        .table = args.use_table,
-    };
-    auto agent = RuntimeSearch::Agent{agent_params};
-    if (agent.is_network()) {
-      agent.initialize_network(battle_data.battle);
+    auto eval = Search::Parse::eval(args.eval, args.quantize);
+    const bool is_network = eval.is_network();
+    auto p1_cache = std::shared_ptr<Search::SideCache>{};
+    auto p2_cache = std::shared_ptr<Search::SideCache>{};
+    if (is_network) {
+      Search::Network network;
+      network.data =
+          std::get<std::shared_ptr<NN::Battle::NetworkBase>>(eval.data);
+      if (args.quantize) {
+        network.quantize();
+      }
+      p1_cache =
+          RuntimeData::cache_pool.access(network, PKMN::view(battle).sides[0]);
+      p2_cache =
+          RuntimeData::cache_pool.access(network, PKMN::view(battle).sides[1]);
     }
-
-    auto heap = RuntimeSearch::Heap{};
+    const auto bandit = Search::Parse::bandit(args.bandit);
+    auto matrix_ucb = args.matrix_ucb.empty()
+                          ? Search::MatrixUCB{bandit, 0.0}
+                          : Search::Parse::matrix_ucb(bandit, args.matrix_ucb);
+    auto budget = Search::Parse::budget(args.budget);
+    auto heap = Search::Parse::heap(args.use_table);
 
     auto policy_options =
         RuntimePolicy::Options{.mode = args.policy_mode,
                                .temp = args.policy_temp.value(),
                                .min = args.policy_min.value()};
-    auto adjudicator = RuntimePolicy::JointValueMemory{};
+    auto adjudicator = RuntimePolicy::JointValueHistory{};
     bool adjudicated = false;
     auto adj_result = PKMN::Result::None;
 
     battle_length = 0;
     try {
 
-      while (!pkmn_result_type(battle_data.result)) {
+      while (!pkmn_result_type(result)) {
 
         if ((args.max_battle_length >= 1) &&
             (battle_length >= args.max_battle_length)) {
@@ -287,20 +292,22 @@ void generate(const ProgramArgs *args_ptr) {
           return;
         }
 
-        debug_print(PKMN::battle_data_to_string(battle_data.battle,
-                                                battle_data.durations));
+        // debug_print(PKMN::battle_data_to_string(battle, durations));
 
         const bool use_fast = device.uniform() < args.fast_search_prob;
-        agent.budget =
+        budget = Search::Parse::budget(
             ((battle_length == 0) && skip_battle)
                 ? args.t1_budget.value()
-                : (use_fast ? args.fast_budget.value() : args.budget);
+                : (use_fast ? args.fast_budget.value() : args.budget));
         policy_options.mode =
             use_fast ? args.fast_policy_mode.value_or(args.policy_mode)
                      : args.policy_mode;
         MCTS::Output output{};
 
-        output = RuntimeSearch::run(device, battle_data, heap, agent);
+        output = RuntimeSearch::run(
+            device, battle, PKMN::durations(options), budget,
+            args.matrix_ucb.empty() ? bandit : matrix_ucb, heap, eval, output,
+            p1_cache.get(), p2_cache.get());
         if (battle_length == 0) {
           p1_matchup = output.empirical_value;
           p2_matchup = 1 - output.empirical_value;
@@ -326,20 +333,9 @@ void generate(const ProgramArgs *args_ptr) {
         training_frames.updates.emplace_back(output, p1_choice, p2_choice);
 
         // update battle, durations, result (state info)
-        battle_data.result =
-            PKMN::update(battle_data.battle, p1_choice, p2_choice, options);
-        battle_data.durations = PKMN::durations(options);
+        result = PKMN::update(battle, p1_choice, p2_choice, options);
 
-        // set heap
-        const auto &obs = *reinterpret_cast<const MCTS::Obs *>(
-            pkmn_gen1_battle_options_chance_actions(&options));
-        if (args.keep_node) {
-          const bool node_kept = heap.update(p1_index, p2_index, obs);
-          RuntimeData::update_with_node_counter.fetch_add(node_kept);
-        } else {
-          heap = RuntimeSearch::Heap{};
-          // heap.reset();
-        }
+        heap.reset();
         RuntimeData::update_counter.fetch_add(1);
 
         ++battle_length;
@@ -351,12 +347,12 @@ void generate(const ProgramArgs *args_ptr) {
     }
 
     if (adjudicated) {
-      battle_data.result = PKMN::result(adj_result);
+      result = PKMN::result(adj_result);
     }
 
     if (!skip_battle) {
       // battle
-      training_frames.result = battle_data.result;
+      training_frames.result = result;
 
       const auto n_bytes_frames = training_frames.n_bytes();
       training_frames.write(buffer + frame_buffer_write_index);
@@ -372,19 +368,10 @@ void generate(const ProgramArgs *args_ptr) {
         save_battle_buffer_to_disk();
       }
       //
-      p1_build_traj.score = PKMN::score(battle_data.result);
-      p2_build_traj.score = 1 - PKMN::score(battle_data.result);
+      p1_build_traj.score = PKMN::score(result);
+      p2_build_traj.score = 1 - PKMN::score(result);
     }
 
-    // build
-    const bool used_matrix_teams =
-        !p1_built && !p2_built && !RuntimeData::provider.rb;
-    if (used_matrix_teams) {
-      assert(p1_team_index >= 0);
-      assert(p2_team_index >= 0);
-      RuntimeData::matchup_matrix.update(p1_team_index, p2_team_index,
-                                         PKMN::score(battle_data.result));
-    }
     if (p1_built) {
       p1_build_traj.value = p1_matchup;
       build_buffer.push_back(p1_build_traj);
@@ -495,30 +482,9 @@ void setup(const auto &args) {
   RuntimeData::provider.network_path = args.build_network_path;
   RuntimeData::provider.team_modify_prob = args.team_modify_prob;
   RuntimeData::provider.read_network_parameters();
-  RuntimeData::matchup_matrix.resize(RuntimeData::provider.teams.size());
 
   // stats
   RuntimeData::battle_lengths.resize(args.threads);
-}
-
-void cleanup(const auto &args) {
-  const std::filesystem::path working_dir = args.working_dir.value();
-  const auto matchup_matrix_path = working_dir / "matchup-matrix";
-  std::ofstream matchup_matrix_file(matchup_matrix_path);
-  if (!matchup_matrix_file) {
-    std::cerr << "Failed to open matchup matrix file" << std::endl;
-  }
-  for (auto i = 0; i < RuntimeData::matchup_matrix.n_teams; ++i) {
-    for (auto j = 0; j < i; ++j) {
-      matchup_matrix_file << i << ' ' << j << ": ";
-      const auto &entry = RuntimeData::matchup_matrix(i, j);
-      if (entry.n) {
-        matchup_matrix_file << entry.v / 2.0 / entry.n << std::endl;
-      } else {
-        matchup_matrix_file << "N/A" << std::endl;
-      }
-    }
-  }
 }
 
 void handle_suspend(int signal) {
@@ -553,8 +519,6 @@ int main(int argc, char **argv) {
     th.join();
   }
   print_thread.join();
-
-  cleanup(args);
 
   return 0;
 }

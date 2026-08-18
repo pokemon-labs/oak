@@ -18,6 +18,8 @@
 #include <thread>
 #include <vector>
 
+// TODO claude says max_battle not used and build_traj never written (who cares)
+
 struct ProgramArgs : public VsArgs {
   std::optional<uint64_t> &seed = kwarg("seed", "Global program seed");
   size_t &threads =
@@ -152,19 +154,63 @@ void thread_fn(const ProgramArgs *args_ptr) {
     build_buffer.clear();
   };
   const auto play = [&](auto &p1_build_traj, auto &p2_build_traj) -> int {
-    auto p1_agent_params = RuntimeSearch::AgentParams{
-        .budget = args.p1_budget.or_else([&] { return args.budget; }).value(),
-        .bandit = args.p1_bandit.or_else([&] { return args.bandit; }).value(),
-        .eval = args.p1_eval.or_else([&] { return args.eval; }).value(),
-        .matrix_ucb =
-            args.p1_matrix_ucb.or_else([&] { return args.matrix_ucb; })
-                .value_or(""),
-        .discrete = args.use_discrete || args.p1_use_discrete,
-        .table = args.p1_use_table};
-    auto p1_agent = RuntimeSearch::Agent{p1_agent_params};
-    auto p1_agent_after = RuntimeSearch::Agent{p1_agent_params};
-    p1_agent_after.budget = args.p1_budget_after.value_or("0");
-    p1_agent_after.matrix_ucb = args.p1_matrix_ucb_after.value_or("");
+    const auto &p1_team = p1_build_traj.terminal;
+    const auto &p2_team = p2_build_traj.terminal;
+    auto battle = PKMN::battle(p1_team, p2_team, device.uniform_64());
+    auto options = PKMN::options();
+    auto result = PKMN::update(battle, 0, 0, options);
+
+    auto p1_eval = Search::Parse::eval(
+        args.p1_eval.or_else([&] { return args.eval; }).value(),
+        args.quantize || args.p1_quantize);
+    auto p2_eval = Search::Parse::eval(
+        args.p2_eval.or_else([&] { return args.eval; }).value(),
+        args.quantize || args.p2_quantize);
+
+    auto p1_s1_cache = Search::SideCache{};
+    auto p1_s2_cache = Search::SideCache{};
+    auto p2_s1_cache = Search::SideCache{};
+    auto p2_s2_cache = Search::SideCache{};
+    const bool p1_is_network = p1_eval.is_network();
+    if (p1_is_network) {
+      Search::Network network;
+      network.data =
+          std::get<std::shared_ptr<NN::Battle::NetworkBase>>(p1_eval.data);
+      for (auto i = 0; i < 6; ++i) {
+        p1_s1_cache.precompute(network.get(), PKMN::view(battle).sides[0], i);
+        p1_s2_cache.precompute(network.get(), PKMN::view(battle).sides[1], i);
+      }
+      if (args.quantize || args.p1_quantize) {
+        network.quantize();
+        p1_s1_cache.quantize(network.get());
+        p1_s2_cache.quantize(network.get());
+      }
+    }
+    const bool p2_is_network = p2_eval.is_network();
+    if (p2_is_network) {
+      Search::Network network;
+      network.data =
+          std::get<std::shared_ptr<NN::Battle::NetworkBase>>(p2_eval.data);
+      for (auto i = 0; i < 6; ++i) {
+        p2_s1_cache.precompute(network.get(), PKMN::view(battle).sides[0], i);
+        p2_s2_cache.precompute(network.get(), PKMN::view(battle).sides[1], i);
+      }
+      if (args.quantize || args.p2_quantize) {
+        network.quantize();
+        p2_s1_cache.quantize(network.get());
+        p2_s2_cache.quantize(network.get());
+      }
+    }
+
+    const auto p1_bandit = Search::Parse::bandit(
+        args.p1_bandit.or_else([&] { return args.bandit; }).value());
+    const auto p2_bandit = Search::Parse::bandit(
+        args.p2_bandit.or_else([&] { return args.bandit; }).value());
+    auto p1_budget = Search::Parse::budget(
+        args.p1_budget.or_else([&] { return args.budget; }).value());
+    auto p2_budget = Search::Parse::budget(
+        args.p2_budget.or_else([&] { return args.budget; }).value());
+
     const auto p1_policy_options = RuntimePolicy::Options{
         .mode = args.p1_policy_mode.or_else([&] { return args.policy_mode; })
                     .value(),
@@ -173,19 +219,6 @@ void thread_fn(const ProgramArgs *args_ptr) {
         .min = args.p1_policy_min.or_else([&] { return args.policy_min; })
                    .value_or(0)};
 
-    auto p2_agent_params = RuntimeSearch::AgentParams{
-        .budget = args.p2_budget.or_else([&] { return args.budget; }).value(),
-        .bandit = args.p2_bandit.or_else([&] { return args.bandit; }).value(),
-        .eval = args.p2_eval.or_else([&] { return args.eval; }).value(),
-        .matrix_ucb =
-            args.p2_matrix_ucb.or_else([&] { return args.matrix_ucb; })
-                .value_or(""),
-        .discrete = args.use_discrete || args.p2_use_discrete,
-        .table = args.p2_use_table};
-    auto p2_agent = RuntimeSearch::Agent{p2_agent_params};
-    auto p2_agent_after = RuntimeSearch::Agent{p2_agent_params};
-    p2_agent_after.budget = args.p2_budget_after.value_or("0");
-    p2_agent_after.matrix_ucb = args.p2_matrix_ucb_after.value_or("");
     const auto p2_policy_options = RuntimePolicy::Options{
         .mode = args.p2_policy_mode.or_else([&] { return args.policy_mode; })
                     .value(),
@@ -194,37 +227,21 @@ void thread_fn(const ProgramArgs *args_ptr) {
         .min = args.p2_policy_min.or_else([&] { return args.policy_min; })
                    .value_or(0)};
 
-    const bool same_search =
-        (p1_agent == p2_agent) && (p1_agent_after == p2_agent_after);
-
-    const auto &p1_team = p1_build_traj.terminal;
-    const auto &p2_team = p2_build_traj.terminal;
-
-    auto battle = PKMN::battle(p1_team, p2_team, device.uniform_64());
-    auto options = PKMN::options();
-    const auto result = PKMN::update(battle, 0, 0, options);
-    auto input = MCTS::Input{battle, PKMN::durations(options), result};
-
-    if (p1_agent.is_network()) {
-      p1_agent.initialize_network(battle);
-      p1_agent_after.network_ptr = std::move(p1_agent.network_ptr->clone());
-    }
-    if (p2_agent.is_network()) {
-      p2_agent.initialize_network(battle);
-      p2_agent_after.network_ptr = std::move(p2_agent.network_ptr->clone());
-    }
+    // const bool same_search =
+    //     (p1_agent == p2_agent) && (p1_agent_after == p2_agent_after);
+    const bool same_search = false;
 
     auto p1_battle_frames = Train::Battle::CompressedFrames{battle};
     auto p2_battle_frames = Train::Battle::CompressedFrames{battle};
 
-    auto adjudicator = RuntimePolicy::JointValueMemory{};
+    auto adjudicator = RuntimePolicy::JointValueHistory{};
     bool adjudicated = false;
     auto adj_result = PKMN::Result::None;
 
     size_t updates = 0;
 
     // playout game
-    while (!pkmn_result_type(input.result)) {
+    while (!pkmn_result_type(result)) {
 
       RuntimeData::battle_lengths[id] = updates;
 
@@ -237,13 +254,13 @@ void thread_fn(const ProgramArgs *args_ptr) {
         return Ignored{};
       }
 
-      const auto [p1_choices, p2_choices] =
-          PKMN::choices(input.battle, input.result);
+      const auto [p1_choices, p2_choices] = PKMN::choices(battle, result);
 
       const auto print_search_outputs = (device.uniform() < args.print_prob);
-      const auto [p1_labels, p2_labels] = [&input, print_search_outputs]() {
+      const auto [p1_labels, p2_labels] = [&battle, result,
+                                           print_search_outputs]() {
         if (print_search_outputs) {
-          return PKMN::choice_labels(input.battle, input.result);
+          return PKMN::choice_labels(battle, result);
         }
         return std::pair<std::vector<std::string>, std::vector<std::string>>{};
       }();
@@ -251,14 +268,14 @@ void thread_fn(const ProgramArgs *args_ptr) {
       MCTS::Output p1_output{}, p2_output{};
       int p1_index{}, p2_index{};
       if (p1_choices.size() > 1) {
-        RuntimeSearch::Heap heap{};
-        p1_output = RuntimeSearch::run(device, input, heap, p1_agent);
-        p1_output =
-            RuntimeSearch::run(device, input, heap, p1_agent_after, p1_output);
+        Search::Node heap{};
+        p1_output = RuntimeSearch::run(device, battle, PKMN::durations(options),
+                                       p1_budget, p1_bandit, heap, p1_eval,
+                                       p1_output, &p1_s1_cache, &p1_s2_cache);
         p1_index = process_and_sample(device, p1_output.p1, p1_policy_options);
         if (print_search_outputs) {
           print("P1:");
-          std::cout << MCTS::output_string(p1_output, input.battle, p1_labels,
+          std::cout << MCTS::output_string(p1_output, battle, p1_labels,
                                            p2_labels);
         }
       }
@@ -267,13 +284,13 @@ void thread_fn(const ProgramArgs *args_ptr) {
         if (same_search && p1_choices.size() > 1) {
           p2_output = p1_output;
         } else {
-          RuntimeSearch::Heap heap{};
-          p2_output = RuntimeSearch::run(device, input, heap, p2_agent);
-          p2_output = RuntimeSearch::run(device, input, heap, p2_agent_after,
-                                         p2_output);
+          Search::Node heap{};
+          p2_output = RuntimeSearch::run(
+              device, battle, PKMN::durations(options), p2_budget, p2_bandit,
+              heap, p2_eval, p2_output, &p2_s1_cache, &p2_s2_cache);
           if (print_search_outputs) {
             print("P2:");
-            std::cout << MCTS::output_string(p2_output, input.battle, p1_labels,
+            std::cout << MCTS::output_string(p2_output, battle, p1_labels,
                                              p2_labels);
           }
         }
@@ -305,24 +322,23 @@ void thread_fn(const ProgramArgs *args_ptr) {
       if (print_search_outputs) {
         print("GAME: " + std::to_string(RuntimeData::n.load()), false);
         print(" UPDATE: " + std::to_string(updates));
-        print(PKMN::battle_data_to_string(input.battle, input.durations));
+        print(PKMN::battle_data_to_string(battle, PKMN::durations(options)));
       }
-      input.result = PKMN::update(input.battle, p1_choice, p2_choice, options);
-      input.durations = PKMN::durations(options);
+      result = PKMN::update(battle, p1_choice, p2_choice, options);
       ++updates;
     }
 
     if (adjudicated) {
-      input.result = PKMN::result(adj_result);
+      result = PKMN::result(adj_result);
     }
 
-    p1_battle_frames.result = input.result;
-    p2_battle_frames.result = input.result;
+    p1_battle_frames.result = result;
+    p2_battle_frames.result = result;
 
     p1_battle_frame_buffer.write_frames(p1_battle_frames);
     p2_battle_frame_buffer.write_frames(p2_battle_frames);
 
-    switch (pkmn_result_type(input.result)) {
+    switch (pkmn_result_type(result)) {
     case PKMN_RESULT_WIN: {
       RuntimeData::win.fetch_add(1);
       return 2;

@@ -19,7 +19,12 @@
 #include "../extern/lrsnash/src/lib.h"
 
 namespace MCTS {
-struct MonteCarlo {};
+struct MonteCarlo {
+  bool forbid_switches;
+  bool forbid_status;
+  MonteCarlo(bool forbid_switches = false, bool forbid_status = false)
+      : forbid_switches{forbid_switches}, forbid_status{forbid_status} {}
+};
 } // namespace MCTS
 
 namespace TypeTraits {
@@ -45,19 +50,25 @@ inline constexpr bool is_monte_carlo =
 
 template <typename T>
 inline constexpr bool is_contextual_bandit =
-    requires(std::remove_cvref_t<T> &stats) {
-      stats.softmax_logits(
-          std::declval<typename std::remove_cvref_t<T>::Params>(),
-          std::declval<const float *>(), std::declval<const float *>());
-    };
+    requires(typename std::remove_cvref_t<T>::Stats &stats,
+             const std::remove_cvref_t<T> &bandit,
+             const float *logits) { stats.softmax_logits(bandit, logits); };
 
 template <typename T>
 inline constexpr bool is_matrix_ucb =
-    requires(std::remove_cvref_t<T> &params) { params.bandit_params; };
+    requires(std::remove_cvref_t<T> &params) { params.bandit; };
 } // namespace TypeTraits
 
 namespace MCTS {
 using namespace TypeTraits;
+
+const auto get_bandit_params = [](const auto &params) -> const auto & {
+  if constexpr (requires { params.bandit; }) {
+    return params.bandit;
+  } else {
+    return params;
+  }
+};
 
 struct Input {
   pkmn_gen1_battle battle;
@@ -92,21 +103,83 @@ struct Output {
 // for std::map compatibility
 using Obs = std::array<uint8_t, 16>;
 
-template <typename JointBandit> struct Node {
+// template <typename JointBandit, typename strategy_type = uint16_t>
+// struct MatrixUCBNode {
+//   struct Side {
+//     uint8_t k;
+//     std::array<strategy_type, 9> policy;
+//     void init(const auto k) { this->k = k; }
+//   };
+//   using Key = std::tuple<uint8_t, uint8_t, Obs>;
+//   using Node = std::variant<Node<JointBandit>, MatrixUCBNode<JointBandit>>;
+
+//   std::map<Key, Node> children;
+//   struct Stats {
+//     Side p1;
+//     Side p2;
+//   };
+//   Stats stats;
+
+//   void init(const auto m,children const auto n) noexcept {
+//     p1.init(m);
+//     p2.init(n);
+//   }
+
+//   bool is_init() const { return p1.k; }
+
+//   void select(auto &device, const Params &params,
+//               JointOutcome &outcome) const noexcept {
+//     p1.select(device, params, outcome.first);
+//     p2.select(device, params, outcome.second);
+//   }
+
+//   auto sample(auto &device, const auto &s) {
+//     if constexpr (std::is_integral_v<strategy_type>) {
+//       auto n = device.random_int(
+//           static_cast<size_t>(std::numeric_limits<strategy_type>::max()) +
+//           1);
+//       for (auto i = 0; i < s.size(); ++i) {
+//         if (s[i] >= n) {
+//           return i;
+//         }
+//         n -= s[i];
+//       }
+//       return 0;
+//     } else {
+//       return device.sample_pdf(s);
+//     }
+//   }
+
+//   struct Entry {
+//     uint64_t visits;
+//     double total_value;
+//   };
+//   std::array<std::array<Entry, 9>, 9> matrix;
+
+//   void update(const auto &outcome) {
+//     auto entry = matrix[outcome.first.index][outcome.second.index];
+//     ++entry.visits;
+//     total_value += outcome.value;
+//   }
+// };
+
+template <typename Bandit> struct Node {
   using Key = std::tuple<uint8_t, uint8_t, Obs>;
-  JointBandit stats;
-  std::map<Key, Node<JointBandit>> children;
+  using JointStats = typename Bandit::JointStats;
+  JointStats stats;
+  std::map<Key, Node<Bandit>> children;
 };
 
-template <typename JointBandit> struct Table {
+template <typename Bandit> struct Table {
   using Key = uint64_t;
+  using JointStats = typename Bandit::JointStats;
   Hash::Battle hasher;
-  std::unordered_map<Key, JointBandit> entries;
+  std::unordered_map<Key, JointStats> entries;
 };
 
 // wrapper to use for enabling matrix ucb at root heap
-template <typename BanditParams> struct MatrixUCBParams {
-  BanditParams bandit_params;
+template <typename Bandit> struct MatrixUCBParams {
+  Bandit bandit;
   uint32_t delay;
   uint32_t interval;
   uint32_t minimum;
@@ -148,11 +221,14 @@ template <SearchOptions Options = default_search> struct Search {
   // beta
   size_t beta_n = 10;
 
+  // info
   size_t total_depth;
   size_t errors;
 
+  template <typename... Caches>
   Output run(auto &device, const auto budget, const auto &params, auto &heap,
-             auto &eval, const Input &input, Output output = {}) noexcept {
+             auto &eval, const Input &input, Output output,
+             Caches &...caches) noexcept {
 
     // reset data members
     *this = {};
@@ -164,7 +240,7 @@ template <SearchOptions Options = default_search> struct Search {
     output.p2.k = pkmn_gen1_battle_choices(
         &input.battle, PKMN_PLAYER_P2, pkmn_result_p2(input.result),
         output.p2.choices.data(), PKMN_GEN1_MAX_CHOICES);
-    if constexpr (requires { params.bandit_params; }) {
+    if constexpr (requires { params.bandit; }) {
       ucb_weight = std::log(2 * output.p1.k * output.p2.k);
     }
 
@@ -186,28 +262,42 @@ template <SearchOptions Options = default_search> struct Search {
 
       stats.init(output.p1.k, output.p2.k);
 
-      const auto bandit_params = [](const auto &params) -> const auto & {
-        if constexpr (requires { params.bandit_params; }) {
-          return params.bandit_params;
-        } else {
-          return params;
+      if constexpr (is_contextual_bandit<decltype(get_bandit_params(params))>) {
+        static_assert(is_network<decltype(eval)>);
+        using output_type = std::remove_cvref_t<decltype(eval)>::T;
+        constexpr auto activation = std::remove_cvref_t<decltype(eval)>::act;
+        static thread_local uint16_t p1_choice_index[9];
+        static thread_local uint16_t p2_choice_index[9];
+        static thread_local float p1_logits[9];
+        static thread_local float p2_logits[9];
+        chance_options.durations = input.durations;
+        pkmn_gen1_battle_options_set(&options, nullptr, &chance_options,
+                                     nullptr);
+        static thread_local std::vector<output_type> battle_embedding;
+        battle_embedding.reserve(2 * eval.side_embedding_dim());
+        write_battle_embedding<activation>(
+            battle_embedding.data(), PKMN::view(input.battle), eval, caches...);
+        for (auto i = 0; i < output.p1.k; ++i) {
+          p1_choice_index[i] = Encode::Battle::Policy::get_index(
+              PKMN::view(input.battle).sides[0], output.p1.choices[i]);
         }
-      };
-
-      if constexpr (is_contextual_bandit<decltype(stats)> &&
-                    is_network<decltype(eval)>) {
-        static thread_local std::array<float, 9> p1_logits;
-        static thread_local std::array<float, 9> p2_logits;
-        output.initial_value = eval.value_policy_inference(
-            input.battle, input.durations, output.p1.k, output.p2.k,
-            output.p1.choices.data(), output.p2.choices.data(),
-            p1_logits.data(), p2_logits.data());
-        stats.softmax_logits(bandit_params(params), p1_logits.data(),
-                             p2_logits.data());
-        std::copy_n(p1_logits.data(), output.p1.k, output.p1.logit.data());
-        std::copy_n(p2_logits.data(), output.p2.k, output.p2.logit.data());
-        softmax(output.p1.prior.data(), p1_logits.data(), output.p1.k);
-        softmax(output.p2.prior.data(), p2_logits.data(), output.p2.k);
+        for (auto i = 0; i < output.p2.k; ++i) {
+          p2_choice_index[i] = Encode::Battle::Policy::get_index(
+              PKMN::view(input.battle).sides[1], output.p2.choices[i]);
+        }
+        output.initial_value = NN::Battle::sigmoid(
+            eval.main_net.template propagate<true, activation>(
+                battle_embedding.data(), output.p1.k, output.p2.k,
+                p1_choice_index, p2_choice_index, p1_logits, p2_logits));
+        stats.softmax_logits(get_bandit_params(params), p1_logits, p2_logits);
+        std::copy_n(p1_logits, output.p1.k, output.p1.logit.data());
+        std::copy_n(p2_logits, output.p2.k, output.p2.logit.data());
+        softmax(output.p1.prior.data(), p1_logits, output.p1.k);
+        softmax(output.p2.prior.data(), p2_logits, output.p2.k);
+        // use policy inference instead of solving
+        softmax(p1_nash.data(), p1_logits, output.p1.k);
+        softmax(p2_nash.data(), p2_logits, output.p2.k);
+        initial_solve = true;
       }
     }
 
@@ -221,7 +311,8 @@ template <SearchOptions Options = default_search> struct Search {
           std::chrono::duration_cast<std::chrono::microseconds>(budget);
       std::chrono::microseconds elapsed{};
       while (elapsed < duration) {
-        run_root_iteration(device, params, heap, input, eval, output);
+        run_root_iteration(device, params, heap, input, eval, output,
+                           caches...);
         ++output.iterations;
         elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::high_resolution_clock::now() - start);
@@ -229,13 +320,15 @@ template <SearchOptions Options = default_search> struct Search {
       // run while boolean flag is set
     } else if constexpr (requires { *budget; }) {
       while (*budget) {
-        run_root_iteration(device, params, heap, input, eval, output);
+        run_root_iteration(device, params, heap, input, eval, output,
+                           caches...);
         ++output.iterations;
       }
       // number of iterations
     } else {
       for (auto i = 0; i < budget; ++i) {
-        run_root_iteration(device, params, heap, input, eval, output);
+        run_root_iteration(device, params, heap, input, eval, output,
+                           caches...);
         ++output.iterations;
       }
     }
@@ -247,9 +340,10 @@ template <SearchOptions Options = default_search> struct Search {
     return output;
   }
 
-  float run_root_iteration(auto &device, const auto &params, auto &heap,
-                           const auto &input, auto &eval,
-                           Output &output) noexcept {
+  template <typename... Caches>
+  void run_root_iteration(auto &device, const auto &params, auto &heap,
+                          const auto &input, auto &eval, Output &output,
+                          Caches &...caches) noexcept {
 
     auto copy = input;
     auto *rng = reinterpret_cast<uint64_t *>(
@@ -263,12 +357,11 @@ template <SearchOptions Options = default_search> struct Search {
     }
 
     if constexpr (!is_matrix_ucb<decltype(params)>) {
-      return run_iteration(device, params, heap, copy, eval, output).first;
+      run_iteration(device, params, heap, copy, eval, output, 0, caches...);
     } else {
       if ((output.iterations < params.delay)) {
-        return run_iteration(device, params.bandit_params, heap, copy, eval,
-                             output)
-            .first;
+        run_iteration(device, params.bandit, heap, copy, eval, output, 0,
+                      caches...);
       } else {
         const auto [p1_index, p2_index] =
             solve_root_matrix_and_sample(device, params, copy, output);
@@ -282,29 +375,29 @@ template <SearchOptions Options = default_search> struct Search {
             const auto &obs = *reinterpret_cast<const Obs *>(
                 pkmn_gen1_battle_options_chance_actions(&options));
             auto &child = heap.children[{p1_index, p2_index, obs}];
-            return run_iteration(device, params.bandit_params, child, copy,
-                                 eval, output, 1);
+            return run_iteration(device, params.bandit, child, copy, eval,
+                                 output, 1, caches...);
           } else {
-            return run_iteration(device, params.bandit_params, heap, copy, eval,
-                                 output, 1);
+            return run_iteration(device, params.bandit, heap, copy, eval,
+                                 output, 1, caches...);
           }
         }();
 
         // TODO error check
         ++output.visit_matrix[p1_index][p2_index];
         output.value_matrix[p1_index][p2_index] += value.first;
-        return value.first;
       }
     }
   }
 
   // typical recursive mcts function
-  // we return value for each player because it's slightly faster than calcing 1
-  // - value at each heap
-  std::pair<float, float> run_iteration(auto &device, const auto &bandit_params,
+  // we return value for each player because it's slightly faster than calcing
+  // 1 - value for each bandit update
+  template <typename... Caches>
+  std::pair<float, float> run_iteration(auto &device, const auto &bandit,
                                         auto &heap, auto &input, auto &eval,
-                                        Output &output,
-                                        size_t depth = 0) noexcept {
+                                        Output &output, size_t depth,
+                                        Caches &...caches) noexcept {
     static constexpr size_t max_depth = 100;
 
     bool error = false;
@@ -327,23 +420,27 @@ template <SearchOptions Options = default_search> struct Search {
     }();
 
     if (stats.is_init() && !error) {
-      using Bandit = std::remove_reference_t<decltype(stats)>;
-      using JointOutcome = typename Bandit::JointOutcome;
+      using Bandit = std::remove_reference_t<decltype(bandit)>;
+      using Outcome = typename Bandit::Outcome;
+      using JointOutcome = std::pair<Outcome, Outcome>;
 
       // do bandit
       JointOutcome outcome;
+      stats.select(device, bandit, outcome);
+      assert(outcome.first.index < 9);
+      assert(outcome.second.index < 9);
 
-      stats.select(device, bandit_params, outcome);
       pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P1, pkmn_result_p1(result),
                                p1_choices.data(), PKMN_GEN1_MAX_CHOICES);
-      const auto c1 = p1_choices[outcome.p1.index];
+      const auto c1 = p1_choices[outcome.first.index];
       pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P2, pkmn_result_p2(result),
                                p2_choices.data(), PKMN_GEN1_MAX_CHOICES);
-      const auto c2 = p2_choices[outcome.p2.index];
+      const auto c2 = p2_choices[outcome.second.index];
 
       if constexpr (is_node<decltype(heap)>) {
         battle_options_set(battle, depth);
       } else {
+        // slightly stronger to not clamp rolls when using a table?
         // battle_options_set(battle, depth);
         pkmn_gen1_battle_options_set(&options, nullptr, nullptr, nullptr);
       }
@@ -358,16 +455,16 @@ template <SearchOptions Options = default_search> struct Search {
           const auto &obs = *reinterpret_cast<const Obs *>(
               pkmn_gen1_battle_options_chance_actions(&options));
           auto &child =
-              heap.children[{outcome.p1.index, outcome.p2.index, obs}];
-          return run_iteration(device, bandit_params, child, input, eval,
-                               output, depth + 1);
+              heap.children[{outcome.first.index, outcome.second.index, obs}];
+          return run_iteration(device, bandit, child, input, eval, output,
+                               depth + 1, caches...);
         } else {
-          return run_iteration(device, bandit_params, heap, input, eval, output,
-                               depth + 1);
+          return run_iteration(device, bandit, heap, input, eval, output,
+                               depth + 1, caches...);
         }
       }();
-      outcome.p1.value = value.first;
-      outcome.p2.value = value.second;
+      outcome.first.value = value.first;
+      outcome.second.value = value.second;
 
       if constexpr (is_node<decltype(heap)>) {
         stats.update(outcome);
@@ -381,8 +478,9 @@ template <SearchOptions Options = default_search> struct Search {
       }
 
       if (depth == 0) {
-        ++output.visit_matrix[outcome.p1.index][outcome.p2.index];
-        output.value_matrix[outcome.p1.index][outcome.p2.index] += value.first;
+        ++output.visit_matrix[outcome.first.index][outcome.second.index];
+        output.value_matrix[outcome.first.index][outcome.second.index] +=
+            value.first;
       }
 
       return value;
@@ -409,17 +507,38 @@ template <SearchOptions Options = default_search> struct Search {
           }
 
           if constexpr (is_network<T>) {
-            if constexpr (is_contextual_bandit<decltype(stats)>) {
-              static thread_local std::array<float, 9> p1_logits;
-              static thread_local std::array<float, 9> p2_logits;
-              value = eval.value_policy_inference(
-                  battle, durations(), m, n, p1_choices.data(),
-                  p2_choices.data(), p1_logits.data(), p2_logits.data());
-              stats.softmax_logits(bandit_params, p1_logits.data(),
-                                   p2_logits.data());
+            using output_type = std::remove_cvref_t<T>::T;
+            constexpr auto activation = std::remove_cvref_t<T>::act;
+
+            static thread_local std::vector<output_type> battle_embedding;
+            battle_embedding.reserve(2 * eval.side_embedding_dim());
+            write_battle_embedding<activation>(
+                battle_embedding.data(), PKMN::view(battle), eval, caches...);
+
+            if constexpr (is_contextual_bandit<decltype(bandit)>) {
+              static thread_local uint16_t p1_choice_index[9];
+              static thread_local uint16_t p2_choice_index[9];
+              static thread_local float p1_logits[9];
+              static thread_local float p2_logits[9];
+              for (auto i = 0; i < m; ++i) {
+                p1_choice_index[i] = Encode::Battle::Policy::get_index(
+                    PKMN::view(battle).sides[0], p1_choices[i]);
+              }
+              for (auto i = 0; i < n; ++i) {
+                p2_choice_index[i] = Encode::Battle::Policy::get_index(
+                    PKMN::view(battle).sides[1], p2_choices[i]);
+              }
+              value = NN::Battle::sigmoid(
+                  eval.main_net.template propagate<true, activation>(
+                      battle_embedding.data(), m, n, p1_choice_index,
+                      p2_choice_index, p1_logits, p2_logits));
+              stats.softmax_logits(bandit, p1_logits, p2_logits);
             } else {
-              value = eval.value_inference(battle, durations());
+              value = NN::Battle::sigmoid(
+                  eval.main_net.template propagate<activation>(
+                      battle_embedding.data()));
             }
+            assert(std::isfinite(value));
           } else if constexpr (is_poke_engine<T>) {
             value = eval.evaluate(battle);
           } else {
@@ -499,7 +618,8 @@ template <SearchOptions Options = default_search> struct Search {
                                            auto &copy,
                                            const auto &output) noexcept {
     uint8_t p1_index{}, p2_index{};
-    const bool periodic_solve = ((output.iterations % params.interval) == 0);
+    const bool periodic_solve =
+        (((output.iterations + 1) % params.interval) == 0);
     if (periodic_solve || !initial_solve) {
       // get ucb matrices
       std::array<int, 9 * 9> p1_ucb_matrix;
@@ -688,6 +808,26 @@ template <SearchOptions Options = default_search> struct Search {
     //     output.p2.beta[i] += nash2[i] / beta_n;
     //   }
     // }
+  }
+
+  template <NN::Activation activation, typename T, typename... Caches>
+  void write_battle_embedding(T *embedding, const PKMN::Battle &battle,
+                              NN::Battle::NetworkBase &eval,
+                              Caches &...caches) {
+    const auto &d = PKMN::view(durations());
+    if constexpr (sizeof...(Caches) == 2) {
+      auto &p1_cache = std::get<0>(std::tie(caches...));
+      auto &p2_cache = std::get<1>(std::tie(caches...));
+      embedding = NN::Battle::write_side_embedding<T, activation>(
+          embedding, battle.sides[0], d.get(0), eval, p1_cache);
+      embedding = NN::Battle::write_side_embedding<T, activation>(
+          embedding, battle.sides[1], d.get(1), eval, p2_cache);
+    } else {
+      embedding = NN::Battle::write_side_embedding<T, activation>(
+          embedding, battle.sides[0], d.get(0), eval);
+      embedding = NN::Battle::write_side_embedding<T, activation>(
+          embedding, battle.sides[1], d.get(1), eval);
+    }
   }
 };
 

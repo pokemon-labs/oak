@@ -4,6 +4,7 @@
 #include <encode/battle/key.h>
 #include <libpkmn/data/status.h>
 #include <nn/affine.h>
+#include <nn/battle/network.h>
 #include <nn/ffn.h>
 
 #include <map>
@@ -11,263 +12,239 @@
 
 namespace NN::Battle {
 
-template <typename T> using EmbeddingT = std::unique_ptr<T[]>;
+template <typename T> struct SideCache {
+  using value_type = T;
+  using Embedding = std::unique_ptr<T[]>;
+  static constexpr auto max_active_input_size = 28;
+  static constexpr auto max_active_moves_input_size = 4;
+  using Moves = std::array<PKMN::MoveSlot, 4>;
 
-using PKMN::Data::Status;
-
-template <typename T> struct PokemonCache {
-
-  // Encode does not have a dimension for no status
-  static constexpr auto n_status = Encode::Battle::Status::n_dim + 1;
-  // We only encode whether the move has pp, so 2^4 for the moveset
-  static constexpr auto n_pp = 16;
-  // For a stored pokemon, the move pp and status features are the only ones
-  // that can change over the course of the game (hp is not a part of the input
-  // to the pokemon embedding)
-  using Key = uint8_t;
-  static constexpr Key n_embeddings = n_status * n_pp;
-  // All status consditions that dont use sleep duration
-  static constexpr std::array<Status, 8> status_array{
-      Status::None,      Status::Poison, Status::Burn,  Status::Freeze,
-      Status::Paralysis, Status::Rest1,  Status::Rest2, Status::Rest3};
-
-  static constexpr bool is_integral{std::is_integral_v<T>};
-  using Embedding = EmbeddingT<T>;
-
-  uint32_t dim;
-  std::array<Embedding, n_embeddings> embeddings;
-  // work
-  std::vector<float> embedding;
-
-  PokemonCache(uint32_t dim = 0) : dim{dim}, embedding{} {
-    for (auto &embedding : embeddings) {
-      embedding = std::make_unique<T[]>(dim);
+  struct PokemonCache {
+    std::array<Embedding, Encode::Battle::Key::n_pokemon> data;
+    const T *get(const PKMN::Pokemon &pokemon, uint8_t sleep) const {
+      auto key = Encode::Battle::Key::get_key(pokemon, sleep);
+      return data[key].get();
     }
-    if constexpr (is_integral) {
-      embedding.resize(dim);
+  };
+  struct PokemonMovesCache {
+    std::array<Embedding, Encode::Battle::Key::n_moves> data;
+    const T *get(const Moves &moves) const {
+      auto key = Encode::Battle::Key::get_key(moves);
+      return data[key].get();
     }
-  }
-
-  PokemonCache &operator=(const PokemonCache &other) {
-    dim = other.dim;
-    for (auto i = 0; i < n_embeddings; ++i) {
-      embeddings[i] = std::make_unique<T[]>(dim);
-      const auto *source = other.embeddings[i].get();
-      std::copy(source, source + dim, embeddings[i].get());
-    }
-    embedding = other.embedding;
-    return *this;
-  }
-
-  template <typename U> PokemonCache &operator=(const PokemonCache<U> &other) {
-    dim = other.dim;
-    for (auto i = 0; i < n_embeddings; ++i) {
-      embeddings[i] = std::make_unique<T[]>(dim);
-      const auto *source = other.embeddings[i].get();
-      constexpr float scale =
-          std::is_floating_point_v<U> && std::is_integral_v<T> ? 127.0f : 1.0f;
-      std::transform(source, source + dim, embeddings[i].get(),
-                     [scale](const U x) { return static_cast<T>(x * scale); });
-    }
-    embedding = other.embedding;
-    return *this;
-  }
-
-  inline T *data(Key key) const { return embeddings[key].get(); }
-
-  // iterate through all move pp/status combinations for a pokemon and store
-  // embedding
-  template <Activation activation>
-  void fill(EmbeddingNet &pokemon_net, const PKMN::Pokemon &base_pokemon) {
-    assert(dim == pokemon_net.layer<1>().out_dim);
-
-    auto pokemon = base_pokemon;
-    // iterate through all 16 has-pp combinations
-    for (auto m = 0; m < n_pp; ++m) {
-      // set move pp based on bits of m
-      for (auto i = 0; i < 4; ++i) {
-        pokemon.moves[i].pp = m & (1 << i);
+  };
+  struct ActiveMovesCache {
+    std::map<Moves, Embedding> data;
+    std::array<float, max_active_moves_input_size> encoding_input;
+    std::array<uint16_t, max_active_moves_input_size> encoding_indices;
+    template <Activation activation>
+    const T *get(NetworkBase &network, const Moves &moves) {
+      const auto dim = network.moves_net.template layer<1>().out_dim;
+      auto key = Encode::Battle::Key::get_key_active(moves);
+      auto [it, inserted] = data.try_emplace(key);
+      if (inserted) {
+        const auto n = Encode::Battle::Moves::write(
+            moves, encoding_input.data(), encoding_indices.data());
+        it->second = std::make_unique<T[]>(dim);
+        network.propagate_embedding<Embedding_::Moves, T, activation>(
+            encoding_input.data(), encoding_indices.data(), it->second.get(),
+            n);
       }
+      return it->second.get();
+    }
+  };
+  struct ActiveCache {
+    std::map<Encode::Battle::Key::ActiveKey, Embedding> data;
+    std::array<float, max_active_input_size> encoding_input;
+    std::array<uint16_t, max_active_input_size> encoding_indices;
+    template <Activation activation>
+    const T *get(NetworkBase &network, const PKMN::ActivePokemon &active,
+                 const PKMN::Duration &duration) {
+      const auto dim = network.active_net.template layer<1>().out_dim;
+      auto key = Encode::Battle::Key::get_key(active, duration);
+      auto [it, inserted] = data.try_emplace(key);
+      if (inserted) {
+        const auto n = Encode::Battle::Active::write(
+            active, duration, encoding_input.data(), encoding_indices.data());
+        it->second = std::make_unique<T[]>(dim);
+        network.propagate_embedding<Embedding_::Active, T, activation>(
+            encoding_input.data(), encoding_indices.data(), it->second.get(),
+            n);
+        encoding_input = {};
+        encoding_indices = {};
+      }
+      return it->second.get();
+    }
+  };
 
-      const auto get_entry = [this, &pokemon_net](const auto &pokemon,
-                                                  const auto sleep) {
-        std::array<uint16_t, Encode::Battle::Pokemon::n_dim> encoding_indices{};
-        std::array<float, Encode::Battle::Pokemon::n_dim> encoding_input{};
-        float *input = encoding_input.data();
-        uint16_t *indices = encoding_indices.data();
-        Encode::Battle::Pokemon::write(pokemon, sleep, input, indices);
-        uint32_t n = std::distance(encoding_input.data(), input);
-        auto *embedding_data =
-            this->data(Encode::Battle::pokemon_key(pokemon, sleep));
-        if constexpr (is_integral) {
-          pokemon_net.propagate<activation, activation>(encoding_input.data(),
-                                                        encoding_indices.data(),
-                                                        embedding.data(), n);
-          std::transform(embedding.begin(), embedding.end(), embedding_data,
-                         [](const auto f) { return static_cast<T>(127 * f); });
-        } else {
-          pokemon_net.propagate<activation, activation>(encoding_input.data(),
-                                                        encoding_indices.data(),
-                                                        embedding_data, n);
-        }
-      };
+  // consistency
+  template <typename U> using Side = std::array<U, 6>;
+  Side<PKMN::Pokemon> reference;
+  // caches
+  Side<ActiveCache> active_cache;
+  Side<ActiveMovesCache> active_moves_cache;
+  Side<PokemonCache> pokemon_cache;
+  Side<PokemonMovesCache> pokemon_moves_cache;
 
-      // non slept status conditions
+  template <Activation activation>
+  void precompute(NetworkBase &network, const PKMN::Side &side, uint8_t index) {
+    auto &pokemon_data = pokemon_cache[index].data;
+    const auto pokemon_dim = network.pokemon_net.template layer<1>().out_dim;
+    const auto get_pokemon_embedding =
+        [&pokemon_data, &network, pokemon_dim](
+            const auto &pokemon, const auto bucket, const auto sleep) {
+          using namespace Encode::Battle::Pokemon;
+          uint16_t indices[n_nonzero];
+          float input[n_nonzero];
+          Encode::Battle::Pokemon::write(pokemon, sleep, input, indices);
+          // const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
+          const auto key =
+              Encode::Battle::Status::get_status_index(pokemon.status, sleep) +
+              (bucket - 1) * Encode::Battle::Status::n_dim;
+          auto &u = pokemon_data[key];
+          u.reset(new T[pokemon_dim]);
+          auto *embedding = u.get();
+          network.propagate_embedding<Embedding_::Pokemon, T, activation>(
+              input, indices, embedding, n_nonzero);
+        };
+    auto pokemon = side.pokemon[index];
+    reference[index] = pokemon;
+    using PKMN::Data::Status;
+    constexpr std::array<Status, 8> status_array{
+        Status::None,      Status::Poison, Status::Burn,  Status::Freeze,
+        Status::Paralysis, Status::Rest1,  Status::Rest2, Status::Rest3};
+    for (auto bucket = 1; bucket <= 50; ++bucket) {
+      pokemon.hp = pokemon.stats.hp * bucket / 50;
       for (const auto status : status_array) {
         pokemon.status = status;
-        get_entry(pokemon, 0);
+        get_pokemon_embedding(pokemon, bucket, 0);
       }
-      // slept
       pokemon.status = Status::Sleep1;
       for (auto sleep = 1; sleep <= 7; ++sleep) {
-        get_entry(pokemon, sleep);
+        get_pokemon_embedding(pokemon, bucket, sleep);
       }
     }
-  }
 
-  const T *get(const auto &pokemon, const auto sleep) const {
-    const auto key = Encode::Battle::pokemon_key(pokemon, sleep);
-    return data(key);
-  }
-};
+    auto &moves_data = pokemon_moves_cache[index].data;
+    const auto moves_dim = network.moves_net.template layer<1>().out_dim;
+    const auto get_moves_embedding = [&moves_data, &network,
+                                      moves_dim](const auto &moves) {
+      using namespace Encode::Battle::Moves;
+      uint16_t indices[n_nonzero];
+      float input[n_nonzero];
+      const auto n = write(moves, input, indices);
+      const auto key = Encode::Battle::Key::get_key(moves);
+      auto &u = moves_data[key];
+      u.reset(new T[moves_dim]);
+      auto *embedding = u.get();
+      network.propagate_embedding<Embedding_::Moves, T, activation>(
+          input, indices, embedding, n);
+    };
 
-template <typename T> struct ActivePokemonCache {
-
-  static constexpr bool is_integral{std::is_integral_v<T>};
-  using Embedding = EmbeddingT<T>;
-  using PokemonKey = PokemonCache<T>::Key;
-  using Key = std::pair<PKMN::ActivePokemon, PokemonKey>;
-
-  uint32_t dim;
-  std::map<Key, Embedding> embeddings;
-  // workspace
-  std::array<float, Encode::Battle::ActivePokemon::n_dim> encoding_input;
-  std::array<uint16_t, Encode::Battle::ActivePokemon::n_dim> encoding_indices;
-  std::vector<float> embedding;
-
-  ActivePokemonCache(uint32_t dim = 0) : dim{dim} {
-    if constexpr (is_integral) {
-      embedding.resize(dim);
-    }
-  }
-
-  ActivePokemonCache &operator=(const ActivePokemonCache &other) {
-    dim = other.dim;
-    for (const auto &p : other.embeddings) {
-      embeddings[p.first] = std::make_unique<T[]>(dim);
-      const auto *source = p.second.get();
-      std::copy(source, source + dim, embeddings[p.first].get());
-    }
-    if constexpr (is_integral) {
-      embedding.resize(dim);
-    }
-    return *this;
-  }
-
-  template <typename U>
-  ActivePokemonCache &operator=(const ActivePokemonCache<U> &other) {
-    dim = other.dim;
-    for (const auto &p : other.embeddings) {
-      embeddings[p.first] = std::make_unique<T[]>(dim);
-      const auto *source = p.second.get();
-      constexpr float scale =
-          std::is_floating_point_v<U> && std::is_integral_v<T> ? 127.0f : 1.0f;
-      std::transform(source, source + dim, embeddings[p.first].get(),
-                     [scale](const U x) { return static_cast<T>(x * scale); });
-    }
-    if constexpr (is_integral) {
-      embedding.resize(dim);
-    }
-    return *this;
-  }
-
-  auto *data(const auto key) { return embeddings[key].get(); }
-
-  template <Activation activation>
-  const T *get(EmbeddingNet &active_net, const auto &active,
-               const auto &pokemon, const auto &duration) {
-    const auto key =
-        Key{active, Encode::Battle::pokemon_key(pokemon, duration.sleep(0))};
-    if (embeddings.find(key) != embeddings.end()) {
-      const auto embedding_data = data(key);
-      assert(embedding_data != nullptr);
-      return embedding_data;
-    } else {
-      auto *input = encoding_input.data();
-      auto *indices = encoding_indices.data();
-      Encode::Battle::ActivePokemon::write(pokemon, active, duration, input,
-                                           indices);
-      const auto n = std::distance(encoding_input.data(), input);
-
-      embeddings[key] = std::make_unique<T[]>(dim);
-      auto *embedding_data = data(key);
-
-      if constexpr (is_integral) {
-        active_net.propagate<activation, activation>(encoding_input.data(),
-                                                     encoding_indices.data(),
-                                                     embedding.data(), n);
-        std::transform(embedding.begin(), embedding.end(), embedding_data,
-                       [](const auto f) { return static_cast<T>(127 * f); });
-      } else {
-        active_net.propagate<activation, activation>(
-            encoding_input.data(), encoding_indices.data(), embedding_data, n);
+    using Encode::Battle::Key::n_moves;
+    using Encode::Battle::Key::n_pp;
+    for (auto m = 0; m < n_moves; ++m) {
+      auto m_ = m;
+      for (auto i = 0; i < 4; ++i) {
+        auto pp_bucket = m_ % n_pp;
+        uint8_t repr = std::pow(2, pp_bucket) - 1;
+        pokemon.moves[i].pp = repr;
+        m_ /= n_pp;
       }
+      get_moves_embedding(pokemon.moves);
+    }
 
-      std::fill(encoding_input.begin(), encoding_input.begin() + n, 0);
-      std::fill(encoding_indices.begin(), encoding_indices.begin() + n, 0);
+    assert(std::all_of(pokemon_data.begin(), pokemon_data.end(),
+                       [](auto &x) { return static_cast<bool>(x); }));
+    assert(std::all_of(moves_data.begin(), moves_data.end(),
+                       [](auto &x) { return static_cast<bool>(x); }));
+  }
 
-      return embedding_data;
+  void clear() {
+    active_cache.data.clear();
+    active_moves_cache.data.clear();
+    for (auto &embedding : pokemon_cache.data) {
+      embedding.reset();
+    }
+    for (auto &embedding : pokemon_moves_cache.data) {
+      embedding.reset();
     }
   }
 };
 
-template <typename T> struct BattleCache {
-
-  template <typename U> using SideSet = std::array<U, 6>;
-  template <typename U> using BattleSet = std::array<std::array<U, 6>, 2>;
-  BattleSet<PokemonCache<T>> pokemon;
-  BattleSet<ActivePokemonCache<T>> active;
-
-  using Team = std::array<PKMN::Set, 6>;
-  std::array<Team, 2> teams;
-
-  BattleCache(uint32_t pod = 0, uint32_t aod = 0)
-      : pokemon{SideSet<PokemonCache<T>>{pod, pod, pod, pod, pod, pod},
-                {pod, pod, pod, pod, pod, pod}},
-        active{SideSet<ActivePokemonCache<T>>{aod, aod, aod, aod, aod, aod},
-               {aod, aod, aod, aod, aod, aod}} {}
-
-  BattleCache(const BattleCache &other) {
-    for (auto s = 0; s < 2; ++s) {
-      for (auto p = 0; p < 6; ++p) {
-        pokemon[s][p] = other.pokemon[s][p];
-        active[s][p] = other.active[s][p];
+inline auto quantize_cache(const SideCache<float> &cache, uint32_t pokemon_dim,
+                           uint32_t active_dim, uint32_t moves_dim) {
+  const auto copy_array = [](const auto &src, auto &dest, auto dim) {
+    for (std::size_t i = 0; i < src.size(); ++i) {
+      dest[i].reset();
+      if (!src[i]) {
+        continue;
       }
+      dest[i] = std::make_unique<uint8_t[]>(dim);
+      std::transform(src[i].get(), src[i].get() + dim, dest[i].get(),
+                     [](float x) { return static_cast<uint8_t>(x * 127); });
     }
+  };
+
+  const auto copy_map = [](const auto &src, auto &dest, auto dim) {
+    for (const auto &[key, embedding] : src) {
+      auto quantized = std::make_unique<uint8_t[]>(dim);
+      std::transform(embedding.get(), embedding.get() + dim, quantized.get(),
+                     [](float x) { return static_cast<uint8_t>(x * 127); });
+      dest.emplace(key, std::move(quantized));
+    }
+  };
+
+  SideCache<uint8_t> quantized{};
+  quantized.reference = cache.reference;
+  for (auto index = 0; index < 6; ++index) {
+    copy_array(cache.pokemon_cache[index].data,
+               quantized.pokemon_cache[index].data, pokemon_dim);
+    copy_array(cache.pokemon_moves_cache[index].data,
+               quantized.pokemon_moves_cache[index].data, moves_dim);
+    copy_map(cache.active_cache[index].data, quantized.active_cache[index].data,
+             active_dim);
+    copy_map(cache.active_moves_cache[index].data,
+             quantized.active_moves_cache[index].data, moves_dim);
+  }
+  return quantized;
+}
+
+consteval bool check_buckets() {
+  using PKMN::Data::Status;
+  constexpr std::array<Status, 8> status_array{
+      Status::None,      Status::Poison, Status::Burn,  Status::Freeze,
+      Status::Paralysis, Status::Rest1,  Status::Rest2, Status::Rest3};
+  PKMN::Pokemon pokemon{};
+  pokemon.stats.hp = 714;
+  // std::unordered_map<int, int> count{};
+  std::array<int, 1000> count{};
+  // TODO
+  const auto get_entry = [&count](const auto &pokemon, auto sleep) {
+    const auto key = Encode::Battle::Key::get_key(pokemon, sleep);
+    count[key] += 1;
+  };
+
+  pokemon.hp = 1;
+  // non slept status conditions
+  for (const auto status : status_array) {
+    pokemon.status = status;
+    get_entry(pokemon, 0);
+  }
+  // slept
+  pokemon.status = Status::Sleep1;
+  for (auto sleep = 1; sleep <= 7; ++sleep) {
+    get_entry(pokemon, sleep);
   }
 
-  BattleCache &operator=(const BattleCache &other) = default;
-  template <typename U> BattleCache &operator=(const BattleCache<U> &other) {
-    for (auto s = 0; s < 2; ++s) {
-      for (auto p = 0; p < 6; ++p) {
-        pokemon[s][p] = other.pokemon[s][p];
-        active[s][p] = other.active[s][p];
-      }
+  for (auto k = 0; k < 15; ++k) {
+    if (count[k] != 1) {
+      return false;
     }
-    return *this;
   }
+  return true;
+}
 
-  template <Activation activation>
-  void fill(EmbeddingNet &pokemon_net, const PKMN::Battle &battle) {
-    for (auto s = 0; s < 2; ++s) {
-      for (auto p = 0; p < 6; ++p) {
-        const auto &poke = battle.sides[s].pokemon[p];
-        pokemon[s][p].template fill<activation>(pokemon_net, poke);
-        // teams[s][p] = PKMN::Set{poke.species, poke.moves};
-        // std::transform(teams[s][p])
-      }
-    }
-  }
-};
+static_assert(check_buckets());
 
 } // namespace NN::Battle

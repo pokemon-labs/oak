@@ -50,16 +50,7 @@ target_link_libraries(libpkmn_chance INTERFACE
 target_compile_definitions(libpkmn_client INTERFACE LOG CHANCE CALC)
 target_compile_definitions(libpkmn_chance INTERFACE CHANCE CALC)
 
-## Pybind
-
-include(FetchContent)
-
-FetchContent_Declare(
-  pybind11
-  GIT_REPOSITORY https://github.com/pybind/pybind11.git
-  GIT_TAG v2.12.0
-)
-FetchContent_MakeAvailable(pybind11)
+find_package(pybind11 REQUIRED)
 
 # Targets
 
@@ -73,9 +64,6 @@ target_link_libraries(benchmark PRIVATE search_lib argparse)
 
 add_executable(search-test src/search-test.cc)
 target_link_libraries(search-test PRIVATE search_lib argparse)
-
-add_executable(chall src/chall.cc)
-target_link_libraries(chall PRIVATE search_lib argparse)
 
 add_executable(generate src/generate.cc)
 target_link_libraries(generate PRIVATE search_lib argparse)
@@ -96,8 +84,10 @@ set_target_properties(pyoaktrain PROPERTIES PREFIX "" SUFFIX ".so")
 set_target_properties(pyoaktrain PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(pyoaksearch SHARED src/pyoaksearch.cc)
-target_link_libraries(pyoaksearch PRIVATE search_lib pybind11::module)
+target_include_directories(pyoaksearch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(pyoaksearch PRIVATE libpkmn_chance pybind11::module eigen search_lib)
 set_target_properties(pyoaksearch PROPERTIES PREFIX "" SUFFIX ".so")
+set_target_properties(pyoaksearch PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(pyoaklog SHARED src/pyoaklog.cc)
 target_include_directories(pyoaklog PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -105,13 +95,13 @@ target_link_libraries(pyoaklog PRIVATE libpkmn_client pybind11::module)
 set_target_properties(pyoaklog PROPERTIES PREFIX "" SUFFIX ".so")
 set_target_properties(pyoaklog PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_executable(log src/log.cc)
-target_include_directories(log PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(log PRIVATE libpkmn_client)
+# add_executable(log src/log.cc)
+# target_include_directories(log PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# target_link_libraries(log PRIVATE libpkmn_client)
 
-add_executable(dur src/dur.cc)
-target_include_directories(dur PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(dur PRIVATE libpkmn_client lrslibgmp)
+# add_executable(dur src/dur.cc)
+# target_include_directories(dur PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# target_link_libraries(dur PRIVATE libpkmn_client lrslibgmp)
 
 # add_executable(randbat src/randbat.cc)
 # target_link_libraries(randbat PRIVATE libpkmn_chance)

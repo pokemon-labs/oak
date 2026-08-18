@@ -6,38 +6,30 @@
 
 #include <cassert>
 
-/*
-
-Actions in battle are encoded as either a move or a species. All moves are
-encoded except for None and Struggle. The latter is because Struggle is only
-possible when theres one move, so no policy inference is needed.
-
-The rest is self explanatory. Moves are encoded as themselves, and switches as
-the incoming Pokemon's species.
-
-inline This encoding keeps the number of logits small (n_dim) and only 9 actions
-max are legal, so we don't have to compute the entire logit layer.
-
-*/
-
 namespace Encode::Battle::Policy {
 
+using PKMN::Data::Move;
+using PKMN::Data::Species;
+
 static constexpr int n_dim =
-    static_cast<int>(PKMN::Data::Species::Mew) +
-    (static_cast<int>(PKMN::Data::Move::Struggle) - 1); // no Struggle, None
+    static_cast<int>(Species::Mew) +
+    (static_cast<int>(Move::Struggle) - 1); // no Struggle, None
 
 inline uint16_t get_index(const PKMN::Side &side, auto choice) {
+  // assert(false);
   const auto choice_type = choice & 3;
   const auto choice_data = choice >> 2;
   switch (choice_type) {
   case 1: {
     assert(choice_data >= 0 && choice_data <= 4);
-    auto moveid =
-        static_cast<uint16_t>(side.stored().moves[choice_data - 1].id);
-    // assert(moveid < static_cast<uint16_t>(Data::Move::Struggle));
-    if (moveid == 0) {
+    if (choice_data == 0) {
+      // struggle
       return 0;
     }
+    auto moveid =
+        static_cast<uint16_t>(side.stored().moves[choice_data - 1].id);
+    assert(moveid < static_cast<uint16_t>(Move::Struggle));
+    assert(moveid > 0);
     return moveid - 1;
   }
   case 2: {

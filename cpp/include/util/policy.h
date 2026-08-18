@@ -185,7 +185,7 @@ inline double inverse_sigmoid(const double x) {
   return std::log(x) - std::log(1.0 - x);
 }
 
-struct JointValueMemory {
+struct JointValueHistory {
 
   std::vector<std::pair<double, double>> data;
 

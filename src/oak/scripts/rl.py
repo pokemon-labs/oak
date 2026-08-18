@@ -206,8 +206,10 @@ def main():
             network = oak.torch.BattleNetwork(
                 args.pokemon_hidden_dim,
                 args.active_hidden_dim,
+                args.moves_hidden_dim,
                 args.pokemon_out_dim,
                 args.active_out_dim,
+                args.moves_out_dim,
                 args.hidden_dim,
                 args.value_hidden_dim,
                 args.policy_hidden_dim,
@@ -334,7 +336,7 @@ def main():
     )
 
     if args.discrete:
-        generate_cmd.append("--use-discrete")
+        generate_cmd.append("--quantize")
         battle_cmd.append("--discrete")
 
     generate_proc = subprocess.Popen(

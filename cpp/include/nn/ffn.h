@@ -17,6 +17,7 @@ template <typename... Layers> struct FeedForwardNetwork {
                 "FeedForwardNetwork requires more than 1 layer.");
 
   template <size_t I> auto &layer() { return std::get<I>(layers); }
+  template <size_t I> const auto &layer() const { return std::get<I>(layers); }
 
   bool read_parameters(std::istream &stream) {
     bool ok = true;
@@ -36,6 +37,20 @@ template <typename... Layers> struct FeedForwardNetwork {
     return true;
   }
 
+  template <typename... Dims> void resize(Dims... dims) {
+    static_assert(sizeof...(Dims) == NumLayers + 1,
+                  "resize() requires NumLayers + 1 dimensions (in, ..., out)");
+    const std::array<uint32_t, NumLayers + 1> d{static_cast<uint32_t>(dims)...};
+    size_t max_out = 0;
+    [&]<size_t... I>(std::index_sequence<I...>) {
+      ((this->template layer<I>().resize(d[I], d[I + 1]),
+        max_out = std::max(max_out, size_t(d[I + 1]))),
+       ...);
+    }(std::make_index_sequence<NumLayers>{});
+    buffer_a.resize(max_out);
+    buffer_b.resize(max_out);
+  }
+
   template <Activation First, Activation... Rest>
   void propagate(const float *input, float *output) {
     static_assert((sizeof...(Rest) + 1) == NumLayers);
@@ -44,7 +59,8 @@ template <typename... Layers> struct FeedForwardNetwork {
   }
 
   template <Activation First, Activation... Rest>
-  void propagate(const float *input, const auto *index, float *output, auto n) {
+  void propagate(const float *input, const auto *index, float *output,
+                 uint16_t n) {
     static_assert((sizeof...(Rest) + 1) == NumLayers);
     layer<0>().template propagate<First>(input, index, buffer_a.data(), n);
     propagate_impl<1, First, Rest...>(output);

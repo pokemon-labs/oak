@@ -48,19 +48,6 @@ public:
     return 0;
   }
 
-  template <template <typename...> typename Vector, typename T>
-    requires(T::get_d())
-  uint32_t sample_pdf(const Vector<T> &input) noexcept {
-    double p = uniform();
-    for (uint32_t i = 0; i < input.size(); ++i) {
-      p -= input[i].get_d();
-      if (p <= 0) {
-        return i;
-      }
-    }
-    return 0;
-  }
-
   void discard(size_t n) { engine.discard(n); }
 };
 

@@ -2,10 +2,10 @@
 
 #include <libpkmn/data.h>
 
-#include <string>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <stdexcept>
+#include <string>
 
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
@@ -59,12 +59,12 @@ struct MoveSlotProxy {
 };
 
 struct MoveDetailsProxy {
-  ::PKMN::MoveDetails* p;
+  ::PKMN::MoveDetails *p;
 
-  uint8_t get_index() const {return p->index;}
-  void set_index(uint8_t val) {p->index = val;}
-  uint8_t get_counterable() const {return p->counterable;}
-  void set_counterable(uint8_t val) {p->counterable = val;}
+  uint8_t get_index() const { return p->index; }
+  void set_index(uint8_t val) { p->index = val; }
+  uint8_t get_counterable() const { return p->counterable; }
+  void set_counterable(uint8_t val) { p->counterable = val; }
 };
 
 struct BoostsProxy {
@@ -286,80 +286,110 @@ struct DurationProxy {
   void set_raw(uint32_t v) { p->data = v; }
 };
 
-struct DurationsView {
-  pkmn_gen1_chance_durations raw{};
+struct ActionProxy {
+  // Points at this player's packed 64-bit Action within the owning
+  // ActionsView (bytes[0:8] for P1, bytes[8:16] for P2).
+  uint64_t *p;
 
-  explicit DurationsView() = default;
-  explicit DurationsView(pkmn_gen1_chance_durations &durations)
-      : raw{durations} {}
-  explicit DurationsView(py::bytes b) {
+  uint8_t get_damage() const { return static_cast<uint8_t>(bf_get<8>(*p, 0)); }
+  void set_damage(uint8_t v) { *p = bf_set<8>(*p, 0, v); }
+
+  uint8_t get_hit() const { return static_cast<uint8_t>(bf_get<2>(*p, 8)); }
+  void set_hit(uint8_t v) { *p = bf_set<2>(*p, 8, v); }
+
+  uint8_t get_critical_hit() const {
+    return static_cast<uint8_t>(bf_get<2>(*p, 10));
+  }
+  void set_critical_hit(uint8_t v) { *p = bf_set<2>(*p, 10, v); }
+
+  uint8_t get_secondary_chance() const {
+    return static_cast<uint8_t>(bf_get<2>(*p, 12));
+  }
+  void set_secondary_chance(uint8_t v) { *p = bf_set<2>(*p, 12, v); }
+
+  uint8_t get_speed_tie() const {
+    return static_cast<uint8_t>(bf_get<2>(*p, 14));
+  }
+  void set_speed_tie(uint8_t v) { *p = bf_set<2>(*p, 14, v); }
+
+  uint8_t get_confused() const {
+    return static_cast<uint8_t>(bf_get<2>(*p, 16));
+  }
+  void set_confused(uint8_t v) { *p = bf_set<2>(*p, 16, v); }
+
+  uint8_t get_paralyzed() const {
+    return static_cast<uint8_t>(bf_get<2>(*p, 18));
+  }
+  void set_paralyzed(uint8_t v) { *p = bf_set<2>(*p, 18, v); }
+
+  uint8_t get_duration() const {
+    return static_cast<uint8_t>(bf_get<4>(*p, 20));
+  }
+  void set_duration(uint8_t v) { *p = bf_set<4>(*p, 20, v); }
+
+  // Packed 16-bit sub-field (bits 24:40). The internal layout of the
+  // individual duration counters isn't in the doc excerpt we have, so
+  // this is exposed only as the raw value for now.
+  uint16_t get_durations_raw() const {
+    return static_cast<uint16_t>(bf_get<16>(*p, 24));
+  }
+  void set_durations_raw(uint16_t v) { *p = bf_set<16>(*p, 24, v); }
+
+  uint8_t get_move_slot() const {
+    return static_cast<uint8_t>(bf_get<4>(*p, 40));
+  }
+  void set_move_slot(uint8_t v) { *p = bf_set<4>(*p, 40, v); }
+
+  // Doc table lists this as a second "move_slot" (bits 44:48), but its
+  // description is the multi-hit move distribution roll (2-5); named
+  // distinctly here to avoid clashing with the field above.
+  uint8_t get_multi_hit_slot() const {
+    return static_cast<uint8_t>(bf_get<4>(*p, 44));
+  }
+  void set_multi_hit_slot(uint8_t v) { *p = bf_set<4>(*p, 44, v); }
+
+  uint8_t get_psywave() const {
+    return static_cast<uint8_t>(bf_get<8>(*p, 48));
+  }
+  void set_psywave(uint8_t v) { *p = bf_set<8>(*p, 48, v); }
+
+  uint8_t get_metronome() const {
+    return static_cast<uint8_t>(bf_get<8>(*p, 56));
+  }
+  void set_metronome(uint8_t v) { *p = bf_set<8>(*p, 56, v); }
+
+  uint64_t get_bits() const { return *p; }
+  void set_bits(uint64_t v) { *p = v; }
+};
+
+struct ActionsView {
+  pkmn_gen1_chance_actions raw{};
+
+  explicit ActionsView() = default;
+  explicit ActionsView(pkmn_gen1_chance_actions &actions) : raw{actions} {}
+  explicit ActionsView(py::bytes b) {
     auto sv = bytes_sv(b);
-    if (sv.size() != PKMN_GEN1_CHANCE_DURATIONS_SIZE)
-      throw std::runtime_error("Durations: expected " +
-                               std::to_string(PKMN_GEN1_CHANCE_DURATIONS_SIZE) +
+    if (sv.size() != PKMN_GEN1_CHANCE_ACTIONS_SIZE)
+      throw std::runtime_error("Actions: expected " +
+                               std::to_string(PKMN_GEN1_CHANCE_ACTIONS_SIZE) +
                                " bytes, got " + std::to_string(sv.size()));
-    std::memcpy(&raw, sv.data(), PKMN_GEN1_CHANCE_DURATIONS_SIZE);
+    std::memcpy(&raw, sv.data(), PKMN_GEN1_CHANCE_ACTIONS_SIZE);
   }
 
-  ::PKMN::Durations &durations() { return ::PKMN::view(raw); }
-  const ::PKMN::Durations &durations() const { return ::PKMN::view(raw); }
+  uint64_t *player_bits(int i) {
+    return reinterpret_cast<uint64_t *>(raw.bytes + i * 8);
+  }
 
-  DurationProxy get(int i) {
+  ActionProxy get(int i) {
     if (i < 0 || i > 1)
       throw std::out_of_range("index must be 0 or 1");
-    return {&durations().get(i)};
+    return {player_bits(i)};
   }
 
   py::bytes bytes() const {
     return py::bytes(reinterpret_cast<const char *>(&raw),
-                     PKMN_GEN1_CHANCE_DURATIONS_SIZE);
+                     PKMN_GEN1_CHANCE_ACTIONS_SIZE);
   }
 };
 
-struct BattleView {
-  pkmn_gen1_battle raw{};
-
-  explicit BattleView() = default;
-  explicit BattleView(pkmn_gen1_battle battle) : raw{battle} {}
-  explicit BattleView(py::bytes b) {
-    auto sv = bytes_sv(b);
-    if (sv.size() != PKMN_GEN1_BATTLE_SIZE)
-      throw std::runtime_error("Battle: expected " +
-                               std::to_string(PKMN_GEN1_BATTLE_SIZE) +
-                               " bytes, got " + std::to_string(sv.size()));
-    std::memcpy(&raw, sv.data(), PKMN_GEN1_BATTLE_SIZE);
-  }
-
-  ::PKMN::Battle &battle() { return ::PKMN::view(raw); }
-  const ::PKMN::Battle &battle() const { return ::PKMN::view(raw); }
-
-  SideProxy side(int i) {
-    if (i < 0 || i > 1)
-      throw std::out_of_range("side index must be 0 or 1");
-    return {&battle().sides[static_cast<size_t>(i)]};
-  }
-
-  MoveDetailsProxy last_move(int i) {
-    if (i < 0 || i > 1) {
-      throw std::out_of_range("player = 0, 1");
-    }
-    return {&battle().last_moves[i]};
-  }
-
-  uint16_t get_turn() const { return battle().turn; }
-  uint16_t get_last_damage() const { return battle().last_damage; }
-  uint64_t get_rng() const { return battle().rng; }
-
-  void set_turn(uint16_t v) { battle().turn = v; }
-  void set_last_damage(uint16_t v) { battle().last_damage = v; }
-  void set_rng(uint64_t v) { battle().rng = v; }
-
-  py::bytes bytes() const {
-    return py::bytes(reinterpret_cast<const char *>(&raw),
-                     PKMN_GEN1_BATTLE_SIZE);
-  }
-
-  std::string to_string() const { return ::PKMN::to_string(raw); }
-};
-
-}
+} // namespace Py::PKMN

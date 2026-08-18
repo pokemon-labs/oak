@@ -92,7 +92,7 @@ inline int unique_index(const auto &container, const auto &value) {
 inline std::string status_string(const auto status) {
   const auto byte = static_cast<uint8_t>(status);
   if (byte == 0) {
-    return "";
+    return "OK";
   }
   if (byte & 7) {
     if (byte & 128) {
