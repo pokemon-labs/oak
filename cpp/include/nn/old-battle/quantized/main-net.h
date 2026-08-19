@@ -8,9 +8,9 @@
 #include <type_traits>
 
 #include <nn/affine.h>
-#include <nn/battle/quantized/affine.h>
-#include <nn/battle/quantized/clipped_relu.h>
-#include <nn/battle/quantized/common.h>
+#include <nn/old-battle/quantized/affine.h>
+#include <nn/old-battle/quantized/clipped_relu.h>
+#include <nn/old-battle/quantized/common.h>
 
 namespace NN::OldBattle::Quantized {
 

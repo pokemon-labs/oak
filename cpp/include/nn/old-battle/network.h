@@ -2,9 +2,9 @@
 
 #include <encode/battle/battle.h>
 #include <encode/battle/policy.h>
-#include <nn/battle/cache.h>
-#include <nn/battle/main-net.h>
-#include <nn/battle/quantized/main-net.h>
+#include <nn/old-battle/cache.h>
+#include <nn/old-battle/main-net.h>
+#include <nn/old-battle/quantized/main-net.h>
 #include <nn/default-hyperparameters.h>
 #include <nn/ffn.h>
 #include <util/random.h>
@@ -15,7 +15,7 @@ inline constexpr float sigmoid(const float x) { return 1 / (1 + std::exp(-x)); }
 
 struct NetworkBase {
   virtual std::tuple<int, int, int, int> shape() const noexcept = 0;
-  virtual std::unique_ptr<NetworkBase> clone() const noexcept = 0;
+  virtual std::shared_ptr<NetworkBase> clone() const noexcept = 0;
   virtual ~NetworkBase() = default;
 };
 
@@ -42,12 +42,14 @@ public:
     return main_net.shape();
   }
 
-  std::unique_ptr<NetworkBase> clone() const noexcept {
-    return std::make_unique<NetworkImpl>(*this);
+  std::shared_ptr<NetworkBase> clone() const noexcept {
+    return std::make_shared<NetworkImpl>(*this);
   }
 
   void fill_cache(const pkmn_gen1_battle &battle) noexcept {
+    if (!battle_cache.is_init()) {
     battle_cache.template fill<activation>(pokemon_net, PKMN::view(battle));
+    }
   }
 
   bool read_parameters(std::istream &stream) {
@@ -191,13 +193,13 @@ using QNetwork =
 #define Q128
 
 namespace Impl {
-inline auto invalid(const std::string &msg) -> std::unique_ptr<NetworkBase> {
+inline auto invalid(const std::string &msg) -> std::shared_ptr<NetworkBase> {
   throw std::runtime_error{"Invalid layer size for quantized net " + msg +
                            " (check code for valid sizes)."};
 }
 
 template <int In, int Hidden, int ValueHidden, int PolicyHidden>
-auto visit_network_4(const auto &F, std::unique_ptr<NetworkBase> network) {
+auto visit_network_4(const auto &F, std::shared_ptr<NetworkBase> network) {
   if constexpr (Hidden < ValueHidden) {
     return Impl::invalid("Value hidden cannot be larger than hidden.");
   } else if constexpr (Hidden < PolicyHidden) {
@@ -218,7 +220,7 @@ auto visit_network_4(const auto &F, std::unique_ptr<NetworkBase> network) {
 
 template <int In, int Hidden, int ValueHidden>
 auto visit_network_3(int policy_hidden, const auto &F,
-                     std::unique_ptr<NetworkBase> network) {
+                     std::shared_ptr<NetworkBase> network) {
   switch (policy_hidden) {
 #ifdef Q32
   case 32:
@@ -239,7 +241,7 @@ auto visit_network_3(int policy_hidden, const auto &F,
 
 template <int In, int Hidden>
 auto visit_network_2(int value_hidden, int policy_hidden, const auto &F,
-                     std::unique_ptr<NetworkBase> network) {
+                     std::shared_ptr<NetworkBase> network) {
   switch (value_hidden) {
 #ifdef Q32
   case 32:
@@ -263,7 +265,7 @@ auto visit_network_2(int value_hidden, int policy_hidden, const auto &F,
 
 template <int In>
 auto visit_network_1(int hidden, int value_hidden, int policy_hidden,
-                     const auto &F, std::unique_ptr<NetworkBase> network) {
+                     const auto &F, std::shared_ptr<NetworkBase> network) {
   switch (hidden) {
 #ifdef Q32
   case 32:
@@ -288,7 +290,7 @@ auto visit_network_1(int hidden, int value_hidden, int policy_hidden,
 
 inline auto visit_quantized_network(int in, int hidden, int value_hidden,
                                     int policy_hidden, const auto &F,
-                                    std::unique_ptr<NetworkBase> network = {}) {
+                                    std::shared_ptr<NetworkBase> network = {}) {
   switch (in) {
   case 768:
     return Impl::visit_network_1<768>(hidden, value_hidden, policy_hidden, F,

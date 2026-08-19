@@ -24,7 +24,7 @@
 #include <cstdint>
 #include <iosfwd>
 
-#include <nn/battle/quantized/common.h>
+#include <nn/old-battle/quantized/common.h>
 
 namespace NN::OldBattle::Quantized {
 

@@ -10,6 +10,7 @@
 #include <search/bandit/ucb1.h>
 #include <search/mcts.h>
 #include <util/file-lock.h>
+#include <util/parse.h>
 #include <util/strings.h>
 
 #include <chrono>
@@ -60,7 +61,68 @@ class OldNetwork : public Eval {
   auto &get() { return std::get<NetworkPtr>(this->data); }
   const auto &get() const { return std::get<NetworkPtr>(this->data); }
 
-  void zero_initialize() { data = std::make_shared<NN::OldBattle::Network>(); }
+  void initialize_network(const pkmn_gen1_battle &b) {
+
+    auto [file, fd] = FileLock::try_open_file(eval);
+    FileLock::FdGuard guard{fd};
+
+    struct Header {
+      uint8_t bytes[8];
+    };
+
+    const auto read_parameters_and_maybe_quantize = [&](auto &network) {
+      if (!network->read_parameters(file)) {
+        throw std::runtime_error{"Agent: could not read parameters at: " +
+                                 eval};
+      }
+      network->fill_cache(b);
+      if (discrete) {
+        const auto [id, hd, vd, pd] = network->main_net.shape();
+        auto q_network_ptr = NN::Battle::visit_quantized_network(
+            id, hd, vd, pd, [&network](auto &net) {
+              // convert to quantized
+              net.active_net = network->active_net;
+              net.pokemon_net = network->pokemon_net;
+              net.pokemon_out_dim = network->pokemon_out_dim;
+              net.active_out_dim = network->active_out_dim;
+              net.side_embedding_dim = network->side_embedding_dim;
+              net.battle_embedding.resize(network->battle_embedding.size());
+              net.battle_cache = network->battle_cache;
+              net.main_net.try_copy_parameters(network->main_net);
+            });
+        network_ptr = std::move(q_network_ptr);
+      } else {
+        network_ptr = std::move(network);
+      }
+      assert(network_ptr);
+    };
+
+    Header header{};
+    static_assert(sizeof(header) == 8);
+    file.read(reinterpret_cast<char *>(&header), 8);
+    using NN::Activation;
+    const auto activation = static_cast<Activation>(header.bytes[0] + 1);
+    if (activation == Activation::clamp) {
+      auto network = std::make_unique<NN::Battle::NetworkClamped>();
+      read_parameters_and_maybe_quantize(network);
+      return;
+    }
+    if (discrete) {
+      throw std::runtime_error{"Agent: .discrete was specified but the parsed "
+                               "header does not encode clamped activations."};
+    }
+    if (activation == Activation::relu) {
+      auto network = std::make_unique<NN::Battle::Network>();
+      read_parameters_and_maybe_quantize(network);
+      return;
+    } else if (activation == Activation::relu_scaled) {
+      auto network = std::make_unique<NN::Battle::NetworkScaled>();
+      read_parameters_and_maybe_quantize(network);
+      return;
+    } else {
+      throw std::runtime_error{"Agent: could not parse header at: " + eval};
+    }
+  }
 };
 
 class Network : public Eval {
@@ -333,14 +395,24 @@ inline Eval eval(const std::string &s, bool quantize) {
   if (s == "fp") {
     return PokeEngine{};
   }
-  Network network{};
-  if (!network.read_parameters(s)) {
-    throw std::runtime_error{"Parse::eval: could not read parameters at: " + s};
+
+  const auto split = ::Parse::split(s, ".");
+
+  if (len(split) >= 3 && split[len(split) - 2] == "old-battle") {
+    OldNetwork network{};
+    network.initialize_network()
+  } else {
+
+    Network network{};
+    if (!network.read_parameters(s)) {
+      throw std::runtime_error{"Parse::eval: could not read parameters at: " +
+                               s};
+    }
+    if (quantize) {
+      network.quantize();
+    }
+    return network;
   }
-  if (quantize) {
-    network.quantize();
-  }
-  return network;
 }
 
 inline BanditParams bandit(const std::string &s) {

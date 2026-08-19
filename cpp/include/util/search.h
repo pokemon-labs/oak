@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nn/battle/network.h>
+#include <nn/old-battle/network.h>
 #include <search/bandit/exp3.h>
 #include <search/bandit/pexp3.h>
 #include <search/bandit/pucb.h>

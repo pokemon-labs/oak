@@ -246,6 +246,10 @@ template <typename T> struct BattleCache {
     }
   }
 
+  bool is_init() const {
+    return pokemon[0][0].embeddings[0].get();
+  }
+
   BattleCache &operator=(const BattleCache &other) = default;
   template <typename U> BattleCache &operator=(const BattleCache<U> &other) {
     for (auto s = 0; s < 2; ++s) {
