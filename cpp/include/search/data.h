@@ -22,7 +22,8 @@ namespace Search {
 
 struct Eval {
   using Variant = std::variant<MCTS::MonteCarlo, PokeEngine::Eval,
-                               std::shared_ptr<NN::Battle::NetworkBase>, std::shared_ptr<NN::OldBattle::NetworkBase>>;
+                               std::shared_ptr<NN::Battle::NetworkBase>,
+                               std::shared_ptr<NN::OldBattle::NetworkBase>>;
   Variant data;
   template <class T, class... Args>
   Eval(std::in_place_type_t<T>, Args &&...args)
@@ -37,7 +38,6 @@ struct Eval {
     return std::holds_alternative<std::shared_ptr<NN::Battle::NetworkBase>>(
         data);
   }
-
 };
 
 class OldNetwork : public Eval {
@@ -61,7 +61,6 @@ class OldNetwork : public Eval {
   const auto &get() const { return std::get<NetworkPtr>(this->data); }
 
   void zero_initialize() { data = std::make_shared<NN::OldBattle::Network>(); }
-
 };
 
 class Network : public Eval {
@@ -375,7 +374,7 @@ inline BanditParams bandit(const std::string &s) {
 
 inline MatrixUCB matrix_ucb(const BanditParams &params, const std::string &s) {
   const auto matrix_ucb_split = ::Parse::split(s, '-');
-  if (matrix_ucb_split.size() != 4) {   
+  if (matrix_ucb_split.size() != 4) {
     throw std::runtime_error{"Could not parse MatrixUCB name: " + s};
   }
   const float c = std::stof(matrix_ucb_split[0]);

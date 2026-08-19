@@ -267,7 +267,8 @@ template <SearchOptions Options = default_search> struct Search {
       stats.init(output.p1.k, output.p2.k);
 
       if constexpr (is_contextual_bandit<decltype(get_bandit_params(params))>) {
-        static_assert(is_network<decltype(eval) || is_old_network<decltype(eval)>);
+        static_assert(is_network < decltype(eval) ||
+                      is_old_network<decltype(eval)>);
         using output_type = std::remove_cvref_t<decltype(eval)>::T;
         constexpr auto activation = std::remove_cvref_t<decltype(eval)>::act;
         static thread_local uint16_t p1_choice_index[9];
@@ -543,8 +544,19 @@ template <SearchOptions Options = default_search> struct Search {
                       battle_embedding.data()));
             }
             assert(std::isfinite(value));
-          } else if constexpr (is_old_network<decltype(eval)) {
-            // TODO
+          } else if constexpr (is_old_network < decltype(eval)) {
+            if constexpr (is_contextual_bandit<decltype(stats)>) {
+              static thread_local std::array<float, 9> p1_logits;
+              static thread_local std::array<float, 9> p2_logits;
+              value = eval.value_policy_inference(
+                  battle, durations(), m, n, p1_choices.data(),
+                  p2_choices.data(), p1_logits.data(), p2_logits.data());
+              stats.softmax_logits(bandit_params, p1_logits.data(),
+                                   p2_logits.data());
+            } else {
+              value = eval.value_inference(battle, durations());
+            }
+
           } else if constexpr (is_poke_engine<T>) {
             value = eval.evaluate(battle);
           } else {
