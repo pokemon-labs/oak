@@ -41,6 +41,10 @@ inline constexpr bool is_network =
     std::is_base_of_v<NN::Battle::NetworkBase, std::remove_cvref_t<T>>;
 
 template <typename T>
+inline constexpr bool is_old_network =
+    std::is_base_of_v<NN::OldBattle::NetworkBase, std::remove_cvref_t<T>>;
+
+template <typename T>
 inline constexpr bool is_poke_engine =
     std::is_same_v<PokeEngine::Eval, std::remove_cvref_t<T>>;
 
@@ -263,7 +267,7 @@ template <SearchOptions Options = default_search> struct Search {
       stats.init(output.p1.k, output.p2.k);
 
       if constexpr (is_contextual_bandit<decltype(get_bandit_params(params))>) {
-        static_assert(is_network<decltype(eval)>);
+        static_assert(is_network<decltype(eval) || is_old_network<decltype(eval)>);
         using output_type = std::remove_cvref_t<decltype(eval)>::T;
         constexpr auto activation = std::remove_cvref_t<decltype(eval)>::act;
         static thread_local uint16_t p1_choice_index[9];
@@ -539,6 +543,8 @@ template <SearchOptions Options = default_search> struct Search {
                       battle_embedding.data()));
             }
             assert(std::isfinite(value));
+          } else if constexpr (is_old_network<decltype(eval)) {
+            // TODO
           } else if constexpr (is_poke_engine<T>) {
             value = eval.evaluate(battle);
           } else {

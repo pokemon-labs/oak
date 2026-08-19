@@ -9,7 +9,7 @@
 #include <map>
 #include <memory>
 
-namespace NN::Battle {
+namespace NN::OldBattle {
 
 template <typename T> using EmbeddingT = std::unique_ptr<T[]>;
 
@@ -270,4 +270,4 @@ template <typename T> struct BattleCache {
   }
 };
 
-} // namespace NN::Battle
+} // namespace NN::OldBattle

@@ -9,7 +9,7 @@
 #include <nn/ffn.h>
 #include <util/random.h>
 
-namespace NN::Battle {
+namespace NN::OldBattle {
 
 inline constexpr float sigmoid(const float x) { return 1 / (1 + std::exp(-x)); }
 
@@ -297,4 +297,4 @@ inline auto visit_quantized_network(int in, int hidden, int value_hidden,
     return Impl::invalid("Side dim: " + std::to_string(in));
   }
 }
-} // namespace NN::Battle
+} // namespace NN::OldBattle

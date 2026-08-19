@@ -29,7 +29,7 @@
 
 #include <immintrin.h>
 
-namespace NN::Battle::Quantized {
+namespace NN::OldBattle::Quantized {
 
 // Constant used in evaluation value calculation
 constexpr int OutputScale = 16;
@@ -52,4 +52,4 @@ constexpr IntType ceil_to_multiple(IntType n, IntType base) {
   return (n + base - 1) / base * base;
 }
 
-} // namespace NN::Battle::Quantized
+} // namespace NN::OldBattle::Quantized

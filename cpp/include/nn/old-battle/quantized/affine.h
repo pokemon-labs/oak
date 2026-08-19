@@ -6,7 +6,7 @@
 #include "common.h"
 #include "simd.h"
 
-namespace NN::Battle::Quantized {
+namespace NN::OldBattle::Quantized {
 
 template <IndexType InDims, IndexType OutDims> class AffineTransform {
 public:
@@ -153,4 +153,4 @@ public:
   }
 };
 
-} // namespace NN::Battle::Quantized
+} // namespace NN::OldBattle::Quantized

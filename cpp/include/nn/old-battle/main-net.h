@@ -8,7 +8,7 @@
 #include <fstream>
 #include <vector>
 
-namespace NN::Battle {
+namespace NN::OldBattle {
 
 struct MainNet {
 
@@ -206,4 +206,4 @@ struct MainNet {
 //   }
 // };
 
-} // namespace NN::Battle
+} // namespace NN::OldBattle

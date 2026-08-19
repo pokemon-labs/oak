@@ -22,7 +22,7 @@ namespace Search {
 
 struct Eval {
   using Variant = std::variant<MCTS::MonteCarlo, PokeEngine::Eval,
-                               std::shared_ptr<NN::Battle::NetworkBase>>;
+                               std::shared_ptr<NN::Battle::NetworkBase>, std::shared_ptr<NN::OldBattle::NetworkBase>>;
   Variant data;
   template <class T, class... Args>
   Eval(std::in_place_type_t<T>, Args &&...args)
@@ -32,6 +32,36 @@ struct Eval {
     return std::holds_alternative<std::shared_ptr<NN::Battle::NetworkBase>>(
         data);
   }
+
+  bool is_old_network() const noexcept {
+    return std::holds_alternative<std::shared_ptr<NN::Battle::NetworkBase>>(
+        data);
+  }
+
+};
+
+class OldNetwork : public Eval {
+  using NetworkPtr = std::shared_ptr<NN::OldBattle::NetworkBase>;
+  Network(int act = 1) : Eval(std::in_place_type<NetworkPtr>) {
+    switch (static_cast<NN::Activation>(act)) {
+    case NN::Activation::relu: {
+      this->data = std::make_shared<NN::OldBattle::Network>();
+      return;
+    }
+    case NN::Activation::clamp: {
+      this->data = std::make_shared<NN::OldBattle::NetworkClamped>();
+      return;
+    }
+    default: {
+      throw std::runtime_error{"Invalid activation."};
+    }
+    }
+  }
+  auto &get() { return std::get<NetworkPtr>(this->data); }
+  const auto &get() const { return std::get<NetworkPtr>(this->data); }
+
+  void zero_initialize() { data = std::make_shared<NN::OldBattle::Network>(); }
+
 };
 
 class Network : public Eval {
@@ -345,7 +375,7 @@ inline BanditParams bandit(const std::string &s) {
 
 inline MatrixUCB matrix_ucb(const BanditParams &params, const std::string &s) {
   const auto matrix_ucb_split = ::Parse::split(s, '-');
-  if (matrix_ucb_split.size() != 4) {
+  if (matrix_ucb_split.size() != 4) {   
     throw std::runtime_error{"Could not parse MatrixUCB name: " + s};
   }
   const float c = std::stof(matrix_ucb_split[0]);

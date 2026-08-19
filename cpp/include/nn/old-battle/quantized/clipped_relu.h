@@ -26,7 +26,7 @@
 
 #include <nn/battle/quantized/common.h>
 
-namespace NN::Battle::Quantized {
+namespace NN::OldBattle::Quantized {
 
 // Clipped ReLU
 template <IndexType InDims> class ClippedReLU {
@@ -99,4 +99,4 @@ public:
   }
 };
 
-} // namespace NN::Battle::Quantized
+} // namespace NN::OldBattle::Quantized

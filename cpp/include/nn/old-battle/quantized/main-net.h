@@ -12,7 +12,7 @@
 #include <nn/battle/quantized/clipped_relu.h>
 #include <nn/battle/quantized/common.h>
 
-namespace NN::Battle::Quantized {
+namespace NN::OldBattle::Quantized {
 
 template <int In, int Hidden, int ValueHidden, int PolicyHidden>
 struct MainNet {
@@ -150,4 +150,4 @@ struct MainNet {
   }
 };
 
-} // namespace NN::Battle::Quantized
+} // namespace NN::OldBattle::Quantized
