@@ -1,6 +1,6 @@
 #pragma once
 
-#include <encode/battle/battle.h>
+#include <encode/old-battle/battle.h>
 #include <encode/battle/key.h>
 #include <libpkmn/data/status.h>
 #include <nn/affine.h>
@@ -18,7 +18,7 @@ using PKMN::Data::Status;
 template <typename T> struct PokemonCache {
 
   // Encode does not have a dimension for no status
-  static constexpr auto n_status = Encode::Battle::Status::n_dim + 1;
+  static constexpr auto n_status = Encode::OldBattle::Status::n_dim + 1;
   // We only encode whether the move has pp, so 2^4 for the moveset
   static constexpr auto n_pp = 16;
   // For a stored pokemon, the move pp and status features are the only ones
@@ -91,14 +91,14 @@ template <typename T> struct PokemonCache {
 
       const auto get_entry = [this, &pokemon_net](const auto &pokemon,
                                                   const auto sleep) {
-        std::array<uint16_t, Encode::Battle::Pokemon::n_dim> encoding_indices{};
-        std::array<float, Encode::Battle::Pokemon::n_dim> encoding_input{};
+        std::array<uint16_t, Encode::OldBattle::Pokemon::n_dim> encoding_indices{};
+        std::array<float, Encode::OldBattle::Pokemon::n_dim> encoding_input{};
         float *input = encoding_input.data();
         uint16_t *indices = encoding_indices.data();
-        Encode::Battle::Pokemon::write(pokemon, sleep, input, indices);
+        Encode::OldBattle::Pokemon::write(pokemon, sleep, input, indices);
         uint32_t n = std::distance(encoding_input.data(), input);
         auto *embedding_data =
-            this->data(Encode::Battle::pokemon_key(pokemon, sleep));
+            this->data(Encode::OldBattle::pokemon_key(pokemon, sleep));
         if constexpr (is_integral) {
           pokemon_net.propagate<activation, activation>(encoding_input.data(),
                                                         encoding_indices.data(),
@@ -126,7 +126,7 @@ template <typename T> struct PokemonCache {
   }
 
   const T *get(const auto &pokemon, const auto sleep) const {
-    const auto key = Encode::Battle::pokemon_key(pokemon, sleep);
+    const auto key = Encode::OldBattle::pokemon_key(pokemon, sleep);
     return data(key);
   }
 };
@@ -141,8 +141,8 @@ template <typename T> struct ActivePokemonCache {
   uint32_t dim;
   std::map<Key, Embedding> embeddings;
   // workspace
-  std::array<float, Encode::Battle::ActivePokemon::n_dim> encoding_input;
-  std::array<uint16_t, Encode::Battle::ActivePokemon::n_dim> encoding_indices;
+  std::array<float, Encode::OldBattle::ActivePokemon::n_dim> encoding_input;
+  std::array<uint16_t, Encode::OldBattle::ActivePokemon::n_dim> encoding_indices;
   std::vector<float> embedding;
 
   ActivePokemonCache(uint32_t dim = 0) : dim{dim} {
@@ -187,7 +187,7 @@ template <typename T> struct ActivePokemonCache {
   const T *get(EmbeddingNet &active_net, const auto &active,
                const auto &pokemon, const auto &duration) {
     const auto key =
-        Key{active, Encode::Battle::pokemon_key(pokemon, duration.sleep(0))};
+        Key{active, Encode::OldBattle::pokemon_key(pokemon, duration.sleep(0))};
     if (embeddings.find(key) != embeddings.end()) {
       const auto embedding_data = data(key);
       assert(embedding_data != nullptr);
@@ -195,7 +195,7 @@ template <typename T> struct ActivePokemonCache {
     } else {
       auto *input = encoding_input.data();
       auto *indices = encoding_indices.data();
-      Encode::Battle::ActivePokemon::write(pokemon, active, duration, input,
+      Encode::OldBattle::ActivePokemon::write(pokemon, active, duration, input,
                                            indices);
       const auto n = std::distance(encoding_input.data(), input);
 

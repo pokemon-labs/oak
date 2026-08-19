@@ -1,6 +1,6 @@
 #pragma once
 
-#include <encode/battle/battle.h>
+#include <encode/old-battle/battle.h>
 #include <encode/battle/policy.h>
 #include <nn/old-battle/cache.h>
 #include <nn/old-battle/main-net.h>
