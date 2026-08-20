@@ -3,6 +3,7 @@
 #include <libpkmn/layout.h>
 #include <libpkmn/strings.h>
 #include <nn/battle/network.h>
+#include <nn/old-battle/network.h>
 #include <search/durations.h>
 #include <search/hash.h>
 #include <search/poke-engine-evaluate.h>
@@ -305,7 +306,19 @@ template <SearchOptions Options = default_search> struct Search {
           softmax(p1_nash.data(), p1_logits, output.p1.k);
           softmax(p2_nash.data(), p2_logits, output.p2.k);
           initial_solve = true;
-        } else {
+        } else if constexpr (is_old_network<decltype(eval)>) {
+          static thread_local std::array<float, 9> p1_logits;
+          static thread_local std::array<float, 9> p2_logits;
+          output.initial_value = eval.value_policy_inference(
+              input.battle, input.durations, output.p1.k, output.p2.k,
+              output.p1.choices.data(), output.p2.choices.data(),
+              p1_logits.data(), p2_logits.data());
+          stats.softmax_logits(get_bandit_params(params), p1_logits.data(),
+                               p2_logits.data());
+          std::copy_n(p1_logits.data(), output.p1.k, output.p1.logit.data());
+          std::copy_n(p2_logits.data(), output.p2.k, output.p2.logit.data());
+          softmax(output.p1.prior.data(), p1_logits.data(), output.p1.k);
+          softmax(output.p2.prior.data(), p2_logits.data(), output.p2.k);
         }
       }
     }

@@ -42,6 +42,7 @@ struct Eval {
 };
 
 class OldNetwork : public Eval {
+public:
   using NetworkPtr = std::shared_ptr<NN::OldBattle::NetworkBase>;
   OldNetwork(int act = 1) : Eval(std::in_place_type<NetworkPtr>) {
     switch (static_cast<NN::Activation>(act)) {
@@ -75,18 +76,22 @@ class OldNetwork : public Eval {
     if (activation == Activation::clamp) {
       auto network = std::make_shared<NN::OldBattle::NetworkClamped>();
       network->read_parameters(file);
-      return network;
+      this->data = network;
+      return true;
     } else if (activation == Activation::relu) {
       auto network = std::make_shared<NN::OldBattle::Network>();
       network->read_parameters(file);
-      return network;
+      this->data = network;
+      return true;
     } else {
-      throw std::runtime_error{"Agent: could not parse header at: " + path};
       return false;
     }
   }
 
-  bool quantize() { return false; }
+  bool quantize() {
+    throw std::runtime_error{"Can't quantize old networks yet. "};
+    return false;
+  }
 };
 
 class Network : public Eval {
@@ -142,7 +147,6 @@ public:
       auto network = std::make_shared<NN::Battle::Network>();
       return read_params(network);
     } else {
-      throw std::runtime_error{"Agent: could not parse header at: " + path};
       return false;
     }
   }
@@ -360,9 +364,13 @@ inline Eval eval(const std::string &s, bool quantize) {
     return PokeEngine{};
   }
 
-  const auto split = ::Parse::split(s, ".");
+  const auto split = ::Parse::split(s, '.');
+  for (auto x : split) {
+    std::cout << x << ' ' << x.size() << std::endl;
+  }
 
-  if (len(split) >= 3 && split[len(split) - 2] == "old-battle") {
+  if (split.size() >= 3 && split[split.size() - 2] == "old-battle") {
+    std::cout << "Old Network: " << s << std::endl;
     OldNetwork network{};
     if (!network.read_parameters(s)) {
       throw std::runtime_error{
@@ -371,7 +379,9 @@ inline Eval eval(const std::string &s, bool quantize) {
     if (quantize) {
       network.quantize();
     }
+    return network;
   } else {
+    std::cout << "New Network: " << s << std::endl;
     Network network{};
     if (!network.read_parameters(s)) {
       throw std::runtime_error{"Parse::eval: could not read parameters at: " +

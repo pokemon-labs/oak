@@ -85,22 +85,24 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
     else if (auto *ptr =
                  std::get_if<std::shared_ptr<NN::OldBattle::NetworkBase>>(
                      &eval.data)) {
-      if (auto network = dynamic_cast<NN::OldBattle::Network *>(ptr.get())) {
+      if (auto network = dynamic_cast<NN::OldBattle::Network *>(ptr->get())) {
         network->fill_cache(battle);
         return s.run(device, dur, params, heap, *network, input, output);
-      } else if (auto network =
-                     dynamic_cast<NN::OldBattle::NetworkClamped *>(ptr.get())) {
+      } else if (auto network = dynamic_cast<NN::OldBattle::NetworkClamped *>(
+                     ptr->get())) {
         network->fill_cache(battle);
         return s.run(device, dur, params, heap, *network, input, output);
       } else {
-        const auto [id, hd, vd, pd] = agent.network_ptr->shape();
-        auto q_network_ptr = NN::Battle::visit_quantized_network(
-            id, hd, vd, pd,
-            [&](auto &net) {
-          network->fill_cache(battle);
-          output = s.run(device, dur, params, heap, net, input, output);
-            },
-            ptr;
+        // const auto [id, hd, vd, pd] = agent.network_ptr->shape();
+        // auto q_network_ptr = NN::Battle::visit_quantized_network(
+        //     id, hd, vd, pd,
+        //     [&](auto &net) {
+        //   network->fill_cache(battle);
+        //   output = s.run(device, dur, params, heap, net, input, output);
+        //     },
+        //     ptr;
+        // return output;
+        throw std::runtime_error{"OldNetwork cannot yet be quantized."};
         return output;
       }
     }

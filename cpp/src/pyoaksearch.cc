@@ -213,6 +213,9 @@ PYBIND11_MODULE(pyoaksearch, m) {
   py::class_<Eval>(m, "Eval");
   py::class_<Search::PokeEngine, Eval>(m, "PokeEngine").def(py::init<>());
   py::class_<MonteCarlo, Eval>(m, "MonteCarlo").def(py::init<>());
+  py::class_<OldNetwork, Eval>(m, "OldNetwork")
+      .def(py::init<int>(), py::arg("activation") = 1)
+      .def("read_parameters", &OldNetwork::read_parameters, py::arg("path"));
   py::class_<Network, Eval>(m, "Network")
       .def(py::init<int>(), py::arg("activation") = 1)
       .def("read_parameters", &Network::read_parameters, py::arg("path"))
