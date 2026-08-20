@@ -97,8 +97,8 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
         auto q_network_ptr = NN::Battle::visit_quantized_network(
             id, hd, vd, pd,
             [&](auto &net) {
-              network->fill_cache(battle);
-              output = s.run(device, dur, params, heap, net, input, output);
+          network->fill_cache(battle);
+          output = s.run(device, dur, params, heap, net, input, output);
             },
             ptr;
         return output;
