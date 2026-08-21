@@ -10,3 +10,6 @@
 [submodule "extern/eigen"]
 	path = cpp/extern/eigen
 	url = https://github.com/lab-oak/eigen
+[submodule "cpp/extern/pybind11"]
+	path = cpp/extern/pybind11
+	url = https://github.com/pybind/pybind11.git
