@@ -54,6 +54,9 @@ struct ProgramArgs : public GenerateArgs {
   double &battle_skip_prob =
       kwarg("battle-skip-prob", "Only search on t1 for build trajectory data")
           .set_default(0);
+  bool &cache_pool =
+      flag("cache-pool", "Use a std::map of side caches - not appropriate for "
+                         "RL but faster otherwise.");
 
   std::string &teams_path =
       kwarg("teams", "Path to teams file").set_default("");
@@ -238,24 +241,36 @@ void generate(const ProgramArgs *args_ptr) {
     auto options = PKMN::options();
     auto result = PKMN::update(battle, 0, 0, options);
 
-    Train::Battle::CompressedFrames training_frames{battle};
-
     auto eval = Search::Parse::eval(args.eval, args.quantize);
-    const bool is_network = eval.is_network();
-    auto p1_cache = std::shared_ptr<Search::SideCache>{};
-    auto p2_cache = std::shared_ptr<Search::SideCache>{};
-    if (is_network) {
-      Search::Network network;
-      network.data =
-          std::get<std::shared_ptr<NN::Battle::NetworkBase>>(eval.data);
-      if (args.quantize) {
-        network.quantize();
+    using Cache = std::shared_ptr<Search::SideCache>;
+    auto [p1_cache, p2_cache] = [&]() -> std::pair<Cache, Cache> {
+      if (eval.is_network()) {
+        Search::Network network;
+        network.data =
+            std::get<std::shared_ptr<NN::Battle::NetworkBase>>(eval.data);
+        assert(network.is_quantized() == args.quantize);
+        if (args.cache_pool) {
+          return {RuntimeData::cache_pool.access(network,
+                                                 PKMN::view(battle).sides[0]),
+                  RuntimeData::cache_pool.access(network,
+                                                 PKMN::view(battle).sides[1])};
+        } else {
+          auto p1_cache = std::make_shared<Search::SideCache>();
+          auto p2_cache = std::make_shared<Search::SideCache>();
+          if (network.is_quantized()) {
+            p1_cache->quantize(network.get());
+            p2_cache->quantize(network.get());
+          }
+          for (auto i = 0; i < 6; ++i) {
+            p1_cache->precompute(network.get(), PKMN::view(battle).sides[0], i);
+            p2_cache->precompute(network.get(), PKMN::view(battle).sides[1], i);
+          }
+          return {p1_cache, p2_cache};
+        }
+      } else {
+        return {};
       }
-      p1_cache =
-          RuntimeData::cache_pool.access(network, PKMN::view(battle).sides[0]);
-      p2_cache =
-          RuntimeData::cache_pool.access(network, PKMN::view(battle).sides[1]);
-    }
+    }();
     const auto bandit = Search::Parse::bandit(args.bandit);
     auto matrix_ucb = args.matrix_ucb.empty()
                           ? Search::MatrixUCB{bandit, 0.0}
@@ -270,6 +285,8 @@ void generate(const ProgramArgs *args_ptr) {
     auto adjudicator = RuntimePolicy::JointValueHistory{};
     bool adjudicated = false;
     auto adj_result = PKMN::Result::None;
+
+    Train::Battle::CompressedFrames training_frames{battle};
 
     battle_length = 0;
     try {
