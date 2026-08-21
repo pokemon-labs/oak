@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(extern/lrsnash EXCLUDE_FROM_ALL)
 add_subdirectory(extern/eigen EXCLUDE_FROM_ALL)
 add_subdirectory(extern/argparse EXCLUDE_FROM_ALL)
+add_subdirectory(extern/pybind11 EXCLUDE_FROM_ALL)
 
 # Libpkmn
 
@@ -49,8 +50,6 @@ target_link_libraries(libpkmn_chance INTERFACE
 
 target_compile_definitions(libpkmn_client INTERFACE LOG CHANCE CALC)
 target_compile_definitions(libpkmn_chance INTERFACE CHANCE CALC)
-
-find_package(pybind11 REQUIRED)
 
 # Targets
 
