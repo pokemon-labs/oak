@@ -1,6 +1,7 @@
 #include <search/util/softmax.h>
 #include <train/battle/compressed-frame.h>
 #include <util/argparse.h>
+#include <util/cache-pool.h>
 #include <util/policy.h>
 #include <util/print.h>
 #include <util/random.h>
@@ -10,7 +11,6 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
-#include <mutex>
 #include <thread>
 
 #include <fcntl.h>
@@ -60,46 +60,6 @@ struct ProgramArgs : public GenerateArgs {
 
   std::string &teams_path =
       kwarg("teams", "Path to teams file").set_default("");
-};
-
-struct CachePool {
-  // struct Set {
-  //   PKMN::Data::Species species;
-  //   std::array<PKMN::Data::Move, 4> moves;
-  // };
-  using Set = std::pair<PKMN::Data::Species, std::array<PKMN::Data::Move, 4>>;
-  using Team = std::array<Set, 6>;
-  // we don't use PKMN::Set because those are unordered
-  static constexpr auto get_team(const PKMN::Side &side) {
-    Team team;
-    for (auto i = 0; i < 6; ++i) {
-      const auto &pokemon = side.pokemon[i];
-      auto &set = team[i];
-      set.first = pokemon.species;
-      for (auto m = 0; m < 4; ++m) {
-        set.second[m] = pokemon.moves[m].id;
-      }
-    }
-    return team;
-  }
-  std::mutex mutex;
-  using CachePtr = std::shared_ptr<Search::SideCache>;
-  std::map<Team, CachePtr> caches;
-  std::shared_ptr<Search::SideCache> access(Search::Network &network,
-                                            const PKMN::Side &side) {
-    auto lock = std::unique_lock{mutex};
-    auto cache = caches[get_team(side)];
-    if (!cache) {
-      cache = std::make_shared<Search::SideCache>();
-      if (network.is_quantized()) {
-        cache->quantize(network.get());
-      }
-      for (auto i = 0; i < 6; ++i) {
-        cache->precompute(network.get(), side, i);
-      }
-    }
-    return cache;
-  }
 };
 
 namespace RuntimeData {
@@ -243,38 +203,19 @@ void generate(const ProgramArgs *args_ptr) {
 
     auto eval = Search::Parse::eval(args.eval, args.quantize);
     using Cache = std::shared_ptr<Search::SideCache>;
-    auto [p1_cache, p2_cache] = [&]() -> std::pair<Cache, Cache> {
-      if (eval.is_network()) {
-        Search::Network network;
-        network.data =
-            std::get<std::shared_ptr<NN::Battle::NetworkBase>>(eval.data);
-        assert(network.is_quantized() == args.quantize);
-        if (args.cache_pool) {
-          return {RuntimeData::cache_pool.access(network,
-                                                 PKMN::view(battle).sides[0]),
-                  RuntimeData::cache_pool.access(network,
-                                                 PKMN::view(battle).sides[1])};
-        } else {
-          auto p1_cache = std::make_shared<Search::SideCache>();
-          auto p2_cache = std::make_shared<Search::SideCache>();
-          if (network.is_quantized()) {
-            p1_cache->quantize(network.get());
-            p2_cache->quantize(network.get());
-          }
-          for (auto i = 0; i < 6; ++i) {
-            p1_cache->precompute(network.get(), PKMN::view(battle).sides[0], i);
-            p2_cache->precompute(network.get(), PKMN::view(battle).sides[1], i);
-          }
-          return {p1_cache, p2_cache};
-        }
-      } else {
-        return {};
-      }
-    }();
+    auto p1_cache = RuntimeData::cache_pool.get(
+        eval, PKMN::view(battle).sides[0], args.cache_pool);
+    auto p2_cache = RuntimeData::cache_pool.get(
+        eval, PKMN::view(battle).sides[1], args.cache_pool);
     const auto bandit = Search::Parse::bandit(args.bandit);
-    auto matrix_ucb = args.matrix_ucb.empty()
-                          ? Search::MatrixUCB{bandit, 0.0}
-                          : Search::Parse::matrix_ucb(bandit, args.matrix_ucb);
+    auto matrix_ucb =
+        args.matrix_ucb.has_value()
+            ? Search::Parse::matrix_ucb(bandit, args.matrix_ucb.value())
+            : Search::MatrixUCB{bandit, 0.0};
+    auto &params = args.matrix_ucb.has_value()
+                       ? static_cast<Search::BanditParams &>(matrix_ucb)
+                       : bandit;
+
     auto budget = Search::Parse::budget(args.budget);
     auto heap = Search::Parse::heap(args.use_table);
 
@@ -321,10 +262,9 @@ void generate(const ProgramArgs *args_ptr) {
                      : args.policy_mode;
         MCTS::Output output{};
 
-        output = RuntimeSearch::run(
-            device, battle, PKMN::durations(options), budget,
-            args.matrix_ucb.empty() ? bandit : matrix_ucb, heap, eval, output,
-            p1_cache.get(), p2_cache.get());
+        output = RuntimeSearch::run(device, battle, PKMN::durations(options),
+                                    budget, params, heap, eval, output,
+                                    p1_cache.get(), p2_cache.get());
         if (battle_length == 0) {
           p1_matchup = output.empirical_value;
           p2_matchup = 1 - output.empirical_value;

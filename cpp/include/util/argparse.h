@@ -29,12 +29,11 @@ struct TeamBuildingArgs : public argparse::Args {
     WRAPPER<std::string> &A##bandit =                                          \
         kwarg(B "bandit", "Bandit algorithm and parameters");                  \
                                                                                \
-    WRAPPER<std::string> &A##matrix_ucb =                                      \
-        kwarg(B "matrix-ucb", "MatrixUCB start/interval/minimum/c")            \
-            .set_default("");                                                  \
-                                                                               \
     WRAPPER<std::string> &A##eval =                                            \
         kwarg(B "eval", "Eval mc/fp/<network-path>");                          \
+                                                                               \
+    std::optional<std::string> &A##matrix_ucb =                                \
+        kwarg(B "matrix-ucb", "MatrixUCB start/interval/minimum/c");           \
                                                                                \
     bool &A##quantize = flag(B "quantize", "Use quantized main subnet");       \
                                                                                \
@@ -72,10 +71,6 @@ MAKE_AGENT_ARGS(AgentArgs, TeamBuildingArgs, Identity, , "")
 MAKE_AGENT_ARGS(AgentArgsOptional, TeamBuildingArgs, std::optional, , "")
 using BenchmarkArgs = AgentArgsOptional;
 
-MAKE_AGENT_POLICY_ARGS(AgentPolicyOptionalArgs, AgentArgsOptional,
-                       std::optional, , "")
-using ChallArgs = AgentPolicyOptionalArgs;
-
 MAKE_AGENT_POLICY_ARGS(AgentPolicyArgs, AgentArgs, Identity, , "")
 MAKE_AGENT_POLICY_ARGS(FastAgentPolicyArgs, AgentPolicyArgs, std::optional,
                        fast_, "fast-")
@@ -98,6 +93,5 @@ MAKE_AGENT_ADJUDICATE_ARGS(VsArgs, P2AgentArgs, std::optional, , "")
 } // namespace Argparse
 
 using Argparse::BenchmarkArgs;
-using Argparse::ChallArgs;
 using Argparse::GenerateArgs;
 using Argparse::VsArgs;

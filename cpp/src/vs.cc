@@ -1,6 +1,7 @@
 #include <train/battle/compressed-frame.h>
 #include <util/argparse.h>
 #include <util/battle-frame-buffer.h>
+#include <util/cache-pool.h>
 #include <util/policy.h>
 #include <util/random.h>
 #include <util/search.h>
@@ -50,15 +51,9 @@ struct ProgramArgs : public VsArgs {
       kwarg("max-build-traj",
             "Size of build buffer (No. of traj's) before write")
           .set_default(1 << 10);
-
-  std::optional<std::string> &p1_bandit_after = kwarg("p1-bandit-after", "");
-  std::optional<std::string> &p2_bandit_after = kwarg("p2-bandit-after", "");
-  std::optional<std::string> &p1_budget_after = kwarg("p1-budget-after", "");
-  std::optional<std::string> &p2_budget_after = kwarg("p2-budget-after", "");
-  std::optional<std::string> &p1_matrix_ucb_after =
-      kwarg("p1-matrix-ucb-after", "");
-  std::optional<std::string> &p2_matrix_ucb_after =
-      kwarg("p2-matrix-ucb-after", "");
+  bool &cache_pool =
+      flag("cache-pool", "Use a std::map of side caches - not appropriate for "
+                         "RL but faster otherwise.");
 };
 
 auto inverse_sigmoid(const auto x) { return std::log(x) - std::log(1 - x); }
@@ -93,6 +88,9 @@ std::vector<std::pair<MCTS::Output, MCTS::Output>> battle_outputs{};
 std::atomic<size_t> thread_id{};
 
 TeamBuilding::Provider provider;
+
+CachePool p1_cache_pool{};
+CachePool p2_cache_pool{};
 
 void print_wdl() {
   std::cout << "W D L:\n";
@@ -166,41 +164,14 @@ void thread_fn(const ProgramArgs *args_ptr) {
     auto p2_eval = Search::Parse::eval(
         args.p2_eval.or_else([&] { return args.eval; }).value(),
         args.quantize || args.p2_quantize);
-
-    auto p1_s1_cache = Search::SideCache{};
-    auto p1_s2_cache = Search::SideCache{};
-    auto p2_s1_cache = Search::SideCache{};
-    auto p2_s2_cache = Search::SideCache{};
-    const bool p1_is_network = p1_eval.is_network();
-    if (p1_is_network) {
-      Search::Network network;
-      network.data =
-          std::get<std::shared_ptr<NN::Battle::NetworkBase>>(p1_eval.data);
-      for (auto i = 0; i < 6; ++i) {
-        p1_s1_cache.precompute(network.get(), PKMN::view(battle).sides[0], i);
-        p1_s2_cache.precompute(network.get(), PKMN::view(battle).sides[1], i);
-      }
-      if (args.quantize || args.p1_quantize) {
-        network.quantize();
-        p1_s1_cache.quantize(network.get());
-        p1_s2_cache.quantize(network.get());
-      }
-    }
-    const bool p2_is_network = p2_eval.is_network();
-    if (p2_is_network) {
-      Search::Network network;
-      network.data =
-          std::get<std::shared_ptr<NN::Battle::NetworkBase>>(p2_eval.data);
-      for (auto i = 0; i < 6; ++i) {
-        p2_s1_cache.precompute(network.get(), PKMN::view(battle).sides[0], i);
-        p2_s2_cache.precompute(network.get(), PKMN::view(battle).sides[1], i);
-      }
-      if (args.quantize || args.p2_quantize) {
-        network.quantize();
-        p2_s1_cache.quantize(network.get());
-        p2_s2_cache.quantize(network.get());
-      }
-    }
+    auto p1_s1_cache = RuntimeData::p1_cache_pool.get(
+        p1_eval, PKMN::view(battle).sides[0], args.cache_pool);
+    auto p1_s2_cache = RuntimeData::p1_cache_pool.get(
+        p1_eval, PKMN::view(battle).sides[1], args.cache_pool);
+    auto p2_s1_cache = RuntimeData::p2_cache_pool.get(
+        p2_eval, PKMN::view(battle).sides[0], args.cache_pool);
+    auto p2_s2_cache = RuntimeData::p2_cache_pool.get(
+        p2_eval, PKMN::view(battle).sides[1], args.cache_pool);
 
     const auto p1_bandit = Search::Parse::bandit(
         args.p1_bandit.or_else([&] { return args.bandit; }).value());
@@ -227,8 +198,6 @@ void thread_fn(const ProgramArgs *args_ptr) {
         .min = args.p2_policy_min.or_else([&] { return args.policy_min; })
                    .value_or(0)};
 
-    // const bool same_search =
-    //     (p1_agent == p2_agent) && (p1_agent_after == p2_agent_after);
     const bool same_search = false;
 
     auto p1_battle_frames = Train::Battle::CompressedFrames{battle};
@@ -269,9 +238,9 @@ void thread_fn(const ProgramArgs *args_ptr) {
       int p1_index{}, p2_index{};
       if (p1_choices.size() > 1) {
         Search::Node heap{};
-        p1_output = RuntimeSearch::run(device, battle, PKMN::durations(options),
-                                       p1_budget, p1_bandit, heap, p1_eval,
-                                       p1_output, &p1_s1_cache, &p1_s2_cache);
+        p1_output = RuntimeSearch::run(
+            device, battle, PKMN::durations(options), p1_budget, p1_bandit,
+            heap, p1_eval, p1_output, p1_s1_cache.get(), p1_s2_cache.get());
         p1_index = process_and_sample(device, p1_output.p1, p1_policy_options);
         if (print_search_outputs) {
           print("P1:");
@@ -287,7 +256,7 @@ void thread_fn(const ProgramArgs *args_ptr) {
           Search::Node heap{};
           p2_output = RuntimeSearch::run(
               device, battle, PKMN::durations(options), p2_budget, p2_bandit,
-              heap, p2_eval, p2_output, &p2_s1_cache, &p2_s2_cache);
+              heap, p2_eval, p2_output, p2_s1_cache.get(), p2_s2_cache.get());
           if (print_search_outputs) {
             print("P2:");
             std::cout << MCTS::output_string(p2_output, battle, p1_labels,
