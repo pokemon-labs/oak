@@ -5,6 +5,7 @@
 #include <py/battle/output-buffer.h>
 #include <py/libpkmn/data.h>
 #include <search/data.h>
+#include <util/policy.h>
 #include <util/search.h>
 #include <util/strings.h>
 
@@ -534,6 +535,20 @@ PYBIND11_MODULE(pyoaksearch, m) {
       py::arg("bandit"), py::arg("heap"), py::arg("eval"),
       py::arg("output") = MCTS::Output{}, py::arg("p1_cache") = std::nullopt,
       py::arg("p2_cache") = std::nullopt);
+
+  m.def(
+      "get_policy_from_side",
+      [](const MCTS::Output::Side &side, const std::string &mode, double temp,
+         double min) {
+        const auto options = RuntimePolicy::Options{
+            mode,
+            temp,
+            min,
+        };
+        return RuntimePolicy::get_policy(side, options);
+      },
+      py::arg("side"), py::arg("mode"), py::arg("temp") = 1.0,
+      py::arg("min") = 0.0);
 
   m.def(
       "cpp_inference",
