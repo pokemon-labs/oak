@@ -94,10 +94,6 @@ target_link_libraries(pyoaklog PRIVATE libpkmn_client pybind11::module)
 set_target_properties(pyoaklog PROPERTIES PREFIX "" SUFFIX ".so")
 set_target_properties(pyoaklog PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-# add_executable(log src/log.cc)
-# target_include_directories(log PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-# target_link_libraries(log PRIVATE libpkmn_client)
-
 # add_executable(dur src/dur.cc)
 # target_include_directories(dur PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # target_link_libraries(dur PRIVATE libpkmn_client lrslibgmp)
