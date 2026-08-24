@@ -107,7 +107,6 @@ inline int process_and_sample(auto &device, const auto &side,
   return index;
 }
 
-template <PKMN::Player player>
 inline double get_value(const auto &output, const auto &options) {
 
   const auto get = [](auto x) {
@@ -144,13 +143,8 @@ inline double get_value(const auto &output, const auto &options) {
       std::array<std::pair<double, size_t>, 9> data{};
       for (auto i = 0; i < 9; ++i) {
         for (auto j = 0; j < 9; ++j) {
-          if constexpr (player == PKMN::Player::P1) {
-            data[i].first += output.value_matrix[i][j];
-            data[i].second += output.visit_matrix[i][j];
-          } else {
-            data[i].first += output.value_matrix[j][i];
-            data[i].second += output.visit_matrix[j][i];
-          }
+          data[i].first += output.value_matrix[i][j];
+          data[i].second += output.visit_matrix[i][j];
         }
       }
       size_t max_visits = 0;
@@ -195,8 +189,8 @@ struct JointValueHistory {
     if (p1_output.iterations == 0 || p2_output.iterations == 0) {
       return;
     }
-    data.emplace_back(get_value<PKMN::Player::P1>(p1_output, p1_options),
-                      get_value<PKMN::Player::P2>(p2_output, p2_options));
+    data.emplace_back(get_value(p1_output, p1_options),
+                      get_value(p2_output, p2_options));
   }
 
   PKMN::Result check_for_consensus(size_t n, double ff) const {
