@@ -1,6 +1,6 @@
 #pragma once
 
-#include <train/battle/compressed-frame.h>
+#include <train/battle/compressed-frames.h>
 
 #include <array>
 

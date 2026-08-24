@@ -1,4 +1,4 @@
-#include <train/battle/compressed-frame.h>
+#include <train/battle/compressed-frames.h>
 #include <util/argparse.h>
 #include <util/battle-frame-buffer.h>
 #include <util/cache-pool.h>

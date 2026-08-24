@@ -1,5 +1,5 @@
 #include <search/util/softmax.h>
-#include <train/battle/compressed-frame.h>
+#include <train/battle/compressed-frames.h>
 #include <util/argparse.h>
 #include <util/cache-pool.h>
 #include <util/policy.h>

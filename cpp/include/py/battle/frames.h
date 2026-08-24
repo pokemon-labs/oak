@@ -2,7 +2,7 @@
 
 #include <libpkmn/layout.h>
 #include <py/battle/target.h>
-#include <train/battle/compressed-frame.h>
+#include <train/battle/compressed-frames.h>
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>

@@ -10,7 +10,7 @@
 #include <py/battle/output-buffer.h>
 #include <py/build/trajectories.h>
 #include <py/libpkmn/data.h>
-#include <train/battle/compressed-frame.h>
+#include <train/battle/compressed-frames.h>
 
 #include <pybind11/numpy.h>
 #include <pybind11/operators.h>
