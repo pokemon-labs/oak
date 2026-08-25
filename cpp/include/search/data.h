@@ -36,8 +36,8 @@ struct Eval {
 
 class Network : public Eval {
 public:
-  using NetworkPtr = std::shared_ptr<NN::Battle::NetworkBase>;
-  Network(int act = 1) : Eval(std::in_place_type<NetworkPtr>) {
+  using T = std::shared_ptr<NN::Battle::NetworkBase>;
+  Network(int act = 1) : Eval(std::in_place_type<T>) {
     switch (static_cast<NN::Activation>(act)) {
     case NN::Activation::relu: {
       this->data = std::make_shared<NN::Battle::Network>();
@@ -52,8 +52,15 @@ public:
     }
     }
   }
-  auto &get() { return std::get<NetworkPtr>(this->data); }
-  const auto &get() const { return std::get<NetworkPtr>(this->data); }
+  Network(const Eval &eval) : Eval{std::in_place_type<T>} {
+    if (std::holds_alternative<T>(eval.data)) {
+      data = eval.data;
+    } else {
+      throw std::runtime_error{"Invalid Eval cast"};
+    }
+  }
+  auto &get() { return std::get<T>(this->data); }
+  const auto &get() const { return std::get<T>(this->data); }
 
   void zero_initialize() { data = std::make_shared<NN::Battle::Network>(); }
 
@@ -126,9 +133,17 @@ public:
 
 class MonteCarlo : public Eval {
 public:
-  MonteCarlo() : Eval{std::in_place_type<MCTS::MonteCarlo>} {}
-  auto &get() { return std::get<::MCTS::MonteCarlo>(this->data); }
-  const auto &get() const { return std::get<::MCTS::MonteCarlo>(this->data); }
+  using T = MCTS::MonteCarlo;
+  MonteCarlo() : Eval{std::in_place_type<T>} {}
+  MonteCarlo(const Eval &eval) : Eval{std::in_place_type<T>} {
+    if (std::holds_alternative<T>(eval.data)) {
+      data = eval.data;
+    } else {
+      throw std::runtime_error{"Invalid Eval cast"};
+    }
+  }
+  auto &get() { return std::get<T>(this->data); }
+  const auto &get() const { return std::get<T>(this->data); }
   bool &forbid_switches() { return get().forbid_switches; }
   const bool &forbid_switches() const { return get().forbid_switches; }
   bool &forbid_status() { return get().forbid_status; }
@@ -137,9 +152,17 @@ public:
 
 class PokeEngine : public Eval {
 public:
-  PokeEngine() : Eval{std::in_place_type<::PokeEngine::Eval>} {}
-  auto &get() { return std::get<::PokeEngine::Eval>(this->data); }
-  const auto &get() const { return std::get<::PokeEngine::Eval>(this->data); }
+  using T = ::PokeEngine::Eval;
+  PokeEngine() : Eval{std::in_place_type<T>} {}
+  PokeEngine(const Eval &eval) : Eval{std::in_place_type<T>} {
+    if (std::holds_alternative<T>(eval.data)) {
+      data = eval.data;
+    } else {
+      throw std::runtime_error{"Invalid Eval cast"};
+    }
+  }
+  auto &get() { return std::get<T>(this->data); }
+  const auto &get() const { return std::get<T>(this->data); }
 };
 
 struct Heap {
@@ -259,6 +282,12 @@ class Flag : public Budget {
 class Iterations : public Budget {
 public:
   Iterations(size_t i) : Budget{std::in_place_type<size_t>, i} {}
+};
+
+class Duration : public Budget {
+public:
+  Duration(size_t ms)
+      : Budget{std::in_place_type<std::chrono::milliseconds>, ms} {}
 };
 
 class SideCache {

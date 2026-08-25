@@ -212,10 +212,15 @@ PYBIND11_MODULE(pyoaksearch, m) {
 
   // Eval
   py::class_<Eval>(m, "Eval");
-  py::class_<Search::PokeEngine, Eval>(m, "PokeEngine").def(py::init<>());
-  py::class_<MonteCarlo, Eval>(m, "MonteCarlo").def(py::init<>());
+  py::class_<Search::PokeEngine, Eval>(m, "PokeEngine")
+      .def(py::init<>())
+      .def(py::init<Eval>(), py::arg("eval"));
+  py::class_<MonteCarlo, Eval>(m, "MonteCarlo")
+      .def(py::init<>())
+      .def(py::init<Eval>(), py::arg("eval"));
   py::class_<Network, Eval>(m, "Network")
       .def(py::init<int>(), py::arg("activation") = 1)
+      .def(py::init<Eval>(), py::arg("eval"))
       .def("read_parameters", &Network::read_parameters, py::arg("path"))
       .def(
           "resize",
@@ -246,7 +251,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
           "forward_side",
           [](Network &net, const Py::PKMN::SideProxy &side,
              const Py::PKMN::DurationProxy &duration,
-             std::optional<std::reference_wrapper<Search::SideCache>> cache)
+             std::optional<std::reference_wrapper<SideCache>> cache)
               -> py::array {
             auto network = net.get();
             py::array result;
@@ -457,6 +462,8 @@ PYBIND11_MODULE(pyoaksearch, m) {
   // Budget
   py::class_<Budget>(m, "Budget");
   py::class_<Iterations, Budget>(m, "Iterations").def(py::init<size_t>());
+  py::class_<Duration, Budget>(m, "Duration").def(py::init<size_t>());
+
   // Params
   py::class_<BanditParams>(m, "Bandit");
   py::class_<UCB, BanditParams>(m, "UCB").def(py::init<float>(), py::arg("c"));
@@ -519,12 +526,11 @@ PYBIND11_MODULE(pyoaksearch, m) {
   m.def(
       "run",
       [](const pkmn_gen1_battle &battle,
-         const pkmn_gen1_chance_durations &durations,
-         const Search::Budget &budget, const Search::BanditParams &bandit,
-         Search::Heap &heap, Search::Eval &eval, MCTS::Output output,
-         std::optional<std::reference_wrapper<Search::SideCache>> p1_cache = {},
-         std::optional<std::reference_wrapper<Search::SideCache>> p2_cache =
-             {}) {
+         const pkmn_gen1_chance_durations &durations, const Budget &budget,
+         const BanditParams &bandit, Heap &heap, Eval &eval,
+         MCTS::Output output,
+         std::optional<std::reference_wrapper<SideCache>> p1_cache = {},
+         std::optional<std::reference_wrapper<SideCache>> p2_cache = {}) {
         mt19937 device{std::random_device{}()};
         return RuntimeSearch::run(
             device, battle, durations, budget, bandit, heap, eval, output,
@@ -549,13 +555,15 @@ PYBIND11_MODULE(pyoaksearch, m) {
       },
       py::arg("side"), py::arg("mode"), py::arg("temp") = 1.0,
       py::arg("min") = 0.0);
+  m.def("parse_eval", &Search::Parse::eval);
+  m.def("parse_bandit", &Search::Parse::bandit);
+  m.def("parse_budget", &Search::Parse::budget);
 
   m.def(
       "cpp_inference",
-      [](const Py::Battle::Frames &battle_frames, Search::Network &network,
-         std::optional<std::reference_wrapper<Search::SideCache>> p1_cache = {},
-         std::optional<std::reference_wrapper<Search::SideCache>> p2_cache =
-             {}) {
+      [](const Py::Battle::Frames &battle_frames, Network &network,
+         std::optional<std::reference_wrapper<SideCache>> p1_cache = {},
+         std::optional<std::reference_wrapper<SideCache>> p2_cache = {}) {
         return cpp_inference(
             battle_frames, network,
             p1_cache.has_value() ? &p1_cache.value().get() : nullptr,
