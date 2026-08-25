@@ -410,9 +410,10 @@ void progress_thread_fn(const ProgramArgs *args_ptr) {
       const auto &outputs = RuntimeData::battle_outputs[i];
       std::cout << "\t" << i << ": " << RuntimeData::battle_lengths[i] << ", "
                 << "(" << outputs.first.empirical_value << "/"
-                << outputs.first.nash_value << "), " << "("
-                << outputs.second.empirical_value << "/"
-                << outputs.second.nash_value << ")";
+                << outputs.first.nash_value << " " << outputs.first.iterations
+                << "), " << "(" << outputs.second.empirical_value << "/"
+                << outputs.second.nash_value << " " << outputs.second.iterations
+                << ")";
       std::cout << std::endl;
     }
   }
