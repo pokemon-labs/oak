@@ -531,6 +531,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
          MCTS::Output output,
          std::optional<std::reference_wrapper<SideCache>> p1_cache = {},
          std::optional<std::reference_wrapper<SideCache>> p2_cache = {}) {
+        py::gil_scoped_release release;
         mt19937 device{std::random_device{}()};
         return RuntimeSearch::run(
             device, battle, durations, budget, bandit, heap, eval, output,
