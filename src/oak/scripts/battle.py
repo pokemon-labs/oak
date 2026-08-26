@@ -384,7 +384,7 @@ def main():
 
         encoded_frames.clear()
         output_buffer.clear()
-        samples_read = oak.train.sample(
+        samples_read = oak.train.sample_encoded(
             encoded_frames,
             sample_indexer,
             args.threads,

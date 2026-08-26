@@ -103,10 +103,10 @@ struct SampleIndexer {
   }
 };
 
-size_t sample(Py::Battle::EncodedFrames &encoded_frames,
-              const SampleIndexer &indexer, size_t threads,
+template <typename Frames>
+size_t sample(Frames &frames, const SampleIndexer &indexer, size_t threads,
               size_t max_battle_length, size_t min_iterations) {
-
+  constexpr bool is_encoded = std::is_same_v<Frames, Py::Battle::EncodedFrames>;
   // flatten indexer data into C++ arrays
   std::vector<const char *> paths;
   std::vector<int> n_battles;
@@ -218,12 +218,12 @@ size_t sample(Py::Battle::EncodedFrames &encoded_frames,
         }
 
         size_t write_index = count.fetch_add(1);
-        if (write_index >= encoded_frames.size) {
+        if (write_index >= frames.size) {
           return;
         }
-        encoded_frames.write(write_index, battle, ::PKMN::durations(options),
-                             result, compressed.updates[selected],
-                             ::PKMN::score(compressed.result));
+        frames.write(write_index, battle, ::PKMN::durations(options), result,
+                     compressed.updates[selected],
+                     ::PKMN::score(compressed.result));
       }
     } catch (const std::exception &e) {
       report_error(e.what());
@@ -236,7 +236,7 @@ size_t sample(Py::Battle::EncodedFrames &encoded_frames,
   for (auto &t : pool)
     t.join();
 
-  return errors.load() ? 0 : std::min(count.load(), encoded_frames.size);
+  return errors.load() ? 0 : std::min(count.load(), frames.size);
 }
 
 size_t read_build_trajectories(Py::Build::Trajectories &trajectories,
@@ -402,7 +402,7 @@ PYBIND11_MODULE(pyoaktrain, m) {
   m.def("read_battle_data", &read_battle_data, py::arg("path"));
   m.def("read_build_trajectories", &read_build_trajectories);
   m.def(
-      "sample",
+      "sample_encoded",
       [](Py::Battle::EncodedFrames &encoded_frames,
          const SampleIndexer &indexer, size_t threads, size_t max_battle_length,
          size_t min_iterations) {
@@ -410,6 +410,15 @@ PYBIND11_MODULE(pyoaktrain, m) {
                       min_iterations);
       },
       py::arg("encoded_frames"), py::arg("indexer"), py::arg("threads"),
+      py::arg("max_battle_length"), py::arg("min_iterations"));
+  m.def(
+      "sample",
+      [](Py::Battle::Frames &frames, const SampleIndexer &indexer,
+         size_t threads, size_t max_battle_length, size_t min_iterations) {
+        return sample(frames, indexer, threads, max_battle_length,
+                      min_iterations);
+      },
+      py::arg("frames"), py::arg("indexer"), py::arg("threads"),
       py::arg("max_battle_length"), py::arg("min_iterations"));
 
   {
