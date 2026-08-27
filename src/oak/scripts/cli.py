@@ -3,7 +3,11 @@ import sys
 import subprocess
 import signal
 
-directory = "Debug" if "OAK_DEBUG" in os.environ else "Release"
+if ("OAK_DEBUG" in os.environ) and (os.environ["OAK_DEBUG"] != "0"):
+    print("OAK DEBUG")
+    directory = "Debug"
+else:
+    directory = "Release"
 
 
 def _run_binary(binary_name, prefix=f"../_bin/{directory}"):
