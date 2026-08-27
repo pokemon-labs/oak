@@ -1,5 +1,6 @@
 #include <teams/benchmark-teams.h>
 #include <util/argparse.h>
+#include <util/cache-pool.h>
 #include <util/search.h>
 
 struct ProgramArgs : public BenchmarkArgs {
@@ -20,23 +21,9 @@ int benchmark(int argc, char **argv) {
 
   auto args = argparse::parse<ProgramArgs>(argc, argv);
   auto eval = Search::Parse::eval(args.eval.value_or("mc"), args.quantize);
-  const bool is_network = eval.is_network();
-  auto p1_cache = std::shared_ptr<Search::SideCache>{};
-  auto p2_cache = std::shared_ptr<Search::SideCache>{};
-  if (is_network) {
-    Search::Network network;
-    network.data =
-        std::get<std::shared_ptr<NN::Battle::NetworkBase>>(eval.data);
-    if (args.quantize) {
-      network.quantize();
-    }
-    p1_cache = std::make_shared<Search::SideCache>();
-    p2_cache = std::make_shared<Search::SideCache>();
-    for (auto i = 0; i < 6; ++i) {
-      p1_cache->precompute(network.get(), PKMN::view(battle).sides[0], i);
-      p2_cache->precompute(network.get(), PKMN::view(battle).sides[1], i);
-    }
-  }
+  auto cache_pool = CachePool{};
+  auto p1_cache = cache_pool.get(eval, PKMN::view(battle).sides[0], false);
+  auto p2_cache = cache_pool.get(eval, PKMN::view(battle).sides[0], false);
   auto bandit = Search::Parse::bandit(args.bandit.value_or("ucb-1.0"));
   auto matrix_ucb =
       args.matrix_ucb.has_value()
