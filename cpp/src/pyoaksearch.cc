@@ -421,44 +421,16 @@ PYBIND11_MODULE(pyoaksearch, m) {
           [](SideCache &cache, Network &network,
              const Py::PKMN::SideProxy &side,
              int index) { cache.precompute(network.get(), *side.p, index); },
-          py::arg("network"), py::arg("side"), py::arg("index"))
-      .def("quantize", [](SideCache &cache,
-                          Network &network) { cache.quantize(network.get()); })
+          py::arg("network"), py::arg("side"), py::arg("index"),
+          py::call_guard<py::gil_scoped_release>())
+      .def(
+          "quantize",
+          [](SideCache &cache, Network &network) {
+            cache.quantize(network.get());
+          },
+          py::arg("network"), py::call_guard<py::gil_scoped_release>())
       .def("is_quantized",
-           [](SideCache &cache) { return cache.is_quantized(); })
-      .def(
-          "pokemon_embedding",
-          [](const SideCache &cache, std::size_t side_index, std::size_t key,
-             uint32_t dim) -> py::object {
-            return std::visit(
-                [&](const auto &c) -> py::object {
-                  using T = typename std::decay_t<decltype(c)>::value_type;
-                  const T *ptr = c.pokemon_cache[side_index].data[key].get();
-                  if (!ptr) {
-                    return py::none();
-                  }
-                  return py::array_t<T>(dim, ptr);
-                },
-                cache.data);
-          },
-          py::arg("side_index"), py::arg("key"), py::arg("dim"))
-      .def(
-          "moves_embedding",
-          [](const SideCache &cache, std::size_t side_index, std::size_t key,
-             uint32_t dim) -> py::object {
-            return std::visit(
-                [&](const auto &c) -> py::object {
-                  using T = typename std::decay_t<decltype(c)>::value_type;
-                  const T *ptr =
-                      c.pokemon_moves_cache[side_index].data[key].get();
-                  if (!ptr) {
-                    return py::none();
-                  }
-                  return py::array_t<T>(dim, ptr);
-                },
-                cache.data);
-          },
-          py::arg("side_index"), py::arg("key"), py::arg("dim"));
+           [](SideCache &cache) { return cache.is_quantized(); });
   // Budget
   py::class_<Budget>(m, "Budget");
   py::class_<Iterations, Budget>(m, "Iterations").def(py::init<size_t>());
@@ -531,7 +503,6 @@ PYBIND11_MODULE(pyoaksearch, m) {
          MCTS::Output output,
          std::optional<std::reference_wrapper<SideCache>> p1_cache = {},
          std::optional<std::reference_wrapper<SideCache>> p2_cache = {}) {
-        py::gil_scoped_release release;
         mt19937 device{std::random_device{}()};
         return RuntimeSearch::run(
             device, battle, durations, budget, bandit, heap, eval, output,
@@ -541,7 +512,8 @@ PYBIND11_MODULE(pyoaksearch, m) {
       py::arg("battle"), py::arg("durations"), py::arg("budget"),
       py::arg("bandit"), py::arg("heap"), py::arg("eval"),
       py::arg("output") = MCTS::Output{}, py::arg("p1_cache") = std::nullopt,
-      py::arg("p2_cache") = std::nullopt);
+      py::arg("p2_cache") = std::nullopt,
+      py::call_guard<py::gil_scoped_release>());
 
   m.def(
       "get_policy_from_side",
