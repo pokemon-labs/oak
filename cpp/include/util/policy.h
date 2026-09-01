@@ -64,7 +64,8 @@ inline std::array<double, 9> get_policy(const auto &side, const auto &options) {
       break;
     }
     default: {
-      throw std::runtime_error{"RuntimePolicy: invalid mode char: " + word[0]};
+      throw std::runtime_error{"RuntimePolicy: invalid mode char: " +
+                               std::string{word[0]}};
     }
     }
   }

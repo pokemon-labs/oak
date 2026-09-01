@@ -69,7 +69,7 @@ def add_local_args(parser, prefix: str = "", rl: bool = False):
         help="Weight for score in value target",
     )
     parser.add_argument(
-        prefix + "p-nash-weight",
+        prefix + "policy-nash-weight",
         type=float,
         default=0.0,
         help="Weight for Nash in policy target (empirical weight = 1 - this)",
@@ -244,17 +244,17 @@ def main():
         )
 
         # Policy target
-        p_nash_weight = args.p_nash_weight
-        value_empirical_weight_p = 1 - p_nash_weight
-        assert (p_nash_weight + value_empirical_weight_p) == 1
+        policy_nash_weight = args.policy_nash_weight
+        policy_empirical_weight = 1 - policy_nash_weight
+        assert (policy_nash_weight + policy_empirical_weight) == 1
 
         p1_policy_target = (
-            value_empirical_weight_p * input.empirical_policies[:size, 0]
-            + p_nash_weight * input.nash_policies[:size, 0]
+            policy_empirical_weight * input.empirical_policies[:size, 0]
+            + policy_nash_weight * input.nash_policies[:size, 0]
         )
         p2_policy_target = (
-            value_empirical_weight_p * input.empirical_policies[:size, 1]
-            + p_nash_weight * input.nash_policies[:size, 1]
+            policy_empirical_weight * input.empirical_policies[:size, 1]
+            + policy_nash_weight * input.nash_policies[:size, 1]
         )
 
         loss = 0.0
@@ -264,6 +264,7 @@ def main():
                 output.value[:size], value_target
             )
         value_loss = loss.detach().clone()
+        p1_policy_loss, p2_policy_loss = None, None
 
         if not args.no_policy_loss:
             p1_policy_loss = masked_cross_entropy(
@@ -290,8 +291,9 @@ def main():
             )
             if not args.no_policy_loss:
                 print("P1 policy inference/target")
+                print(f"policy loss: {p1_policy_loss.mean()}, {p2_policy_loss.mean()}")
             if not args.no_value_loss:
-                print(f"loss: v:{value_loss.mean()}")
+                print(f"value loss: {value_loss.mean()}")
 
         return loss
 

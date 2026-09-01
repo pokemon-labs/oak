@@ -307,7 +307,7 @@ def main():
             f"--value-nash-weight={args.value_nash_weight}",
             f"--value-empirical-weight={args.value_empirical_weight}",
             f"--value-score-weight={args.value_score_weight}",
-            f"--p-nash-weight={args.p_nash_weight}",
+            f"--policy-nash-weight={args.policy_nash_weight}",
             f"--policy-loss-weight={args.policy_loss_weight}",
             # Don't need to pass network hyperparams since those are overwritten by the read
         ]

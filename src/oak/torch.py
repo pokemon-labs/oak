@@ -475,14 +475,13 @@ class BattleNetwork(torch.nn.Module):
         self.moves_net.clamp_parameters()
         self.main_net.clamp_parameters()
 
-    # TODO
     def inference(
         self, input: EncodedBattleFrames, output: OutputBuffer, use_policy: bool = True
     ):
         size = min(input.size, output.size)
-        output.pokemon[:size] = self.pokemon_net.forward(input.pokemon[:size, :, :])
-        output.active[:size] = self.active_net.forward(input.active[:size, :, :])
-        output.moves[:size] = self.moves_net.forward(input.moves[:size, :, :])
+        output.pokemon[:size] = self.pokemon_net.forward(input.pokemon[:size])
+        output.active[:size] = self.active_net.forward(input.active[:size])
+        output.moves[:size] = self.moves_net.forward(input.moves[:size])
         # mask output for hp
 
         output.pokemon[:size] *= (input.hp[:size, :, :] != 0).float()

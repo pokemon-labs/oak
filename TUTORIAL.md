@@ -284,7 +284,7 @@ The empirical value is just the average leaf value that is back propagated to th
 Most RL setups use only the score as we have. Additionally, using the PokeEngine eval we used for self play is not intended to be a value estimator. This means that the empirical and Nash values are less meaningful than if we used Monte-Carlo or a Network.
 
 * `--p_empirical_weight=1.0`
-* `--p_nash_weight=0.0`
+* `--policy_nash_weight=0.0`
 There are two targets for the policy learning, the empirical and Nash strategies. The Nash stratagies produced by UCB bandit varaints tend to be low quality since these algorithms tend to leave some move pairs very unexplored. This results in a high-variance estimate of in that entry of the empirical value matrix.
 
 * `--pokemon_hidden_dim=128`
