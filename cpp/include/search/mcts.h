@@ -265,7 +265,9 @@ template <SearchOptions Options = default_search> struct Search {
       if constexpr (is_contextual_bandit<decltype(get_bandit_params(params))>) {
         static_assert(is_network<decltype(eval)>);
         using output_type = std::remove_cvref_t<decltype(eval)>::T;
-        constexpr auto activation = std::remove_cvref_t<decltype(eval)>::act;
+        using Eval = std::remove_cvref_t<decltype(eval)>;
+        constexpr auto activation = Eval::act;
+        constexpr bool rewrite_hp = Eval::rewrite_hp;
         static thread_local uint16_t p1_choice_index[9];
         static thread_local uint16_t p2_choice_index[9];
         static thread_local float p1_logits[9];
@@ -275,7 +277,7 @@ template <SearchOptions Options = default_search> struct Search {
                                      nullptr);
         static thread_local std::vector<output_type> battle_embedding;
         battle_embedding.reserve(2 * eval.side_embedding_dim());
-        write_battle_embedding<activation>(
+        write_battle_embedding<activation, rewrite_hp>(
             battle_embedding.data(), PKMN::view(input.battle), eval, caches...);
         for (auto i = 0; i < output.p1.k; ++i) {
           p1_choice_index[i] = Encode::Battle::Policy::get_index(
@@ -507,12 +509,14 @@ template <SearchOptions Options = default_search> struct Search {
           }
 
           if constexpr (is_network<T>) {
-            using output_type = std::remove_cvref_t<T>::T;
-            constexpr auto activation = std::remove_cvref_t<T>::act;
+            using Eval = std::remove_cvref_t<T>;
+            using output_type = Eval::T;
+            constexpr auto activation = Eval::act;
+            constexpr bool rewrite_hp = Eval::rewrite_hp;
 
             static thread_local std::vector<output_type> battle_embedding;
             battle_embedding.reserve(2 * eval.side_embedding_dim());
-            write_battle_embedding<activation>(
+            write_battle_embedding<activation, rewrite_hp>(
                 battle_embedding.data(), PKMN::view(battle), eval, caches...);
 
             if constexpr (is_contextual_bandit<decltype(bandit)>) {
@@ -810,7 +814,8 @@ template <SearchOptions Options = default_search> struct Search {
     // }
   }
 
-  template <NN::Activation activation, typename T, typename... Caches>
+  template <NN::Activation activation, bool rewrite_hp, typename T,
+            typename... Caches>
   void write_battle_embedding(T *embedding, const PKMN::Battle &battle,
                               NN::Battle::NetworkBase &eval,
                               Caches &...caches) {
@@ -818,14 +823,14 @@ template <SearchOptions Options = default_search> struct Search {
     if constexpr (sizeof...(Caches) == 2) {
       auto &p1_cache = std::get<0>(std::tie(caches...));
       auto &p2_cache = std::get<1>(std::tie(caches...));
-      embedding = NN::Battle::write_side_embedding<T, activation>(
+      embedding = NN::Battle::write_side_embedding<T, activation, rewrite_hp>(
           embedding, battle.sides[0], d.get(0), eval, p1_cache);
-      embedding = NN::Battle::write_side_embedding<T, activation>(
+      embedding = NN::Battle::write_side_embedding<T, activation, rewrite_hp>(
           embedding, battle.sides[1], d.get(1), eval, p2_cache);
     } else {
-      embedding = NN::Battle::write_side_embedding<T, activation>(
+      embedding = NN::Battle::write_side_embedding<T, activation, rewrite_hp>(
           embedding, battle.sides[0], d.get(0), eval);
-      embedding = NN::Battle::write_side_embedding<T, activation>(
+      embedding = NN::Battle::write_side_embedding<T, activation, rewrite_hp>(
           embedding, battle.sides[1], d.get(1), eval);
     }
   }

@@ -33,8 +33,9 @@ struct NetworkBase {
   uint32_t moves_out_dim() const noexcept {
     return this->moves_net.layer<1>().out_dim;
   }
-  uint32_t side_embedding_dim() const {
-    return active_out_dim() + 6 * (pokemon_out_dim() + moves_out_dim());
+  uint32_t side_embedding_dim(bool rewrite_hp = false) const {
+    return active_out_dim() +
+           6 * (rewrite_hp + pokemon_out_dim() + moves_out_dim());
   }
   void resize(uint32_t ph, uint32_t po, uint32_t ah, uint32_t ao, uint32_t mh,
               uint32_t mo, uint32_t h, uint32_t value, uint32_t policy) {
@@ -84,7 +85,7 @@ struct NetworkBase {
   }
 };
 
-template <typename Main, Activation activation>
+template <typename Main, Activation activation, bool _rewrite_hp = false>
 class NetworkImpl : public NetworkBase {
 public:
   static_assert(activation == Activation::relu ||
@@ -92,6 +93,7 @@ public:
                 activation == Activation::relu_scaled);
   using T = typename Main::T;
   static constexpr auto act = activation;
+  static constexpr bool rewrite_hp = _rewrite_hp;
   Main main_net;
   std::tuple<int, int, int, int> shape() const noexcept {
     return main_net.shape();
@@ -335,20 +337,27 @@ T *write_active(T *embedding, uint8_t index, const PKMN::ActivePokemon &active,
   return embedding + active_dim;
 }
 
-template <typename T, Activation activation, typename... Caches>
+template <typename T, Activation activation, bool rewrite_hp,
+          typename... Caches>
 T *write_side_embedding(T *embedding, const PKMN::Side &side,
                         const PKMN::Duration &duration, NetworkBase &network,
                         Caches &...caches) {
   static_assert(sizeof...(Caches) <= 1,
                 "write_side_embedding takes zero or one cache");
-  const auto pokemon_dim = network.pokemon_out_dim();
+  const auto embedding_initial = embedding;
+  const auto pokemon_dim = network.pokemon_out_dim() + rewrite_hp;
   const auto active_dim = network.active_out_dim();
   const auto moves_dim = network.moves_out_dim();
-  // const auto side_dim = (active_dim + 6 * (pokemon_dim + moves_dim));
-  // const auto *e = embedding;
+  const auto side_dim = active_dim + 6 * (pokemon_dim + moves_dim);
   const auto write_zero = [&embedding](auto dim) {
     std::fill_n(embedding, dim, T{0});
     return embedding + dim;
+  };
+  const auto write_hp = [&embedding](const auto &pokemon) {
+    if constexpr (rewrite_hp) {
+      embedding[0] = (float)pokemon.hp / pokemon.stats.hp;
+      ++embedding;
+    }
   };
   const auto &stored = side.stored();
   if (stored.hp == 0) {
@@ -357,6 +366,7 @@ T *write_side_embedding(T *embedding, const PKMN::Side &side,
     const auto index = side.order[0] - 1;
     embedding = write_active<T, activation>(embedding, index, side.active,
                                             duration, network, caches...);
+    write_hp(stored);
     embedding = write_pokemon<T, activation>(
         embedding, index, stored, duration.sleep(0), network, caches...);
     if (side.active.moves == stored.moves) {
@@ -376,6 +386,7 @@ T *write_side_embedding(T *embedding, const PKMN::Side &side,
       if (pokemon.hp == 0) {
         embedding = write_zero(pokemon_dim + moves_dim);
       } else {
+        write_hp(pokemon);
         embedding = write_pokemon<T, activation>(embedding, index - 1, pokemon,
                                                  duration.sleep(slot - 1),
                                                  network, caches...);
@@ -384,6 +395,7 @@ T *write_side_embedding(T *embedding, const PKMN::Side &side,
       }
     }
   }
+  assert(std::distance(embedding_initial, embedding) == side_dim);
   return embedding;
 }
 

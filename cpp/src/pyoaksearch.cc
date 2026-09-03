@@ -5,6 +5,7 @@
 #include <py/battle/output-buffer.h>
 #include <py/libpkmn/data.h>
 #include <search/data.h>
+#include <util/cache-pool.h>
 #include <util/policy.h>
 #include <util/search.h>
 #include <util/strings.h>
@@ -52,10 +53,10 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
   // use this embedding and will use the cache if provided.
   const auto write_battle_embedding = [&]<int act>() {
     constexpr auto activation = static_cast<NN::Activation>(act);
-    NN::Battle::write_side_embedding<float, activation>(
+    NN::Battle::write_side_embedding<float, activation, false>(
         p1_side, PKMN::view(battle).sides[0],
         PKMN::view(PKMN::durations(options)).get(0), *network.get());
-    NN::Battle::write_side_embedding<float, activation>(
+    NN::Battle::write_side_embedding<float, activation, false>(
         p2_side, PKMN::view(battle).sides[1],
         PKMN::view(PKMN::durations(options)).get(1), *network.get());
   };
@@ -266,10 +267,10 @@ PYBIND11_MODULE(pyoaksearch, m) {
               if (cache) {
                 auto &side_cache =
                     std::get<NN::Battle::SideCache<T>>(cache->get().data);
-                NN::Battle::write_side_embedding<T, activation>(
+                NN::Battle::write_side_embedding<T, activation, false>(
                     embedding, *side.p, *duration.p, net, side_cache);
               } else {
-                NN::Battle::write_side_embedding<T, activation>(
+                NN::Battle::write_side_embedding<T, activation, false>(
                     embedding, *side.p, *duration.p, net);
               }
               result = std::move(arr);
@@ -414,7 +415,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
           "weights. NOT bit-for-bit comparable to oak.torch's old "
           "hash_bytes()/blake2b-based hash() -- different algorithm.");
 
-  py::class_<SideCache>(m, "SideCache")
+  py::class_<std::shared_ptr<SideCache>>(m, "SideCache")
       .def(py::init<>())
       .def(
           "precompute",
@@ -431,6 +432,16 @@ PYBIND11_MODULE(pyoaksearch, m) {
           py::arg("network"), py::call_guard<py::gil_scoped_release>())
       .def("is_quantized",
            [](SideCache &cache) { return cache.is_quantized(); });
+
+  py::class_<CachePool>(m, "CachePool")
+      .def(
+          "get",
+          [](CachePool &cache_pool, Search::Eval &eval,
+             const Py::PKMN::SideProxy &side,
+             bool use_pool) { return cache_pool.get(eval, *side.p, use_pool); },
+          py::arg("eval"), py::arg("side"), py::arg("use_pool") = false,
+          py::call_guard<py::gil_scoped_release>());
+
   // Budget
   py::class_<Budget>(m, "Budget");
   py::class_<Iterations, Budget>(m, "Iterations").def(py::init<size_t>());
