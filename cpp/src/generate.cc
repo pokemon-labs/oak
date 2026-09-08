@@ -114,9 +114,9 @@ bool endless_battle_check(const auto &p1, const auto &p2) {
       });
 }
 
-void generate(const ProgramArgs *args_ptr) {
+void generate(const ProgramArgs *args_ptr, uint64_t seed) {
   const auto &args = *args_ptr;
-  mt19937 device{args.seed.value()};
+  mt19937 device{seed};
   const auto id = RuntimeData::thread_id.fetch_add(1) % args.threads;
   auto &battle_length = RuntimeData::battle_lengths[id];
 
@@ -468,7 +468,8 @@ int main(int argc, char **argv) {
 
   std::vector<std::thread> thread_pool;
   for (int t = 0; t < args.threads; ++t) {
-    thread_pool.emplace_back(generate, &args);
+    const auto thread_seed = device.uniform_64();
+    thread_pool.emplace_back(generate, &args, thread_seed);
   }
   std::thread print_thread{print_thread_fn, &args};
 
