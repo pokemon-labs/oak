@@ -1,1 +1,0 @@
-dev/debug pyoak pyoaksearch &&  pip install --no-deps --no-build-isolation /home/user/oak

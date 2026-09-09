@@ -38,12 +38,13 @@ struct NetworkBase {
            6 * (rewrite_hp + pokemon_out_dim() + moves_out_dim());
   }
   void resize(uint32_t ph, uint32_t po, uint32_t ah, uint32_t ao, uint32_t mh,
-              uint32_t mo, uint32_t h, uint32_t value, uint32_t policy) {
+              uint32_t mo, uint32_t h, uint32_t value, uint32_t policy,
+              bool rewrite_hp = false) {
     if (auto *main = main_net_float()) {
       pokemon_net.resize(Encode::Battle::Pokemon::n_dim, ph, po);
       active_net.resize(Encode::Battle::Active::n_dim, ah, ao);
       moves_net.resize(Encode::Battle::Moves::n_dim, mh, mo);
-      main->resize(2 * side_embedding_dim(), h, value, policy);
+      main->resize(2 * side_embedding_dim(rewrite_hp), h, value, policy);
     } else {
       throw std::runtime_error{"Attempting to resize quantized network"};
     }
@@ -292,6 +293,8 @@ T *write_pokemon_moves(T *embedding, uint8_t index, const auto &moves,
   return embedding + moves_dim;
 }
 
+inline constexpr bool disable_live_cache = true;
+
 template <typename T, Activation activation, typename... Caches>
 T *write_active_moves(T *embedding, uint8_t index, const auto &moves,
                       NetworkBase &network, Caches &...cache_pack) {
@@ -299,7 +302,7 @@ T *write_active_moves(T *embedding, uint8_t index, const auto &moves,
                 "write_active_moves takes zero or one cache");
   using namespace Encode::Battle::Moves;
   const auto moves_dim = network.moves_out_dim();
-  if constexpr (sizeof...(Caches) == 1) {
+  if constexpr (sizeof...(Caches) == 1 && !disable_live_cache) {
     auto &cache =
         std::get<0>(std::tie(cache_pack...)).active_moves_cache[index];
     const T *t = cache.template get<activation>(network, moves);
@@ -322,7 +325,7 @@ T *write_active(T *embedding, uint8_t index, const PKMN::ActivePokemon &active,
   using namespace Encode::Battle::Active;
   const auto active_dim = network.active_out_dim();
 
-  if constexpr (sizeof...(Caches) == 1) {
+  if constexpr (sizeof...(Caches) == 1 && !disable_live_cache) {
     auto &cache = std::get<0>(std::tie(cache_pack...)).active_cache[index];
     const T *t = cache.template get<activation>(network, active, duration);
     std::copy(t, t + active_dim, embedding);

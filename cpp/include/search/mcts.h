@@ -276,7 +276,7 @@ template <SearchOptions Options = default_search> struct Search {
         pkmn_gen1_battle_options_set(&options, nullptr, &chance_options,
                                      nullptr);
         static thread_local std::vector<output_type> battle_embedding;
-        battle_embedding.reserve(2 * eval.side_embedding_dim());
+        battle_embedding.reserve(2 * eval.side_embedding_dim(rewrite_hp));
         write_battle_embedding<activation, rewrite_hp>(
             battle_embedding.data(), PKMN::view(input.battle), eval, caches...);
         for (auto i = 0; i < output.p1.k; ++i) {
@@ -515,7 +515,7 @@ template <SearchOptions Options = default_search> struct Search {
             constexpr bool rewrite_hp = Eval::rewrite_hp;
 
             static thread_local std::vector<output_type> battle_embedding;
-            battle_embedding.reserve(2 * eval.side_embedding_dim());
+            battle_embedding.reserve(2 * eval.side_embedding_dim(rewrite_hp));
             write_battle_embedding<activation, rewrite_hp>(
                 battle_embedding.data(), PKMN::view(battle), eval, caches...);
 

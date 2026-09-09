@@ -32,7 +32,7 @@ struct CachePool {
   std::shared_ptr<Search::SideCache> access(Search::Network &network,
                                             const PKMN::Side &side) {
     auto lock = std::unique_lock{mutex};
-    auto cache = caches[get_team(side)];
+    auto &cache = caches[get_team(side)];
     if (!cache) {
       cache = std::make_shared<Search::SideCache>();
       if (network.is_quantized()) {
