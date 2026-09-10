@@ -43,6 +43,9 @@ struct ProgramArgs : public GenerateArgs {
                                        "next search instead of a new node.")
                         .set_default(false);
 
+  bool &fast_search_for_partial_actions = flag(
+      "fast-search-for-partial-actions",
+      "Only perform a full search when both players have more than one action");
   double &fast_search_prob =
       kwarg("fast-search-prob",
             "Probability a search with only fast-budget is used")
@@ -252,7 +255,12 @@ void generate(const ProgramArgs *args_ptr, uint64_t seed) {
 
         // debug_print(PKMN::battle_data_to_string(battle, durations));
 
-        const bool use_fast = device.uniform() < args.fast_search_prob;
+        const auto [p1_choices, p2_choices] = PKMN::choices(battle, result);
+
+        const bool use_fast =
+            (device.uniform() < args.fast_search_prob) ||
+            (args.fast_search_for_partial_actions &&
+             (p1_choices.size() == 1 && p2_choices.size() == 1));
         budget = Search::Parse::budget(
             ((battle_length == 0) && skip_battle)
                 ? args.t1_budget.value()

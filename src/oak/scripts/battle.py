@@ -46,6 +46,11 @@ def add_local_args(parser, prefix: str = "", rl: bool = False):
             help="Ignore samples with fewer than these iterations.",
         )
     parser.add_argument(
+        prefix + "allow-partial-actions",
+        action="store_true",
+        help="If this flag is not set, then only samples where both players have > 1 action will be used",
+    )
+    parser.add_argument(
         prefix + "clamp-parameters",
         action="store_true",
         help="Clamp parameters [-2, 2] to support Quantized-style quantization",
@@ -289,8 +294,16 @@ def main():
                     dim=1,
                 )
             )
+
             if not args.no_policy_loss:
-                print("P1 policy inference/target")
+                # TODO this is a big print
+                print("Policy inference/target")
+                print(output.policy_logit[:window])
+                print(
+                    torch.cat(
+                        [p1_policy_target[:window], p2_policy_target[:window]], dim=1
+                    )
+                )
                 print(f"policy loss: {p1_policy_loss.mean()}, {p2_policy_loss.mean()}")
             if not args.no_value_loss:
                 print(f"value loss: {value_loss.mean()}")
@@ -392,6 +405,7 @@ def main():
             args.threads,
             args.max_battle_length,
             args.min_iterations,
+            args.allow_partial_actions,
         )
 
         if samples_read < args.batch_size:

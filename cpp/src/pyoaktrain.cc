@@ -105,7 +105,8 @@ struct SampleIndexer {
 
 template <typename Frames>
 size_t sample(Frames &frames, const SampleIndexer &indexer, size_t threads,
-              size_t max_battle_length, size_t min_iterations) {
+              size_t max_battle_length, size_t min_iterations,
+              bool allow_partial_actions) {
   constexpr bool is_encoded = std::is_same_v<Frames, Py::Battle::EncodedFrames>;
   // flatten indexer data into C++ arrays
   std::vector<const char *> paths;
@@ -197,7 +198,9 @@ size_t sample(Frames &frames, const SampleIndexer &indexer, size_t threads,
 
         std::vector<size_t> valid;
         for (size_t i = 0; i < compressed.updates.size(); ++i) {
-          if (compressed.updates[i].iterations >= min_iterations) {
+          const auto &update = compressed.updates[i];
+          if (update.iterations >= min_iterations &&
+              (allow_partial_actions || (update.p1.k > 1 || update.p2.k > 1))) {
             valid.push_back(i);
           }
         }
@@ -405,21 +408,24 @@ PYBIND11_MODULE(pyoaktrain, m) {
       "sample_encoded",
       [](Py::Battle::EncodedFrames &encoded_frames,
          const SampleIndexer &indexer, size_t threads, size_t max_battle_length,
-         size_t min_iterations) {
+         size_t min_iterations, bool allow_partial_actions) {
         return sample(encoded_frames, indexer, threads, max_battle_length,
-                      min_iterations);
+                      min_iterations, allow_partial_actions);
       },
       py::arg("encoded_frames"), py::arg("indexer"), py::arg("threads"),
-      py::arg("max_battle_length"), py::arg("min_iterations"));
+      py::arg("max_battle_length"), py::arg("min_iterations"),
+      py::arg("allow_partial_actions"));
   m.def(
       "sample",
       [](Py::Battle::Frames &frames, const SampleIndexer &indexer,
-         size_t threads, size_t max_battle_length, size_t min_iterations) {
+         size_t threads, size_t max_battle_length, size_t min_iterations,
+         bool allow_partial_actions) {
         return sample(frames, indexer, threads, max_battle_length,
-                      min_iterations);
+                      min_iterations, allow_partial_actions);
       },
       py::arg("frames"), py::arg("indexer"), py::arg("threads"),
-      py::arg("max_battle_length"), py::arg("min_iterations"));
+      py::arg("max_battle_length"), py::arg("min_iterations"),
+      py::arg("allow_partial_actions"));
 
   {
     std::vector<std::pair<int, int>> species_move_list;
