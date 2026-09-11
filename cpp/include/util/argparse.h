@@ -33,7 +33,7 @@ struct TeamBuildingArgs : public argparse::Args {
         kwarg(B "eval", "Eval mc/fp/<network-path>");                          \
                                                                                \
     std::optional<std::string> &A##matrix_ucb =                                \
-        kwarg(B "matrix-ucb", "MatrixUCB start/interval/minimum/c");           \
+        kwarg(B "matrix-ucb", "MatrixUCB c/start/interval/minimum");           \
                                                                                \
     bool &A##quantize = flag(B "quantize", "Use quantized main subnet");       \
                                                                                \

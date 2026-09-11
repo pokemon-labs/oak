@@ -293,7 +293,7 @@ T *write_pokemon_moves(T *embedding, uint8_t index, const auto &moves,
   return embedding + moves_dim;
 }
 
-inline constexpr bool disable_live_cache = true;
+inline constexpr bool disable_live_cache = false;
 
 template <typename T, Activation activation, typename... Caches>
 T *write_active_moves(T *embedding, uint8_t index, const auto &moves,

@@ -282,31 +282,36 @@ def main():
 
         if print_flag:
             window = args.print_window
-            print(
-                torch.cat(
-                    [
-                        output.value[:window],
-                        value_target[:window],
-                        input.empirical_value[:window],
-                        input.nash_value[:window],
-                        input.score[:window],
-                    ],
-                    dim=1,
+            if not args.no_value_loss:
+                print(
+                    f"Value (shape=(window={window}, output/target/empirical/nash/score=5)):"
                 )
-            )
-
-            if not args.no_policy_loss:
-                # TODO this is a big print
-                print("Policy inference/target")
-                print(output.policy_logit[:window])
                 print(
                     torch.cat(
-                        [p1_policy_target[:window], p2_policy_target[:window]], dim=1
+                        [
+                            output.value[:window],
+                            value_target[:window],
+                            input.empirical_value[:window],
+                            input.nash_value[:window],
+                            input.score[:window],
+                        ],
+                        dim=1,
                     )
                 )
-                print(f"policy loss: {p1_policy_loss.mean()}, {p2_policy_loss.mean()}")
-            if not args.no_value_loss:
                 print(f"value loss: {value_loss.mean()}")
+
+            if not args.no_policy_loss:
+                print(
+                    f"Policy (shape=(window={window}, player=2, output/target=2, actions=9)):"
+                )
+                softmax_window = torch.nn.functional.softmax(
+                    output.policy_logit[:window], dim=-1
+                )
+                target_window = torch.stack(
+                    [p1_policy_target[:window], p2_policy_target[:window]], dim=-2
+                )
+                print(torch.stack([softmax_window, target_window], dim=-2))
+                print(f"policy loss: {p1_policy_loss.mean()}, {p2_policy_loss.mean()}")
 
         return loss
 
