@@ -54,6 +54,8 @@ struct ProgramArgs : public VsArgs {
   bool &cache_pool =
       flag("cache-pool", "Use a std::map of side caches - not appropriate for "
                          "RL but faster otherwise.");
+  bool &reuse =
+      flag("reuse", "Player 2 will search using Player 1's heap and output.");
 };
 
 auto inverse_sigmoid(const auto x) { return std::log(x) - std::log(1 - x); }
@@ -198,8 +200,6 @@ void thread_fn(const ProgramArgs *args_ptr) {
         .min = args.p2_policy_min.or_else([&] { return args.policy_min; })
                    .value_or(0)};
 
-    const bool same_search = false;
-
     auto p1_battle_frames = Train::Battle::CompressedFrames{battle};
     auto p2_battle_frames = Train::Battle::CompressedFrames{battle};
 
@@ -235,12 +235,12 @@ void thread_fn(const ProgramArgs *args_ptr) {
       }();
 
       MCTS::Output p1_output{}, p2_output{};
+      Search::Node p1_heap{}, p2_heap{};
       int p1_index{}, p2_index{};
-      if (p1_choices.size() > 1) {
-        Search::Node heap{};
+      if (p1_choices.size() > 1 || args.reuse) {
         p1_output = RuntimeSearch::run(
             device, battle, PKMN::durations(options), p1_budget, p1_bandit,
-            heap, p1_eval, p1_output, p1_s1_cache.get(), p1_s2_cache.get());
+            p1_heap, p1_eval, p1_output, p1_s1_cache.get(), p1_s2_cache.get());
         p1_index = process_and_sample(device, p1_output.p1, p1_policy_options);
         if (print_search_outputs) {
           print("P1:");
@@ -250,20 +250,17 @@ void thread_fn(const ProgramArgs *args_ptr) {
       }
 
       if (p2_choices.size() > 1) {
-        if (same_search && p1_choices.size() > 1) {
-          p2_output = p1_output;
-        } else {
-          Search::Node heap{};
-          p2_output = RuntimeSearch::run(
-              device, battle, PKMN::durations(options), p2_budget, p2_bandit,
-              heap, p2_eval, p2_output, p2_s1_cache.get(), p2_s2_cache.get());
-          if (print_search_outputs) {
-            print("P2:");
-            std::cout << MCTS::output_string(p2_output, battle, p1_labels,
-                                             p2_labels);
-          }
-        }
+        p2_output = RuntimeSearch::run(
+            device, battle, PKMN::durations(options), p2_budget, p2_bandit,
+            args.reuse ? static_cast<Search::Heap &>(p1_heap) : p2_heap,
+            p2_eval, args.reuse ? p1_output : p2_output, p2_s1_cache.get(),
+            p2_s2_cache.get());
         p2_index = process_and_sample(device, p2_output.p2, p2_policy_options);
+        if (print_search_outputs) {
+          print("P2:");
+          std::cout << MCTS::output_string(p2_output, battle, p1_labels,
+                                           p2_labels);
+        }
       }
 
       RuntimeData::battle_outputs[id] = {p1_output, p2_output};
