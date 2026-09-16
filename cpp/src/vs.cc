@@ -160,12 +160,19 @@ void thread_fn(const ProgramArgs *args_ptr) {
     auto options = PKMN::options();
     auto result = PKMN::update(battle, 0, 0, options);
 
-    auto p1_eval = Search::Parse::eval(
-        args.p1_eval.or_else([&] { return args.eval; }).value(),
-        args.quantize || args.p1_quantize);
-    auto p2_eval = Search::Parse::eval(
-        args.p2_eval.or_else([&] { return args.eval; }).value(),
-        args.quantize || args.p2_quantize);
+    assert(args.p1_eval.has_value());
+    assert(args.p1_bandit.has_value());
+    assert(args.p1_budget.has_value());
+    assert(args.p1_policy_mode.has_value());
+    assert(args.p2_eval.has_value());
+    assert(args.p2_bandit.has_value());
+    assert(args.p2_budget.has_value());
+    assert(args.p2_policy_mode.has_value());
+
+    auto p1_eval = Search::Parse::eval(args.p1_eval.value(),
+                                       args.quantize || args.p1_quantize);
+    auto p2_eval = Search::Parse::eval(args.p2_eval.value(),
+                                       args.quantize || args.p2_quantize);
     auto p1_s1_cache = RuntimeData::p1_cache_pool.get(
         p1_eval, PKMN::view(battle).sides[0], args.cache_pool);
     auto p1_s2_cache = RuntimeData::p1_cache_pool.get(
@@ -175,14 +182,27 @@ void thread_fn(const ProgramArgs *args_ptr) {
     auto p2_s2_cache = RuntimeData::p2_cache_pool.get(
         p2_eval, PKMN::view(battle).sides[1], args.cache_pool);
 
-    const auto p1_bandit = Search::Parse::bandit(
-        args.p1_bandit.or_else([&] { return args.bandit; }).value());
-    const auto p2_bandit = Search::Parse::bandit(
-        args.p2_bandit.or_else([&] { return args.bandit; }).value());
-    auto p1_budget = Search::Parse::budget(
-        args.p1_budget.or_else([&] { return args.budget; }).value());
-    auto p2_budget = Search::Parse::budget(
-        args.p2_budget.or_else([&] { return args.budget; }).value());
+    const auto p1_bandit = Search::Parse::bandit(args.p1_bandit.value());
+    const auto p2_bandit = Search::Parse::bandit(args.p2_bandit.value());
+    const auto p1_matrix_ucb =
+        args.p1_matrix_ucb.has_value()
+            ? Search::Parse::matrix_ucb(p1_bandit, args.p1_matrix_ucb.value())
+            : Search::MatrixUCB(p1_bandit, 0);
+    const auto p2_matrix_ucb =
+        args.p2_matrix_ucb.has_value()
+            ? Search::Parse::matrix_ucb(p2_bandit, args.p2_matrix_ucb.value())
+            : Search::MatrixUCB(p2_bandit, 0);
+    const auto &p1_params =
+        args.p1_matrix_ucb.has_value()
+            ? static_cast<const Search::BanditParams &>(p1_matrix_ucb)
+            : p1_bandit;
+    const auto &p2_params =
+        args.p2_matrix_ucb.has_value()
+            ? static_cast<const Search::BanditParams &>(p2_matrix_ucb)
+            : p2_bandit;
+
+    auto p1_budget = Search::Parse::budget(args.p1_budget.value());
+    auto p2_budget = Search::Parse::budget(args.p2_budget.value());
 
     const auto p1_policy_options = RuntimePolicy::Options{
         .mode = args.p1_policy_mode.or_else([&] { return args.policy_mode; })
@@ -239,8 +259,11 @@ void thread_fn(const ProgramArgs *args_ptr) {
       int p1_index{}, p2_index{};
       if (p1_choices.size() > 1 || args.reuse) {
         p1_output = RuntimeSearch::run(
-            device, battle, PKMN::durations(options), p1_budget, p1_bandit,
+            device, battle, PKMN::durations(options), p1_budget, p1_params,
             p1_heap, p1_eval, p1_output, p1_s1_cache.get(), p1_s2_cache.get());
+        if (!args.reuse) {
+          p1_heap.reset();
+        }
         p1_index = process_and_sample(device, p1_output.p1, p1_policy_options);
         if (print_search_outputs) {
           print("P1:");
@@ -251,10 +274,11 @@ void thread_fn(const ProgramArgs *args_ptr) {
 
       if (p2_choices.size() > 1) {
         p2_output = RuntimeSearch::run(
-            device, battle, PKMN::durations(options), p2_budget, p2_bandit,
+            device, battle, PKMN::durations(options), p2_budget, p2_params,
             args.reuse ? static_cast<Search::Heap &>(p1_heap) : p2_heap,
             p2_eval, args.reuse ? p1_output : p2_output, p2_s1_cache.get(),
             p2_s2_cache.get());
+        p2_heap.reset();
         p2_index = process_and_sample(device, p2_output.p2, p2_policy_options);
         if (print_search_outputs) {
           print("P2:");
@@ -431,11 +455,24 @@ void setup(auto &args) {
   if (!args.seed.has_value()) {
     args.seed.emplace(std::random_device{}());
   }
-  const auto check_args = [](auto x, auto y, auto z, const auto &name) {
-    if (!x.has_value()) {
-      if (!y.has_value() || !z.has_value()) {
+  const auto check_args = [](const auto &x, auto &y, auto &z,
+                             const auto &name) {
+    if (!y.has_value()) {
+      if (!x.has_value()) {
         throw std::runtime_error{std::string{"--"} + name +
                                  " kwarg is required."};
+      } else {
+        y = x.value();
+        std::cout << "setting p1 " << name << " =  " << y.value() << std::endl;
+      }
+    }
+    if (!z.has_value()) {
+      if (!x.has_value()) {
+        throw std::runtime_error{std::string{"--"} + name +
+                                 " kwarg is required."};
+      } else {
+        z = x.value();
+        std::cout << "setting p2 " << name << " =  " << z.value() << std::endl;
       }
     }
   };
@@ -443,6 +480,8 @@ void setup(auto &args) {
   check_args(args.budget, args.p1_budget, args.p2_budget, "budget");
   check_args(args.eval, args.p1_eval, args.p2_eval, "eval");
   check_args(args.bandit, args.p1_bandit, args.p2_bandit, "bandit");
+  check_args(args.matrix_ucb, args.p1_matrix_ucb, args.p2_matrix_ucb,
+             "matrix-ucb");
   check_args(args.policy_mode, args.p1_policy_mode, args.p2_policy_mode,
              "policy-mode");
   // args
