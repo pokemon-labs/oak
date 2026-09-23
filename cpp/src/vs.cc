@@ -480,8 +480,8 @@ void setup(auto &args) {
   check_args(args.budget, args.p1_budget, args.p2_budget, "budget");
   check_args(args.eval, args.p1_eval, args.p2_eval, "eval");
   check_args(args.bandit, args.p1_bandit, args.p2_bandit, "bandit");
-  check_args(args.matrix_ucb, args.p1_matrix_ucb, args.p2_matrix_ucb,
-             "matrix-ucb");
+  // check_args(args.matrix_ucb, args.p1_matrix_ucb, args.p2_matrix_ucb,
+  //            "matrix-ucb");
   check_args(args.policy_mode, args.p1_policy_mode, args.p2_policy_mode,
              "policy-mode");
   // args
