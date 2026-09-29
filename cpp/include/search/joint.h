@@ -23,9 +23,9 @@ template <typename Bandit> struct Joint {
     p2.select(device, bandit, outcome.second);
   }
 
-  void update(const JointOutcome &outcome) noexcept {
-    p1.update(outcome.first);
-    p2.update(outcome.second);
+  void update(const Bandit &bandit, const JointOutcome &outcome) noexcept {
+    p1.update(bandit, outcome.first);
+    p2.update(bandit, outcome.second);
   }
 
   void softmax_logits(const Bandit &bandit, const float *p1_priors,

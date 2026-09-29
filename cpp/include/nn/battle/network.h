@@ -342,6 +342,78 @@ T *write_active(T *embedding, uint8_t index, const PKMN::ActivePokemon &active,
 
 template <typename T, Activation activation, bool rewrite_hp,
           typename... Caches>
+void rewrite_side_embedding(T *embedding, const PKMN::Side &side,
+                            const PKMN::Duration &duration,
+                            const pkmn_choice choice, NetworkBase &network,
+                            Caches &...caches) {
+  static_assert(sizeof...(Caches) <= 1,
+                "write_side_embedding takes zero or one cache");
+  const auto pokemon_dim = network.pokemon_out_dim() + rewrite_hp;
+  const auto active_dim = network.active_out_dim();
+  const auto moves_dim = network.moves_out_dim();
+  const auto write_zero = [&embedding](auto dim) {
+    std::fill_n(embedding, dim, T{0});
+    return embedding + dim;
+  };
+  const auto write_hp = [&embedding](const auto &pokemon) {
+    if constexpr (rewrite_hp) {
+      embedding[0] = (float)pokemon.hp / pokemon.stats.hp;
+      ++embedding;
+    }
+  };
+
+  auto choice_type = choice & 0b11;
+  auto choice_data = choice >> 2;
+
+  switch (choice_type) {
+    // no case 0
+  case 2: {
+    assert(choice_data);
+    auto *e =
+        embedding + active_dim + (choice_data - 1) * (pokemon_dim + moves_dim);
+    const auto index = side.order[choice_data - 1];
+    if (index == 0) {
+      e = write_zero(pokemon_dim + moves_dim);
+    } else {
+      const auto &pokemon = side.pokemon[index - 1];
+      if (pokemon.hp == 0) {
+        e = write_zero(pokemon_dim + moves_dim);
+      } else {
+        write_hp(pokemon);
+        e = write_pokemon<T, activation>(e, index - 1, pokemon,
+                                         duration.sleep(index - 1), network,
+                                         caches...);
+        e = write_pokemon_moves<T, activation>(e, index - 1, pokemon.moves,
+                                               network, caches...);
+      }
+    }
+  }
+  case 1: {
+    // update active
+    const auto &stored = side.stored();
+    if (stored.hp == 0) {
+      embedding = write_zero(active_dim + pokemon_dim + moves_dim);
+    } else {
+      const auto index = side.order[0] - 1;
+      embedding = write_active<T, activation>(embedding, index, side.active,
+                                              duration, network, caches...);
+      write_hp(stored);
+      embedding = write_pokemon<T, activation>(
+          embedding, index, stored, duration.sleep(0), network, caches...);
+      if (side.active.moves == stored.moves) {
+        embedding = write_pokemon_moves<T, activation>(
+            embedding, index, side.active.moves, network, caches...);
+      } else {
+        embedding = write_active_moves<T, activation>(
+            embedding, index, side.active.moves, network, caches...);
+      }
+    }
+  }
+  }
+}
+
+template <typename T, Activation activation, bool rewrite_hp,
+          typename... Caches>
 T *write_side_embedding(T *embedding, const PKMN::Side &side,
                         const PKMN::Duration &duration, NetworkBase &network,
                         Caches &...caches) {

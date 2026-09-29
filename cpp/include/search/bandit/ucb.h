@@ -36,7 +36,7 @@ struct UCB {
 
     bool is_init() const noexcept { return k; }
 
-    void update(const auto &outcome) noexcept {
+    void update(const UCB &, const auto &outcome) noexcept {
       assert(outcome.value >= 0);
       scores[outcome.index] += outcome.value;
       ++visits[outcome.index];

@@ -4,6 +4,7 @@
 #include <search/bandit/exp3.h>
 #include <search/bandit/pexp3.h>
 #include <search/bandit/pucb.h>
+#include <search/bandit/regret-matching.h>
 #include <search/bandit/ucb.h>
 #include <search/bandit/ucb1.h>
 #include <search/data.h>
@@ -17,9 +18,9 @@ namespace RuntimeSearch {
 
 MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
                  const pkmn_gen1_chance_durations &durations,
-                 const Search::Budget &budget,
-                 const Search::BanditParams &params, Search::Heap &heap,
-                 Search::Eval &eval, MCTS::Output output = {},
+                 const Search::Budget &budget, const Search::Bandit &params,
+                 Search::Heap &heap, Search::Eval &eval,
+                 MCTS::Output output = {}, MCTS::RuntimeOptions = {},
                  Search::SideCache *p1_cache = nullptr,
                  Search::SideCache *p2_cache = nullptr);
 } // namespace RuntimeSearch

@@ -15,12 +15,13 @@ namespace MCTS {
 
 struct PExp3 {
   PExp3() = default;
-  PExp3(float lr, float exploration)
+  PExp3(float lr, float exploration, float temp)
       : lr{lr}, exploration{exploration},
-        one_minus_exploration{1 - exploration} {}
+        one_minus_exploration{1 - exploration}, temp{temp} {}
   float lr;
   float exploration;
   float one_minus_exploration;
+  float temp;
 
 #pragma pack(push, 1)
   struct Stats {
@@ -28,13 +29,14 @@ struct PExp3 {
     uint8_t k;
 
     void softmax_logits(const PExp3 &bandit, const float *logits) noexcept {
-      const float eta{bandit.lr / k};
       std::transform(logits, logits + k, this->gains.data(),
-                     [eta](const auto x) { return x / eta; });
+                     [&bandit](const auto x) { return bandit.temp * x; });
+      // std::copy() TODO
     }
 
     void init(const auto k) noexcept {
       this->k = k;
+      // TODO remove this we should never init without softmax
       std::fill(gains.begin(), gains.begin() + k, 0);
       std::fill(gains.begin() + k, gains.end(),
                 -std::numeric_limits<float>::infinity());
@@ -49,12 +51,11 @@ struct PExp3 {
         outcome.index = 0;
         outcome.prob = 1;
       } else {
-        const float eta{bandit.lr / k};
-        const float delta{bandit.exploration / k};
-        softmax(policy, gains, eta);
+        const float exploration{bandit.exploration / k};
+        softmax_9(policy, gains);
         std::transform(policy.begin(), policy.end(), policy.begin(),
-                       [eta, delta, &bandit](const float x) {
-                         return bandit.one_minus_exploration * x + delta;
+                       [exploration, &bandit](const float x) {
+                         return bandit.one_minus_exploration * x + exploration;
                        });
         outcome.index =
             std::min(static_cast<uint8_t>(device.sample_pdf(policy)),
@@ -63,10 +64,11 @@ struct PExp3 {
       }
     }
 
-    void update(const auto &outcome) noexcept {
+    void update(const PExp3 &bandit, const auto &outcome) noexcept {
       constexpr float baseline = 0;
-      if ((gains[outcome.index] += (outcome.value - baseline) / outcome.prob) >
-          0) {
+      const float eta{bandit.lr / k};
+      if ((gains[outcome.index] +=
+           eta * (outcome.value - baseline) / outcome.prob) > 0) {
         const auto max = gains[outcome.index];
         for (auto &v : gains) {
           v -= max;

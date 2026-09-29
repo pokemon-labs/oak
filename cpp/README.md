@@ -357,8 +357,8 @@ During this forward the phase the state will be mutated with no way to return to
 ### MatrixUCB
 
 ```cpp
-template <typename BanditParams> struct MatrixUCBParams {
-  BanditParams bandit_params;
+template <typename Bandit> struct MatrixUCBParams {
+  Bandit bandit_params;
   uint32_t delay;
   uint32_t interval;
   float c;

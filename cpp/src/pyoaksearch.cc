@@ -63,9 +63,10 @@ Py::Battle::OutputBuffer cpp_inference(const Py::Battle::Frames &battle_frames,
 
   for (auto i = 0; i < battle_frames.size; ++i) {
     auto heap = Search::Node{};
-    const auto output = RuntimeSearch::run(
-        device, battle, PKMN::durations(options), Search::Iterations{0},
-        Search::PUCB{1.0}, heap, network, MCTS::Output{}, p1_cache, p2_cache);
+    const auto output =
+        RuntimeSearch::run(device, battle, PKMN::durations(options),
+                           Search::Iterations{0}, Search::PUCB{1.0}, heap,
+                           network, MCTS::Output{}, {}, p1_cache, p2_cache);
     *value = output.initial_value;
 
     switch (network.get()->activation_type()) {
@@ -210,6 +211,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
   py::class_<Heap>(m, "Heap").def("reset", &Heap::reset);
   py::class_<Node, Heap>(m, "Node").def(py::init<>());
   py::class_<Table, Heap>(m, "Table").def(py::init<>());
+  py::class_<MatrixUCBNode, Heap>(m, "MatrixUCBNode").def(py::init<>());
 
   // Eval
   py::class_<Eval>(m, "Eval");
@@ -448,20 +450,21 @@ PYBIND11_MODULE(pyoaksearch, m) {
   py::class_<Duration, Budget>(m, "Duration").def(py::init<size_t>());
 
   // Params
-  py::class_<BanditParams>(m, "Bandit");
-  py::class_<UCB, BanditParams>(m, "UCB").def(py::init<float>(), py::arg("c"));
-  py::class_<PUCB, BanditParams>(m, "PUCB").def(py::init<float>(),
-                                                py::arg("c"));
-  py::class_<UCB1, BanditParams>(m, "UCB1").def(py::init<float>(),
-                                                py::arg("c"));
-  py::class_<Exp3, BanditParams>(m, "Exp3").def(
+  py::class_<Bandit>(m, "Bandit");
+  py::class_<UCB, Bandit>(m, "UCB").def(py::init<float>(), py::arg("c"));
+  py::class_<PUCB, Bandit>(m, "PUCB").def(py::init<float>(), py::arg("c"));
+  py::class_<UCB1, Bandit>(m, "UCB1").def(py::init<float>(), py::arg("c"));
+  py::class_<Exp3, Bandit>(m, "Exp3").def(
       py::init<float, float>(), py::arg("lr"), py::arg("exploration"));
-  py::class_<PExp3, BanditParams>(m, "PExp3")
-      .def(py::init<float, float>(), py::arg("lr"), py::arg("exploration"));
-  py::class_<MatrixUCB, BanditParams>(m, "MatrixUCB")
-      .def(py::init<BanditParams, float, uint32_t, uint32_t, uint32_t>(),
-           py::arg("bandit"), py::arg("c"), py::arg("delay") = 0,
-           py::arg("interval") = 1, py::arg("minimum") = 0);
+  py::class_<PExp3, Bandit>(m, "PExp3")
+      .def(py::init<float, float, float>(), py::arg("lr"),
+           py::arg("exploration"), py::arg("temp") = 1.0);
+  py::class_<MatrixUCB, Bandit>(m, "MatrixUCB")
+      .def(py::init<Bandit, float, uint32_t, uint32_t>(), py::arg("bandit"),
+           py::arg("c"), py::arg("interval") = 1, py::arg("grow") = 1);
+  py::class_<MCTS::RuntimeOptions>(m, "Options")
+      .def(py::init<uint32_t, uint32_t, float>(), py::arg("max_depth") = 0,
+           py::arg("rollout_depth") = 1, py::arg("rollout_temp") = 1.0);
 
   py::class_<MCTS::Output::Side>(m, "SideOutput")
       .def(py::init<>())
@@ -510,20 +513,21 @@ PYBIND11_MODULE(pyoaksearch, m) {
       "run",
       [](const pkmn_gen1_battle &battle,
          const pkmn_gen1_chance_durations &durations, const Budget &budget,
-         const BanditParams &bandit, Heap &heap, Eval &eval,
-         MCTS::Output output,
+         const Bandit &bandit, Heap &heap, Eval &eval, MCTS::Output output,
+         MCTS::RuntimeOptions options,
          std::optional<std::reference_wrapper<SideCache>> p1_cache = {},
          std::optional<std::reference_wrapper<SideCache>> p2_cache = {}) {
         mt19937 device{std::random_device{}()};
         return RuntimeSearch::run(
             device, battle, durations, budget, bandit, heap, eval, output,
-            p1_cache.has_value() ? &p1_cache.value().get() : nullptr,
+            options, p1_cache.has_value() ? &p1_cache.value().get() : nullptr,
             p2_cache.has_value() ? &p2_cache.value().get() : nullptr);
       },
       py::arg("battle"), py::arg("durations"), py::arg("budget"),
       py::arg("bandit"), py::arg("heap"), py::arg("eval"),
-      py::arg("output") = MCTS::Output{}, py::arg("p1_cache") = std::nullopt,
-      py::arg("p2_cache") = std::nullopt,
+      py::arg("output") = MCTS::Output{},
+      py::arg("options") = MCTS::RuntimeOptions{},
+      py::arg("p1_cache") = std::nullopt, py::arg("p2_cache") = std::nullopt,
       py::call_guard<py::gil_scoped_release>());
 
   m.def(

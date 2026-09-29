@@ -6,6 +6,7 @@
 #include <search/bandit/exp3.h>
 #include <search/bandit/pexp3.h>
 #include <search/bandit/pucb.h>
+#include <search/bandit/regret-matching.h>
 #include <search/bandit/ucb.h>
 #include <search/bandit/ucb1.h>
 #include <search/mcts.h>
@@ -168,16 +169,23 @@ public:
 struct Heap {
   template <typename... T>
   using NodeVariantT = std::variant<std::monostate, MCTS::Node<T>...>;
-
+  template <typename... T>
+  using MatrixUCBNodeVariantT =
+      std::variant<std::monostate, MCTS::MatrixUCBNode<T>...>;
   template <typename... T>
   using TableVariantT = std::variant<std::monostate, MCTS::Table<T>...>;
 
   using NodeVariant =
-      NodeVariantT<MCTS::Exp3, MCTS::PExp3, MCTS::UCB, MCTS::PUCB, MCTS::UCB1>;
+      NodeVariantT<MCTS::Exp3, MCTS::PExp3, MCTS::UCB, MCTS::PUCB, MCTS::UCB1,
+                   MCTS::RegretMatching>;
+  using MatrixUCBNodeVariant =
+      MatrixUCBNodeVariantT<MCTS::Exp3, MCTS::PExp3, MCTS::UCB, MCTS::PUCB,
+                            MCTS::UCB1, MCTS::RegretMatching>;
   using TableVariant =
-      TableVariantT<MCTS::Exp3, MCTS::PExp3, MCTS::UCB, MCTS::PUCB, MCTS::UCB1>;
+      TableVariantT<MCTS::Exp3, MCTS::PExp3, MCTS::UCB, MCTS::PUCB, MCTS::UCB1,
+                    MCTS::RegretMatching>;
 
-  using Variant = std::variant<NodeVariant, TableVariant>;
+  using Variant = std::variant<NodeVariant, MatrixUCBNodeVariant, TableVariant>;
   Variant data;
 
   template <class T, class... Args>
@@ -213,53 +221,80 @@ public:
   }
 };
 
+class MatrixUCBNode : public Heap {
+public:
+  MatrixUCBNode() : Heap{std::in_place_type<Heap::MatrixUCBNodeVariant>} {}
+  // bool update(uint8_t i, uint8_t j, const MCTS::Obs &obs) {
+  //   const auto lambda = [&](auto &node) {
+  //     using T = std::remove_cvref_t<decltype(node)>;
+  //     if constexpr (std::is_same_v<T, std::monostate>) {
+  //       return false;
+  //     } else {
+  //       if (auto child = node.children.find({i, j, obs});
+  //           child == node.children.end()) {
+  //         node = {};
+  //         return false;
+  //       } else {
+  //         std::swap(node, child->second);
+  //         return true;
+  //       }
+  //     }
+  //   };
+  //   return std::visit(lambda, std::get<Heap::NodeVariant>(this->data));
+  // }
+};
+
 class Table : public Heap {
 public:
   Table() : Heap{std::in_place_type<Heap::TableVariant>} {}
 };
 
-struct BanditParams {
+struct Bandit {
   template <typename... T> using VariantT = std::variant<T...>;
-  using Variant =
-      VariantT<MCTS::Exp3, MCTS::PExp3, MCTS::UCB, MCTS::PUCB, MCTS::UCB1>;
+  using Variant = VariantT<MCTS::Exp3, MCTS::PExp3, MCTS::UCB, MCTS::PUCB,
+                           MCTS::UCB1, MCTS::RegretMatching>;
   Variant data;
-  BanditParams() = default;
+  Bandit() = default;
   template <class T, class... Args>
-  BanditParams(std::in_place_type_t<T>, Args &&...args)
+  Bandit(std::in_place_type_t<T>, Args &&...args)
       : data(std::in_place_type<T>, std::forward<Args>(args)...) {}
-  virtual ~BanditParams() = default;
+  virtual ~Bandit() = default;
 };
 
-class Exp3 : public BanditParams {
+class Exp3 : public Bandit {
 public:
   Exp3(float lr, float exploration)
-      : BanditParams{std::in_place_type<MCTS::Exp3>, lr, exploration} {}
+      : Bandit{std::in_place_type<MCTS::Exp3>, lr, exploration} {}
 };
-class PExp3 : public BanditParams {
+class PExp3 : public Bandit {
 public:
-  PExp3(float lr, float exploration)
-      : BanditParams{std::in_place_type<MCTS::PExp3>, lr, exploration} {}
+  PExp3(float lr, float exploration, float temp)
+      : Bandit{std::in_place_type<MCTS::PExp3>, lr, exploration, temp} {}
 };
-class UCB : public BanditParams {
+class UCB : public Bandit {
 public:
-  UCB(float c) : BanditParams{std::in_place_type<MCTS::UCB>, c} {}
+  UCB(float c) : Bandit{std::in_place_type<MCTS::UCB>, c} {}
 };
-class PUCB : public BanditParams {
+class PUCB : public Bandit {
 public:
-  PUCB(float c) : BanditParams{std::in_place_type<MCTS::PUCB>, c} {}
+  PUCB(float c) : Bandit{std::in_place_type<MCTS::PUCB>, c} {}
 };
-class UCB1 : public BanditParams {
+class UCB1 : public Bandit {
 public:
-  UCB1(float c) : BanditParams{std::in_place_type<MCTS::UCB1>, c} {}
+  UCB1(float c) : Bandit{std::in_place_type<MCTS::UCB1>, c} {}
 };
-struct MatrixUCB : public BanditParams {
+class RegretMatching : public Bandit {
+public:
+  RegretMatching(float exploration)
+      : Bandit{std::in_place_type<MCTS::RegretMatching>, exploration} {}
+};
+struct MatrixUCB : public Bandit {
   float c;
-  uint32_t delay;
   uint32_t interval;
-  uint32_t minimum;
-  MatrixUCB(const BanditParams &params, float c, uint32_t delay = 0,
-            uint32_t interval = 1, uint32_t minimum = 0)
-      : c{c}, delay{delay}, interval{interval}, minimum{minimum} {
+  uint32_t grow;
+  MatrixUCB(const Bandit &params, float c, uint32_t interval = 1,
+            uint32_t grow = 1000)
+      : c{c}, interval{interval}, grow{grow} {
     this->data = params.data;
   }
 };
@@ -343,7 +378,7 @@ inline Eval eval(const std::string &s, bool quantize) {
   return network;
 }
 
-inline BanditParams bandit(const std::string &s) {
+inline Bandit bandit(const std::string &s) {
   const auto bandit_split = ::Parse::split(s, '-');
   if (bandit_split.size() < 2) {
     throw std::runtime_error{"Could not parse bandit string: " + s};
@@ -358,35 +393,42 @@ inline BanditParams bandit(const std::string &s) {
     return UCB1{c_or_lr};
   } else if (name == "pucb") {
     return PUCB{c_or_lr};
+  } else if (name == "rm") {
+    return RegretMatching{c_or_lr};
   }
   float exploration = .05f;
+  float temp = 1.0f;
   if (bandit_split.size() >= 3) {
     exploration = std::stof(bandit_split[2]);
+  }
+  if (bandit_split.size() >= 4) {
+    temp = std::stof(bandit_split[3]);
   }
   if (name == "exp3") {
     return Exp3{c_or_lr, exploration};
   } else if (name == "pexp3") {
-    return PExp3{c_or_lr, exploration};
+    return PExp3{c_or_lr, exploration, temp};
   } else {
     throw std::runtime_error{"Could not parse bandit string: " + name};
   }
 }
 
-inline MatrixUCB matrix_ucb(const BanditParams &params, const std::string &s) {
+inline MatrixUCB matrix_ucb(const Bandit &params, const std::string &s) {
   const auto matrix_ucb_split = ::Parse::split(s, '-');
-  if (matrix_ucb_split.size() != 4) {
-    throw std::runtime_error{"Could not parse MatrixUCB name: " + s};
-  }
+  // if (matrix_ucb_split.size() != 3) {
+  //   throw std::runtime_error{"Could not parse MatrixUCB name: " + s};
+  // }
   const float c = std::stof(matrix_ucb_split[0]);
-  const uint32_t delay = std::stoull(matrix_ucb_split[1]);
-  const uint32_t interval = std::stoull(matrix_ucb_split[2]);
-  const uint32_t minimum = std::stoull(matrix_ucb_split[3]);
-  return MatrixUCB{params, c, delay, interval, minimum};
+  const uint32_t interval = std::stoull(matrix_ucb_split[1]);
+  const uint32_t grow = std::stoull(matrix_ucb_split[2]);
+  return MatrixUCB{params, c, interval, grow};
 }
 
-inline Heap heap(bool use_table) {
-  if (use_table) {
-    return Table{};
+inline Heap heap(const Bandit &bandit) {
+  const auto *matrix_ucb_params =
+      dynamic_cast<const Search::MatrixUCB *>(&bandit);
+  if (matrix_ucb_params) {
+    return MatrixUCBNode{};
   } else {
     return Node{};
   }
@@ -407,6 +449,23 @@ inline Budget budget(const std::string &s) {
   } else {
     throw std::runtime_error{"Invalid search duration specification: " + s};
   }
+}
+
+inline MCTS::RuntimeOptions options(const std::string &s) {
+  const auto split = ::Parse::split(s, '-');
+  uint32_t max_depth = 0;
+  uint32_t rollout_depth = 1;
+  float rollout_temp = 1;
+  if (split.size() > 0) {
+    max_depth = std::stoul(split[0]);
+  }
+  if (split.size() > 1) {
+    rollout_depth = std::stoul(split[1]);
+  }
+  if (split.size() > 2) {
+    rollout_temp = std::stof(split[1]);
+  }
+  return {max_depth, rollout_depth, rollout_temp};
 }
 } // namespace Parse
 

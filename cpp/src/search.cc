@@ -12,7 +12,7 @@
 // budget
 // #define NO_ITERATION
 // #define NO_DURATION
-// #define NO_FLAG
+#define NO_FLAG
 
 // evals
 // #define NO_MONTE_CARLO
@@ -21,25 +21,25 @@
 
 // bandits
 // #define NO_UCB
-// #define NO_UCB1
+#define NO_UCB1
 // #define NO_PUCB
 // #define NO_EXP3
 // #define NO_PEXP3
+// #define NO_REGRET_MATCHING
 // matrix ucb
 // #define NO_MATRIX_UCB
 
 // heap
 // #define NO_NODE
-// #define NO_TABLE
+#define NO_TABLE
 
 namespace RuntimeSearch {
 
 MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
                  const pkmn_gen1_chance_durations &durations,
-                 const Search::Budget &budget,
-                 const Search::BanditParams &params, Search::Heap &heap,
-                 Search::Eval &eval, MCTS::Output output,
-                 Search::SideCache *p1_cache_ptr,
+                 const Search::Budget &budget, const Search::Bandit &params,
+                 Search::Heap &heap, Search::Eval &eval, MCTS::Output output,
+                 MCTS::RuntimeOptions options, Search::SideCache *p1_cache_ptr,
                  Search::SideCache *p2_cache_ptr) {
 
   MCTS::Input input{battle, durations, PKMN::result(battle)};
@@ -63,17 +63,18 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
             auto &p2_cache =
                 std::get<Search::SideCache::Cache<float>>(p2_cache_ptr->data);
             output = s.run(device, dur, params, heap, net, input, output,
-                           p1_cache, p2_cache);
+                           options, p1_cache, p2_cache);
           } else {
             auto &p1_cache =
                 std::get<Search::SideCache::Cache<uint8_t>>(p1_cache_ptr->data);
             auto &p2_cache =
                 std::get<Search::SideCache::Cache<uint8_t>>(p2_cache_ptr->data);
             output = s.run(device, dur, params, heap, net, input, output,
-                           p1_cache, p2_cache);
+                           options, p1_cache, p2_cache);
           }
         } else {
-          output = s.run(device, dur, params, heap, net, input, output);
+          output =
+              s.run(device, dur, params, heap, net, input, output, options);
           // throw std::runtime_error{"Network search must use caches."};
         }
       };
@@ -92,12 +93,12 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
         }
 #ifndef NO_MONTE_CARLO
         else if (auto *ptr = std::get_if<MCTS::MonteCarlo>(&eval.data)) {
-          return s.run(device, dur, params, heap, *ptr, input, output);
+          return s.run(device, dur, params, heap, *ptr, input, output, options);
         }
 #endif
 #ifndef NO_POKE_ENGINE
         else if (auto *ptr = std::get_if<PokeEngine::Eval>(&eval.data)) {
-          return s.run(device, dur, params, heap, *ptr, input, output);
+          return s.run(device, dur, params, heap, *ptr, input, output, options);
         }
 #endif
         else {
@@ -108,34 +109,45 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
     }
   };
 
-  const auto parse_matrix_ucb_params = [&](auto dur, auto bandit, auto &heap) {
-    const auto *matrix_ucb_params =
-        dynamic_cast<const Search::MatrixUCB *>(&params);
-    using T = std::remove_cvref_t<decltype(bandit)>;
-
-    if (false) {
-    }
-#ifndef NO_MATRIX_UCB
-    else if (matrix_ucb_params) {
-      auto matrix_ucb = MCTS::MatrixUCBParams<T>{};
-      matrix_ucb.bandit = bandit;
-      matrix_ucb.c = matrix_ucb_params->c;
-      matrix_ucb.delay = matrix_ucb_params->delay;
-      matrix_ucb.interval = matrix_ucb_params->interval;
-      matrix_ucb.minimum = matrix_ucb_params->minimum;
-      return parse_eval(dur, matrix_ucb, heap);
-    }
-#endif
-    else {
-      return parse_eval(dur, bandit, heap);
-    }
-  };
-
-  const auto parse_heap = [&](auto dur, auto bandit) {
-    using Node = MCTS::Node<std::remove_cvref_t<decltype(bandit)>>;
-    using Table = MCTS::Table<std::remove_cvref_t<decltype(bandit)>>;
+  const auto parse_heap = [&](auto dur, auto params) {
+    constexpr bool is_matrix_ucb = []() {
+      if constexpr (requires { params.bandit; }) {
+        return true;
+      } else {
+        return false;
+      }
+    }();
+    auto bandit = [is_matrix_ucb](auto params) {
+      if constexpr (is_matrix_ucb) {
+        return params.bandit;
+      } else {
+        return params;
+      }
+    }(params);
+    using Bandit = std::remove_cvref_t<decltype(bandit)>;
+    using Node = MCTS::Node<Bandit>;
+    using MatrixUCBNode = MCTS::MatrixUCBNode<Bandit>;
+    using Table = MCTS::Table<Bandit>;
     auto *data = &heap.data;
     if (false) {
+      // TODO yolo'd the constexpr below and don't understand it
+    } else if constexpr (is_matrix_ucb) {
+      auto *ptr = std::get_if<Search::Heap::MatrixUCBNodeVariant>(data);
+      if (!ptr) {
+        throw std::runtime_error{"MatrixUCB parse error"};
+      }
+      auto &mucb_node_variant = *ptr;
+      if (std::holds_alternative<std::monostate>(mucb_node_variant)) {
+        mucb_node_variant = MatrixUCBNode{};
+      }
+      if (std::holds_alternative<MatrixUCBNode>(mucb_node_variant)) {
+        return parse_eval(dur, params,
+                          std::get<MatrixUCBNode>(mucb_node_variant));
+      } else {
+        throw std::runtime_error{
+            "MatrixUCBNode exists but does not match bandit"};
+        return output;
+      }
     }
 #ifndef NO_NODE
     else if (auto *ptr = std::get_if<Search::Heap::NodeVariant>(data)) {
@@ -144,8 +156,7 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
         node_variant = Node{};
       }
       if (std::holds_alternative<Node>(node_variant)) {
-        return parse_matrix_ucb_params(dur, bandit,
-                                       std::get<Node>(node_variant));
+        return parse_eval(dur, params, std::get<Node>(node_variant));
       } else {
         throw std::runtime_error{"Node exists but does not match bandit"};
         return output;
@@ -158,16 +169,38 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
         table_variant = Table{};
       }
       if (std::holds_alternative<Table>(table_variant)) {
-        return parse_matrix_ucb_params(dur, bandit,
-                                       std::get<Table>(table_variant));
+        return parse_eval(dur, params, std::get<Table>(table_variant));
       } else {
         throw std::runtime_error{"Node exists but does not match bandit"};
         return output;
       }
 #endif
+      // } else if () {
+
     } else {
       throw std::runtime_error{"Invalid heap"};
       return output;
+    }
+  };
+
+  const auto parse_matrix_ucb_params = [&](auto dur, auto bandit) {
+    const auto *matrix_ucb_params =
+        dynamic_cast<const Search::MatrixUCB *>(&params);
+    if (false) {
+    }
+#ifndef NO_MATRIX_UCB
+    else if (matrix_ucb_params) {
+      auto matrix_ucb =
+          MCTS::MatrixUCBParams<std::remove_cvref_t<decltype(bandit)>>{};
+      matrix_ucb.bandit = bandit;
+      matrix_ucb.c = matrix_ucb_params->c;
+      matrix_ucb.interval = matrix_ucb_params->interval;
+      matrix_ucb.grow = matrix_ucb_params->grow;
+      return parse_heap(dur, matrix_ucb);
+    }
+#endif
+    else {
+      return parse_heap(dur, bandit);
     }
   };
 
@@ -176,23 +209,27 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
     if (false) {
 #ifndef NO_EXP3
     } else if (auto *ptr = std::get_if<MCTS::Exp3>(data)) {
-      return parse_heap(dur, *ptr);
+      return parse_matrix_ucb_params(dur, *ptr);
 #endif
 #ifndef NO_PEXP3
     } else if (auto *ptr = std::get_if<MCTS::PExp3>(data)) {
-      return parse_heap(dur, *ptr);
+      return parse_matrix_ucb_params(dur, *ptr);
 #endif
 #ifndef NO_UCB
     } else if (auto *ptr = std::get_if<MCTS::UCB>(data)) {
-      return parse_heap(dur, *ptr);
+      return parse_matrix_ucb_params(dur, *ptr);
 #endif
 #ifndef NO_PUCB
     } else if (auto *ptr = std::get_if<MCTS::PUCB>(data)) {
-      return parse_heap(dur, *ptr);
+      return parse_matrix_ucb_params(dur, *ptr);
 #endif
 #ifndef NO_UCB1
     } else if (auto *ptr = std::get_if<MCTS::UCB1>(data)) {
-      return parse_heap(dur, *ptr);
+      return parse_matrix_ucb_params(dur, *ptr);
+#endif
+#ifndef NO_REGRET_MATCHING
+    } else if (auto *ptr = std::get_if<MCTS::RegretMatching>(data)) {
+      return parse_matrix_ucb_params(dur, *ptr);
 #endif
     } else {
       throw std::runtime_error{"Invalid bandit"};

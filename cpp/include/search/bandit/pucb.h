@@ -28,7 +28,7 @@ struct PUCB {
     uint8_t k;
 
     void softmax_logits(const PUCB &, const float *logits) noexcept {
-      softmax(this->priors.data(), logits, k);
+      softmax_k(this->priors.data(), logits, k);
     }
 
     void init(const auto k) noexcept {
@@ -39,7 +39,7 @@ struct PUCB {
 
     bool is_init() const noexcept { return k; }
 
-    void update(const auto &outcome) noexcept {
+    void update(const PUCB &, const auto &outcome) noexcept {
       assert(outcome.value >= 0);
       scores[outcome.index] += outcome.value;
       ++visits[outcome.index];

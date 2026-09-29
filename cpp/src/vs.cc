@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -69,6 +70,19 @@ void print(const auto &data, const bool newline = true) {
   }
 }
 
+// Formats a duration given in microseconds as a human-readable string,
+// switching from microseconds to milliseconds once the value reaches 10ms -
+// same convention used in benchmark.cc (`if (microseconds >= 10000) ...`).
+std::string format_duration_us(double microseconds) {
+  std::ostringstream oss;
+  if (microseconds >= 10000.0) {
+    oss << (microseconds / 1000.0) << "ms";
+  } else {
+    oss << microseconds << "us";
+  }
+  return oss.str();
+}
+
 namespace RuntimeData {
 bool terminated = false;
 bool suspended = false;
@@ -89,6 +103,37 @@ std::vector<size_t> battle_lengths{};
 std::vector<std::pair<MCTS::Output, MCTS::Output>> battle_outputs{};
 std::atomic<size_t> thread_id{};
 
+// Thread-safe running mean/variance accumulator (Welford's online algorithm).
+struct WelfordStats {
+  std::mutex m{};
+  size_t count{};
+  double mean{};
+  double m2{};
+
+  void update(double value) {
+    std::lock_guard<std::mutex> lock{m};
+    ++count;
+    const double delta = value - mean;
+    mean += delta / count;
+    const double delta2 = value - mean;
+    m2 += delta * delta2;
+  }
+
+  // Sample variance; 0 until at least 2 observations have been seen.
+  double variance() const { return count > 1 ? m2 / (count - 1) : 0.0; }
+};
+
+// Mean/variance of search iterations and search duration for one agent
+// (only updated when that agent actually performs a search). One instance
+// per agent (p1, p2), shared across all threads - not one per thread.
+struct SearchStats {
+  WelfordStats iterations{};
+  WelfordStats duration{};
+};
+
+SearchStats p1_search_stats{};
+SearchStats p2_search_stats{};
+
 TeamBuilding::Provider provider;
 
 CachePool p1_cache_pool{};
@@ -99,7 +144,6 @@ void print_wdl() {
   std::cout << win.load() << ' ' << draw.load() << ' ' << loss.load()
             << std::endl;
 }
-
 } // namespace RuntimeData
 
 void thread_fn(const ProgramArgs *args_ptr) {
@@ -194,15 +238,18 @@ void thread_fn(const ProgramArgs *args_ptr) {
             : Search::MatrixUCB(p2_bandit, 0);
     const auto &p1_params =
         args.p1_matrix_ucb.has_value()
-            ? static_cast<const Search::BanditParams &>(p1_matrix_ucb)
+            ? static_cast<const Search::Bandit &>(p1_matrix_ucb)
             : p1_bandit;
     const auto &p2_params =
         args.p2_matrix_ucb.has_value()
-            ? static_cast<const Search::BanditParams &>(p2_matrix_ucb)
+            ? static_cast<const Search::Bandit &>(p2_matrix_ucb)
             : p2_bandit;
 
     auto p1_budget = Search::Parse::budget(args.p1_budget.value());
     auto p2_budget = Search::Parse::budget(args.p2_budget.value());
+
+    auto p1_options = Search::Parse::options(args.p1_options.value_or(""));
+    auto p2_options = Search::Parse::options(args.p2_options.value_or(""));
 
     const auto p1_policy_options = RuntimePolicy::Options{
         .mode = args.p1_policy_mode.or_else([&] { return args.policy_mode; })
@@ -255,20 +302,25 @@ void thread_fn(const ProgramArgs *args_ptr) {
       }();
 
       MCTS::Output p1_output{}, p2_output{};
-      Search::Node p1_heap{}, p2_heap{};
+      auto p1_heap = Search::Parse::heap(p1_params);
+      auto p2_heap = Search::Parse::heap(p2_params);
       int p1_index{}, p2_index{};
       if (p1_choices.size() > 1 || args.reuse) {
-        p1_output = RuntimeSearch::run(
-            device, battle, PKMN::durations(options), p1_budget, p1_params,
-            p1_heap, p1_eval, p1_output, p1_s1_cache.get(), p1_s2_cache.get());
+        p1_output = RuntimeSearch::run(device, battle, PKMN::durations(options),
+                                       p1_budget, p1_params, p1_heap, p1_eval,
+                                       p1_output, p1_options, p1_s1_cache.get(),
+                                       p1_s2_cache.get());
+        RuntimeData::p1_search_stats.iterations.update(
+            static_cast<double>(p1_output.iterations));
+        RuntimeData::p1_search_stats.duration.update(
+            static_cast<double>(p1_output.duration.count()));
         if (!args.reuse) {
           p1_heap.reset();
         }
         p1_index = process_and_sample(device, p1_output.p1, p1_policy_options);
         if (print_search_outputs) {
           print("P1:");
-          std::cout << MCTS::output_string(p1_output, battle, p1_labels,
-                                           p2_labels);
+          print(MCTS::output_string(p1_output, battle, p1_labels, p2_labels));
         }
       }
 
@@ -276,14 +328,17 @@ void thread_fn(const ProgramArgs *args_ptr) {
         p2_output = RuntimeSearch::run(
             device, battle, PKMN::durations(options), p2_budget, p2_params,
             args.reuse ? static_cast<Search::Heap &>(p1_heap) : p2_heap,
-            p2_eval, args.reuse ? p1_output : p2_output, p2_s1_cache.get(),
-            p2_s2_cache.get());
+            p2_eval, args.reuse ? p1_output : p2_output, p2_options,
+            p2_s1_cache.get(), p2_s2_cache.get());
+        RuntimeData::p2_search_stats.iterations.update(
+            static_cast<double>(p2_output.iterations));
+        RuntimeData::p2_search_stats.duration.update(
+            static_cast<double>(p2_output.duration.count()));
         p2_heap.reset();
         p2_index = process_and_sample(device, p2_output.p2, p2_policy_options);
         if (print_search_outputs) {
           print("P2:");
-          std::cout << MCTS::output_string(p2_output, battle, p1_labels,
-                                           p2_labels);
+          print(MCTS::output_string(p2_output, battle, p1_labels, p2_labels));
         }
       }
 
@@ -426,6 +481,25 @@ void progress_thread_fn(const ProgramArgs *args_ptr) {
               << " games; Elo diff: " << elo_difference << std::endl;
     RuntimeData::print_wdl();
 
+    std::cout << "search stats (iterations mean/stdev, duration mean/stdev):"
+              << std::endl;
+    std::cout << "\tp1: " << RuntimeData::p1_search_stats.iterations.mean << "/"
+              << std::sqrt(RuntimeData::p1_search_stats.iterations.variance())
+              << ", "
+              << format_duration_us(RuntimeData::p1_search_stats.duration.mean)
+              << "/"
+              << format_duration_us(std::sqrt(
+                     RuntimeData::p1_search_stats.duration.variance()))
+              << std::endl;
+    std::cout << "\tp2: " << RuntimeData::p2_search_stats.iterations.mean << "/"
+              << std::sqrt(RuntimeData::p2_search_stats.iterations.variance())
+              << ", "
+              << format_duration_us(RuntimeData::p2_search_stats.duration.mean)
+              << "/"
+              << format_duration_us(std::sqrt(
+                     RuntimeData::p2_search_stats.duration.variance()))
+              << std::endl;
+
     std::cout << "info: " << std::endl;
     for (auto i = 0; i < args.threads; ++i) {
       const auto &outputs = RuntimeData::battle_outputs[i];
@@ -455,10 +529,10 @@ void setup(auto &args) {
   if (!args.seed.has_value()) {
     args.seed.emplace(std::random_device{}());
   }
-  const auto check_args = [](const auto &x, auto &y, auto &z,
-                             const auto &name) {
+  const auto check_args = [](const auto &x, auto &y, auto &z, const auto &name,
+                             bool required = true) {
     if (!y.has_value()) {
-      if (!x.has_value()) {
+      if (!x.has_value() && required) {
         throw std::runtime_error{std::string{"--"} + name +
                                  " kwarg is required."};
       } else {
@@ -467,7 +541,7 @@ void setup(auto &args) {
       }
     }
     if (!z.has_value()) {
-      if (!x.has_value()) {
+      if (!x.has_value() && required) {
         throw std::runtime_error{std::string{"--"} + name +
                                  " kwarg is required."};
       } else {
@@ -480,8 +554,6 @@ void setup(auto &args) {
   check_args(args.budget, args.p1_budget, args.p2_budget, "budget");
   check_args(args.eval, args.p1_eval, args.p2_eval, "eval");
   check_args(args.bandit, args.p1_bandit, args.p2_bandit, "bandit");
-  // check_args(args.matrix_ucb, args.p1_matrix_ucb, args.p2_matrix_ucb,
-  //            "matrix-ucb");
   check_args(args.policy_mode, args.p1_policy_mode, args.p2_policy_mode,
              "policy-mode");
   // args

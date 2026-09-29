@@ -1,23 +1,49 @@
 #pragma once
 
 #include <cmath>
+#include <numeric>
 
-inline void softmax(auto *output, const auto *logits, auto k) {
+template <typename T>
+inline void softmax_k(T *output, const float *logits, auto k) {
+  constexpr bool is_integral = std::is_integral_v<T>;
+  static thread_local float out[9];
+  auto *o = [&]() {
+    if constexpr (is_integral) {
+      return out;
+    } else {
+      return output;
+    }
+  }();
   float sum = 0;
   for (auto i = 0; i < k; ++i) {
     const float y = std::exp(logits[i]);
-    output[i] = y;
+    o[i] = y;
     sum += y;
   }
   for (auto i = 0; i < k; ++i) {
-    output[i] /= sum;
+    o[i] /= sum;
+    if constexpr (is_integral) {
+      output[i] = o[i] * std::numeric_limits<T>::max();
+    }
   }
 }
 
-inline void softmax(auto &forecast, const auto &gains, float eta) {
+inline void softmax_9_temp(auto &forecast, const auto &gains, float temp) {
   float sum = 0;
   for (auto i = 0; i < 9; ++i) {
-    const float y = std::exp(gains[i] * eta);
+    const float y = std::exp(gains[i] * temp);
+    forecast[i] = y;
+    sum += y;
+  }
+  for (auto i = 0; i < 9; ++i) {
+    forecast[i] /= sum;
+  }
+}
+
+inline void softmax_9(auto &forecast, const auto &gains) {
+  float sum = 0;
+  for (auto i = 0; i < 9; ++i) {
+    const float y = std::exp(gains[i]);
     forecast[i] = y;
     sum += y;
   }

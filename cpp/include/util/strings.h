@@ -55,7 +55,7 @@ inline void print_side(const Output::Side &side) {
   };
   print_arr(side.empirical, side.k);
   print_arr(side.nash, side.k);
-  print_arr(side.beta, side.k);
+  // print_arr(side.beta, side.k);
 }
 
 inline auto output_string(const Output &output, const pkmn_gen1_battle &battle,

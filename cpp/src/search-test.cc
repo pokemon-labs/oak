@@ -47,13 +47,13 @@ struct Test {
             ? Search::Parse::matrix_ucb(bandit, args.matrix_ucb.value())
             : Search::MatrixUCB(bandit, 0);
     auto &params = args.matrix_ucb.has_value()
-                       ? static_cast<Search::BanditParams &>(matrix_ucb)
+                       ? static_cast<Search::Bandit &>(matrix_ucb)
                        : bandit;
     auto budget =
         Search::Parse::budget(args.budget.value_or(std::to_string(1 << 20)));
     auto heap = Search::Node{};
     auto output = RuntimeSearch::run(device, battle, PKMN::durations(options),
-                                     budget, params, heap, eval, {},
+                                     budget, params, heap, eval, {}, {},
                                      p1_cache.get(), p2_cache.get());
     bool success = std::abs(output.empirical_value - expected) <= error;
     if (!success) {

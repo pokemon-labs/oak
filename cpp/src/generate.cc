@@ -216,11 +216,12 @@ void generate(const ProgramArgs *args_ptr, uint64_t seed) {
             ? Search::Parse::matrix_ucb(bandit, args.matrix_ucb.value())
             : Search::MatrixUCB{bandit, 0.0};
     auto &params = args.matrix_ucb.has_value()
-                       ? static_cast<Search::BanditParams &>(matrix_ucb)
+                       ? static_cast<Search::Bandit &>(matrix_ucb)
                        : bandit;
 
     auto budget = Search::Parse::budget(args.budget);
-    auto heap = Search::Parse::heap(args.use_table);
+    auto heap = Search::Parse::heap(params);
+    auto live_options = Search::Parse::options(args.options.value_or(""));
 
     auto policy_options =
         RuntimePolicy::Options{.mode = args.policy_mode,
@@ -270,9 +271,9 @@ void generate(const ProgramArgs *args_ptr, uint64_t seed) {
                      : args.policy_mode;
         MCTS::Output output{};
 
-        output = RuntimeSearch::run(device, battle, PKMN::durations(options),
-                                    budget, params, heap, eval, output,
-                                    p1_cache.get(), p2_cache.get());
+        output = RuntimeSearch::run(
+            device, battle, PKMN::durations(options), budget, params, heap,
+            eval, output, live_options, p1_cache.get(), p2_cache.get());
         if (battle_length == 0) {
           p1_matchup = output.empirical_value;
           p2_matchup = 1 - output.empirical_value;

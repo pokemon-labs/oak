@@ -71,6 +71,50 @@ const auto solve_matrix(py::array_t<float> p1_payoffs,
   return py::make_tuple(p1, p2, solve_output.value);
 }
 
+const auto solve_bimatrix(py::array_t<float> p1_payoffs,
+                          py::array_t<float> p2_payoffs,
+                          const int discretize_factor = 256) {
+  if (p1_payoffs.ndim() != 2 || p2_payoffs.ndim() != 2) {
+    throw std::runtime_error{"Expecting 2d array"};
+  }
+  if (p1_payoffs.shape(0) != p2_payoffs.shape(0) ||
+      p1_payoffs.shape(1) != p2_payoffs.shape(1)) {
+    throw std::runtime_error{"Shape mismatch"};
+  }
+  const auto m = p1_payoffs.shape(0);
+  const auto n = p1_payoffs.shape(1);
+  auto r = p1_payoffs.unchecked<2>();
+  auto s = p2_payoffs.unchecked<2>();
+  std::vector<int> p1;
+  std::vector<int> p2;
+  p1.resize(m * n);
+  p2.resize(m * n);
+  for (auto i = 0; i < m; ++i) {
+    for (auto j = 0; j < n; ++j) {
+      p1[i * n + j] = static_cast<int>(r(i, j) * discretize_factor);
+      p2[i * n + j] = static_cast<int>(s(i, j) * discretize_factor);
+    }
+  }
+  LRSNash::Input solve_input{static_cast<int>(m), static_cast<int>(n),
+                             discretize_factor, p1.data(), p2.data()};
+  std::vector<float> nash1;
+  std::vector<float> nash2;
+  nash1.resize(m + 2);
+  nash2.resize(n + 2);
+  LRSNash::FloatOneSumOutput solve_output{nash1.data(), nash2.data(), 0};
+  LRSNash::solve_full(&solve_input, &solve_output);
+  auto s1 = py::array_t<float>(std::vector<ssize_t>{m});
+  auto s2 = py::array_t<float>(std::vector<ssize_t>{n});
+  for (int i = 0; i < m; ++i) {
+    s1.mutable_unchecked<1>()(i) = nash1[i];
+  }
+  for (int j = 0; j < n; ++j) {
+    s2.mutable_unchecked<1>()(j) = nash2[j];
+  }
+  return py::make_tuple(s1, s2, solve_output.value, 0);
+  // return 0;
+}
+
 struct PokemonSet {
   uint8_t species;
   uint8_t level;
@@ -818,6 +862,9 @@ PYBIND11_MODULE(pyoak, m) {
 
   m.def("solve_matrix", &solve_matrix, py::arg("row_payoff"),
         py::arg("discretize_factor"));
+
+  m.def("solve_bimatrix", &solve_bimatrix, py::arg("row_payoff"),
+        py::arg("col_payoff"), py::arg("discretize_factor"));
 
   m.def(
       "switch_in",

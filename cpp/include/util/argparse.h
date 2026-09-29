@@ -35,6 +35,10 @@ struct TeamBuildingArgs : public argparse::Args {
     std::optional<std::string> &A##matrix_ucb =                                \
         kwarg(B "matrix-ucb", "MatrixUCB c/start/interval/minimum");           \
                                                                                \
+    std::optional<std::string> &A##options =                                   \
+        kwarg(B "options",                                                     \
+              "Runtime search options max-depth/rollout-depth/rollout-temp");  \
+                                                                               \
     bool &A##quantize = flag(B "quantize", "Use quantized main subnet");       \
                                                                                \
     bool &A##use_table =                                                       \
