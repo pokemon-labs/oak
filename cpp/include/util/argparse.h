@@ -51,8 +51,7 @@ struct TeamBuildingArgs : public argparse::Args {
         "Runtime search options DEPTH-ROLLOUT-TEMP. DEPTH is the max depth "   \
         "the search tree will grow. The default value of 0 means unbounded. "  \
         "ROLLOUT is how many updates a battle is updated at leaf node "        \
-        "evaluation. A value of 0 means always rollout until terminal, and a " \
-        "value of N>0 means rollout for N-1 many turns (default=1). TEMP is "  \
+        "evaluation (default=0). TEMP is "                                     \
         "the temperature of the network policy during rollout.");              \
                                                                                \
     bool &A##quantize = flag(B "quantize", "Use quantized main subnet");       \

@@ -351,11 +351,11 @@ void rewrite_side_embedding(T *embedding, const PKMN::Side &side,
   const auto pokemon_dim = network.pokemon_out_dim() + rewrite_hp;
   const auto active_dim = network.active_out_dim();
   const auto moves_dim = network.moves_out_dim();
-  const auto write_zero = [&embedding](auto dim) {
+  const auto write_zero = [](auto &embedding, auto dim) {
     std::fill_n(embedding, dim, T{0});
     return embedding + dim;
   };
-  const auto write_hp = [&embedding](const auto &pokemon) {
+  const auto write_hp = [](auto &embedding, const auto &pokemon) {
     if constexpr (rewrite_hp) {
       embedding[0] = (float)pokemon.hp / pokemon.stats.hp;
       ++embedding;
@@ -373,13 +373,13 @@ void rewrite_side_embedding(T *embedding, const PKMN::Side &side,
         embedding + active_dim + (choice_data - 1) * (pokemon_dim + moves_dim);
     const auto index = side.order[choice_data - 1];
     if (index == 0) {
-      e = write_zero(pokemon_dim + moves_dim);
+      e = write_zero(e, pokemon_dim + moves_dim);
     } else {
       const auto &pokemon = side.pokemon[index - 1];
       if (pokemon.hp == 0) {
-        e = write_zero(pokemon_dim + moves_dim);
+        e = write_zero(e, pokemon_dim + moves_dim);
       } else {
-        write_hp(pokemon);
+        write_hp(e, pokemon);
         e = write_pokemon<T, activation>(e, index - 1, pokemon,
                                          duration.sleep(index - 1), network,
                                          caches...);
@@ -392,12 +392,12 @@ void rewrite_side_embedding(T *embedding, const PKMN::Side &side,
     // update active
     const auto &stored = side.stored();
     if (stored.hp == 0) {
-      embedding = write_zero(active_dim + pokemon_dim + moves_dim);
+      embedding = write_zero(embedding, active_dim + pokemon_dim + moves_dim);
     } else {
       const auto index = side.order[0] - 1;
       embedding = write_active<T, activation>(embedding, index, side.active,
                                               duration, network, caches...);
-      write_hp(stored);
+      write_hp(embedding, stored);
       embedding = write_pokemon<T, activation>(
           embedding, index, stored, duration.sleep(0), network, caches...);
       if (side.active.moves == stored.moves) {

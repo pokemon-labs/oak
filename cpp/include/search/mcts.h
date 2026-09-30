@@ -524,7 +524,7 @@ template <SearchOptions Options = default_search> struct Search {
 
     output.total_depth += depth;
 
-    const auto result_type = pkmn_result_type(result);
+    auto result_type = pkmn_result_type(result);
     if (!result_type) {
       using Eval = decltype(eval);
       float leaf_value;
@@ -558,7 +558,7 @@ template <SearchOptions Options = default_search> struct Search {
             c2 = p2_choices[device.sample_pdf(p2_rollout)];
             pkmn_gen1_battle_options_set(&options, nullptr, nullptr, nullptr);
             result = pkmn_gen1_battle_update(&battle, c1, c2, &options);
-            if (pkmn_result_type(result)) {
+            if (result_type = pkmn_result_type(result)) {
               return terminal_values(result_type);
             }
             update_battle_embedding(eval, battle, c1, c2, caches...);
@@ -680,21 +680,7 @@ template <SearchOptions Options = default_search> struct Search {
       pkmn_gen1_battle_options_set(&options, nullptr, nullptr, nullptr);
       result = pkmn_gen1_battle_update(&battle, c1, c2, &options);
     }
-    switch (pkmn_result_type(result)) {
-    case PKMN_RESULT_WIN: {
-      return 1;
-    }
-    case PKMN_RESULT_LOSE: {
-      return 0;
-    }
-    case PKMN_RESULT_TIE: {
-      return 0.5;
-    }
-    default: {
-      assert(false);
-      return 0.5;
-    }
-    };
+    return terminal_values(pkmn_result_type(result)).first;
   }
 
   auto get_choices(const pkmn_gen1_battle &battle,
@@ -843,7 +829,8 @@ template <SearchOptions Options = default_search> struct Search {
       }
     } else {
       return NN::Battle::sigmoid(
-          eval.main_net.template propagate<activation>(embedding(eval)));
+          eval.main_net.template propagate<activation, use_trunk>(
+              embedding(eval)));
     }
   }
 };

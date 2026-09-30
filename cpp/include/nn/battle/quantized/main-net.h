@@ -95,14 +95,16 @@ struct MainNet {
     ValuePolicyBuffer() { std::memset(this, 0, sizeof(*this)); }
   };
 
-  template <Activation activation>
+  template <Activation activation, bool use_trunk = true>
   float propagate(const uint8_t *input_data) const {
     static_assert(activation == Activation::clamp);
     alignas(CacheLineSize) static thread_local ValueBuffer buffer;
-    fc0.propagate(input_data, buffer.fc0_out);
-    ac0.propagate(buffer.fc0_out, buffer.ac0_out);
-    fc1.propagate(buffer.ac0_out, buffer.fc1_out);
-    ac1.propagate(buffer.fc1_out, buffer.ac1_out);
+    if constexpr (use_trunk) {
+      fc0.propagate(input_data, buffer.fc0_out);
+      ac0.propagate(buffer.fc0_out, buffer.ac0_out);
+      fc1.propagate(buffer.ac0_out, buffer.fc1_out);
+      ac1.propagate(buffer.fc1_out, buffer.ac1_out);
+    }
     value_fc2.propagate(buffer.ac1_out, buffer.value_fc2_out);
     value_ac2.propagate(buffer.value_fc2_out, buffer.value_ac2_out);
     value_fc3.propagate(buffer.value_ac2_out, buffer.value_fc3_out);

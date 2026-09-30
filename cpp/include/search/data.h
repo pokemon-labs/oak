@@ -460,7 +460,7 @@ inline Budget budget(const std::string &s) {
 inline MCTS::RuntimeOptions options(const std::string &s) {
   const auto split = ::Parse::split(s, '-');
   uint32_t max_depth = 0;
-  uint32_t rollout_depth = 1;
+  uint32_t rollout_depth = 0;
   float rollout_temp = 1;
   if (split.size() > 0) {
     max_depth = std::stoul(split[0]);

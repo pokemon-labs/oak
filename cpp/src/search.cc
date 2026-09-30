@@ -196,6 +196,7 @@ MCTS::Output run(mt19937 &device, const pkmn_gen1_battle &battle,
       matrix_ucb.c = matrix_ucb_params->c;
       matrix_ucb.interval = matrix_ucb_params->interval;
       matrix_ucb.grow = matrix_ucb_params->grow;
+      matrix_ucb.discretize_factor = matrix_ucb_params->discretize_factor;
       return parse_heap(dur, matrix_ucb);
     }
 #endif

@@ -84,10 +84,13 @@ struct MainNet {
     return true;
   }
 
-  template <Activation activation> float propagate(const float *input_data) {
+  template <Activation activation, bool use_trunk = true>
+  float propagate(const float *input_data) {
     float output;
-    fc0.propagate<activation>(input_data, buffer0.data());
-    fc1.propagate<activation>(buffer0.data(), buffer1.data());
+    if constexpr (use_trunk) {
+      fc0.propagate<activation>(input_data, buffer0.data());
+      fc1.propagate<activation>(buffer0.data(), buffer1.data());
+    }
     value_fc2.propagate<activation>(buffer1.data(), value_buffer.data());
     value_fc3.propagate<>(value_buffer.data(), &output);
     return output;
