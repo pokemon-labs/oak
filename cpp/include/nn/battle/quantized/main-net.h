@@ -111,7 +111,7 @@ struct MainNet {
     return value;
   }
 
-  template <bool use_value, Activation activation>
+  template <bool use_value, Activation activation, bool use_trunk = true>
   auto propagate(const uint8_t *input_data, const int m, const int n,
                  const auto *p1_choice_index, const auto *p2_choice_index,
                  float *p1, float *p2)
@@ -119,10 +119,12 @@ struct MainNet {
     static_assert(activation == Activation::clamp);
     constexpr float conversion = 127 * (1 << 6);
     alignas(CacheLineSize) static thread_local ValuePolicyBuffer buffer;
-    fc0.propagate(input_data, buffer.fc0_out);
-    ac0.propagate(buffer.fc0_out, buffer.ac0_out);
-    fc1.propagate(buffer.ac0_out, buffer.fc1_out);
-    ac1.propagate(buffer.fc1_out, buffer.ac1_out);
+    if constexpr (use_trunk) {
+      fc0.propagate(input_data, buffer.fc0_out);
+      ac0.propagate(buffer.fc0_out, buffer.ac0_out);
+      fc1.propagate(buffer.ac0_out, buffer.fc1_out);
+      ac1.propagate(buffer.fc1_out, buffer.ac1_out);
+    }
     if constexpr (use_value) {
       value_fc2.propagate(buffer.ac1_out, buffer.value_fc2_out);
       value_ac2.propagate(buffer.value_fc2_out, buffer.value_ac2_out);

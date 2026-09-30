@@ -11,6 +11,7 @@ template <typename Bandit> struct Joint {
   Stats p2;
 
   void init(const auto m, const auto n) noexcept {
+    assert(!is_init());
     p1.init(m);
     p2.init(n);
   }

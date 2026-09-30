@@ -181,8 +181,6 @@ template <typename strategy_type = uint16_t> struct MatrixUCBStats {
   void solve_ucb_matrix(auto &device, auto &params) noexcept {
     std::array<int, 9 * 9> p1_ucb_matrix;
     std::array<int, 9 * 9> p2_ucb_matrix;
-    std::array<float, 9 + 2> p1_nash;
-    std::array<float, 9 + 2> p2_nash;
     const float log_T = std::log(total_visits + 1);
     const float exp = params.c * std::sqrt(2 * (2 * log_T + ucb_weight));
     for (auto i = 0; i < p1.k; ++i) {
@@ -204,7 +202,8 @@ template <typename strategy_type = uint16_t> struct MatrixUCBStats {
         p2_ucb_matrix[i * p2.k + j] = p2_entry * params.discretize_factor;
       }
     }
-
+    std::array<float, 9 + 2> p1_nash;
+    std::array<float, 9 + 2> p2_nash;
     LRSNash::Input solve_input{static_cast<int>(p1.k), static_cast<int>(p2.k),
                                static_cast<int>(params.discretize_factor),
                                p1_ucb_matrix.data(), p2_ucb_matrix.data()};
@@ -324,13 +323,30 @@ template <SearchOptions Options = default_search> struct Search {
     constexpr bool is_node_ = is_node<decltype(heap)>;
     constexpr bool is_contextual_bandit_ =
         is_contextual_bandit<decltype(params)>;
+    constexpr bool is_matrix_ucb_ = is_matrix_ucb<decltype(params)>;
 
     if constexpr (is_poke_engine<decltype(eval)>) {
       eval.get_root_score(input.battle);
     } else if constexpr (is_network<decltype(eval)>) {
-      // TODO hacky, determine rewrite_hp
       battle_embedding.resize(2 * eval.side_embedding_dim(true));
       battle_embedding_quantized.resize(2 * eval.side_embedding_dim(true));
+    }
+
+    if (!heap.stats.is_init()) {
+      auto [m, n] = get_choices(input.battle, input.result);
+      if (!heap.stats.is_init()) {
+        heap.stats.init(m, n);
+      }
+      if constexpr (is_network<decltype(eval)>) {
+        constexpr bool policy_inference =
+            is_matrix_ucb_ || is_contextual_bandit_;
+        write_battle_embedding(eval, input.battle, caches...);
+        output.initial_value = network_inference<true, policy_inference, true>(
+            eval, input.battle, m, n, caches...);
+        if constexpr (policy_inference) {
+          heap.stats.softmax_logits(params, p1_logits, p2_logits);
+        }
+      }
     }
 
     const auto start = std::chrono::high_resolution_clock::now();
@@ -377,7 +393,6 @@ template <SearchOptions Options = default_search> struct Search {
                           const auto &input, auto &eval, Output &output,
                           const RuntimeOptions &live_options,
                           Caches &...caches) noexcept {
-
     auto copy = input;
     auto *rng = reinterpret_cast<uint64_t *>(
         copy.battle.bytes + PKMN::Layout::Offsets::Battle::rng);
@@ -385,9 +400,8 @@ template <SearchOptions Options = default_search> struct Search {
     chance_options.durations = copy.durations;
     randomize_hidden_variables(copy.battle, copy.durations);
     pkmn_gen1_battle_options_set(&options, nullptr, &chance_options, nullptr);
-
-    const auto value = run_iteration(device, params, heap, copy, eval, output,
-                                     live_options, 0, caches...);
+    run_iteration(device, params, heap, copy, eval, output, live_options, 0,
+                  caches...);
   }
 
   // typical recursive mcts function
@@ -411,6 +425,7 @@ template <SearchOptions Options = default_search> struct Search {
         is_matrix_ucb_stats<decltype(heap.stats)>;
     static_assert(is_matrix_ucb_ == is_matrix_ucb_stats_);
     constexpr bool is_contextual_bandit_ = is_contextual_bandit<Bandit>;
+    constexpr bool policy_inference = is_matrix_ucb_ || is_contextual_bandit_;
 
     auto &battle = input.battle;
     auto &result = input.result;
@@ -423,11 +438,8 @@ template <SearchOptions Options = default_search> struct Search {
       using Outcome = typename Bandit::Outcome;
       using JointOutcome = std::pair<Outcome, Outcome>;
 
-      // do bandit
       JointOutcome outcome;
       stats.select(device, params, outcome);
-      assert(outcome.first.index < 9);
-      assert(outcome.second.index < 9);
 
       // grow MatrixUCB subtree
       if constexpr (is_matrix_ucb_) {
@@ -456,13 +468,8 @@ template <SearchOptions Options = default_search> struct Search {
         }
       }
 
-      const auto m_ = pkmn_gen1_battle_choices(
-          &battle, PKMN_PLAYER_P1, pkmn_result_p1(result), p1_choices.data(),
-          PKMN_GEN1_MAX_CHOICES);
+      const auto [m_, n_] = get_choices(battle, result);
       const auto c1 = p1_choices[outcome.first.index];
-      const auto n_ = pkmn_gen1_battle_choices(
-          &battle, PKMN_PLAYER_P2, pkmn_result_p2(result), p2_choices.data(),
-          PKMN_GEN1_MAX_CHOICES);
       const auto c2 = p2_choices[outcome.second.index];
 
       battle_options_set(battle, depth);
@@ -517,96 +524,73 @@ template <SearchOptions Options = default_search> struct Search {
 
     output.total_depth += depth;
 
-    switch (pkmn_result_type(result)) {
-    case PKMN_RESULT_NONE:
-      [[likely]] {
-        using Eval = decltype(eval);
-        float value;
-        if constexpr (is_monte_carlo<Eval>) {
-          value = init_stats_and_rollout(stats, device, battle, result);
-        } else {
-          auto m = pkmn_gen1_battle_choices(
-              &battle, PKMN_PLAYER_P1, pkmn_result_p1(result),
-              p1_choices.data(), PKMN_GEN1_MAX_CHOICES);
-          auto n = pkmn_gen1_battle_choices(
-              &battle, PKMN_PLAYER_P2, pkmn_result_p2(result),
-              p2_choices.data(), PKMN_GEN1_MAX_CHOICES);
-          // TODO this check should be removable with no Table support
-          if (!stats.is_init()) {
-            stats.init(m, n);
+    const auto result_type = pkmn_result_type(result);
+    if (!result_type) {
+      using Eval = decltype(eval);
+      float leaf_value;
+      if constexpr (is_monte_carlo<Eval>) {
+        leaf_value = init_stats_and_rollout(stats, device, battle, result);
+      } else {
+        auto [m, n] = get_choices(battle, result);
+        stats.init(m, n);
+        pkmn_choice c1, c2;
+
+        if constexpr (is_network<Eval>) {
+          const auto neg_inf = -std::numeric_limits<float>::infinity();
+          std::array<float, 9> p1_rollout;
+          std::array<float, 9> p2_rollout;
+          write_battle_embedding(eval, battle, caches...);
+          if constexpr (policy_inference) {
+            network_inference<false, true, true>(eval, battle, m, n, caches...);
+            stats.softmax_logits(params, p1_logits, p2_logits);
           }
-
-          for (auto rollout = 1; live_options.rollout_depth == 0 ||
-                                 rollout < live_options.rollout_depth;
+          for (auto rollout = 0; rollout < live_options.rollout_depth;
                ++rollout) {
-            const auto [p1_index,
-                        p2_index] = [&]() -> std::pair<uint8_t, uint8_t> {
-              if constexpr (is_network<decltype(eval)>) {
-                using Eval = std::remove_cvref_t<decltype(eval)>;
-                constexpr auto activation = Eval::act;
-                constexpr bool rewrite_hp = Eval::rewrite_hp;
-
-                std::array<float, 9> p1_rollout;
-                std::array<float, 9> p2_rollout;
-                std::fill(p1_logits + m, p1_logits + 9,
-                          -std::numeric_limits<float>::infinity());
-                std::fill(p2_logits + n, p2_logits + 9,
-                          -std::numeric_limits<float>::infinity());
-                const auto &b = PKMN::view(battle);
-                auto *embedding = write_battle_embedding(b, eval, caches...);
-                for (auto i = 0; i < m; ++i) {
-                  p1_choice_index[i] = Encode::Battle::Policy::get_index(
-                      b.sides[0], p1_choices[i]);
-                }
-                for (auto i = 0; i < n; ++i) {
-                  p2_choice_index[i] = Encode::Battle::Policy::get_index(
-                      b.sides[1], p2_choices[i]);
-                }
-                eval.main_net.template propagate<false, activation>(
-                    embedding, m, n, p1_choice_index, p2_choice_index,
-                    p1_logits, p2_logits);
-                softmax_9_temp(p1_rollout, p1_logits,
-                               live_options.rollout_temp);
-                softmax_9_temp(p2_rollout, p2_logits,
-                               live_options.rollout_temp);
-                return {std::min(device.sample_pdf(p1_rollout),
-                                 static_cast<uint32_t>(m) - 1),
-                        std::min(device.sample_pdf(p2_rollout),
-                                 static_cast<uint32_t>(n) - 1)};
-              } else {
-                return {device.random_int(m), device.random_int(n)};
-              }
-            }();
-            const auto c1 = p1_choices[p1_index];
-            const auto c2 = p2_choices[p2_index];
+            p1_rollout.fill(neg_inf);
+            p2_rollout.fill(neg_inf);
+            if (!policy_inference || rollout) {
+              network_inference<false, true, true>(eval, battle, m, n,
+                                                   caches...);
+            }
+            softmax_9_temp(p1_rollout, p1_logits, live_options.rollout_temp);
+            softmax_9_temp(p2_rollout, p2_logits, live_options.rollout_temp);
+            c1 = p1_choices[device.sample_pdf(p1_rollout)];
+            c2 = p2_choices[device.sample_pdf(p2_rollout)];
             pkmn_gen1_battle_options_set(&options, nullptr, nullptr, nullptr);
             result = pkmn_gen1_battle_update(&battle, c1, c2, &options);
             if (pkmn_result_type(result)) {
-              break;
+              return terminal_values(result_type);
             }
-            m = pkmn_gen1_battle_choices(
-                &battle, PKMN_PLAYER_P1, pkmn_result_p1(result),
-                p1_choices.data(), PKMN_GEN1_MAX_CHOICES);
-            n = pkmn_gen1_battle_choices(
-                &battle, PKMN_PLAYER_P2, pkmn_result_p2(result),
-                p2_choices.data(), PKMN_GEN1_MAX_CHOICES);
+            update_battle_embedding(eval, battle, c1, c2, caches...);
+            std::tie(m, n) = get_choices(battle, result);
           }
 
-          if constexpr (is_network<Eval>) {
-            constexpr bool policy_inference =
-                is_matrix_ucb_ || is_contextual_bandit_;
-            value = network_inference<policy_inference>(eval, battle, stats,
-                                                        params, caches...);
-            assert(std::isfinite(value));
-          } else if constexpr (is_poke_engine<Eval>) {
-            value = eval.evaluate(battle);
+          // we can skip the main trunk if we didn't update
+          if constexpr (policy_inference) {
+            leaf_value = live_options.rollout_depth
+                             ? network_inference<true, false, true>(
+                                   eval, battle, m, n, caches...)
+                             : network_inference<true, false, false>(
+                                   eval, battle, m, n, caches...);
           } else {
-            static_assert(!std::is_same_v<Eval, Eval>, "Invalid eval type!");
+            leaf_value = network_inference<true, false, true>(eval, battle, m,
+                                                              n, caches...);
           }
-        }
-        return {value, 1 - value};
-      }
 
+        } else if constexpr (is_poke_engine<Eval>) {
+          leaf_value = eval.evaluate(battle);
+        } else {
+          static_assert(!std::is_same_v<Eval, Eval>, "Invalid eval type!");
+        }
+      }
+      return {leaf_value, 1 - leaf_value};
+    } else {
+      return terminal_values(result_type);
+    }
+  }
+
+  std::pair<float, float> terminal_values(auto result_type) {
+    switch (result_type) {
     case PKMN_RESULT_WIN: {
       return {1, 0};
     }
@@ -620,21 +604,66 @@ template <SearchOptions Options = default_search> struct Search {
       assert(false);
       return {.5, .5};
     }
-    };
+    }
+  }
+
+  void process_output(const Input &input, const auto &heap,
+                      Output &output) noexcept {
+    std::tie(output.p1.k, output.p2.k) =
+        get_choices(input.battle, input.result);
+
+    if constexpr (is_matrix_ucb_stats<decltype(heap.stats)>) {
+      for (auto i = 0; i < output.p1.k; ++i) {
+        for (auto j = 0; j < output.p2.k; ++j) {
+          const auto &entry = heap.stats.matrix[i][j];
+          output.visit_matrix[i][j] = entry.visits;
+          output.value_matrix[i][j] = entry.total_value;
+        }
+      }
+    }
+
+    constexpr int discretize_factor = 256;
+    double total_value = 0;
+    output.p1.empirical = {};
+    output.p2.empirical = {};
+    std::array<int, 9 * 9> solve_matrix;
+    for (int i = 0; i < output.p1.k; ++i) {
+      for (int j = 0; j < output.p2.k; ++j) {
+        total_value += output.value_matrix[i][j];
+        auto n = output.visit_matrix[i][j];
+        output.p1.empirical[i] += n;
+        output.p2.empirical[j] += n;
+        n += !n;
+        solve_matrix[output.p2.k * i + j] =
+            output.value_matrix[i][j] / n * discretize_factor;
+      }
+    }
+
+    output.empirical_value = total_value / output.iterations;
+    LRSNash::FastInput solve_input{static_cast<int>(output.p1.k),
+                                   static_cast<int>(output.p2.k),
+                                   solve_matrix.data(), discretize_factor};
+    std::array<float, 9 + 2> nash1{}, nash2{};
+    LRSNash::FloatOneSumOutput solve_output{nash1.data(), nash2.data(), 0};
+    LRSNash::solve_fast(&solve_input, &solve_output);
+
+    for (auto i = 0; i < output.p1.k; ++i) {
+      output.p1.empirical[i] /= (double)output.iterations;
+      output.p1.nash[i] = nash1[i];
+    }
+    for (auto j = 0; j < output.p2.k; ++j) {
+      output.p2.empirical[j] /= (double)output.iterations;
+      output.p2.nash[j] = nash2[j];
+    }
+    output.nash_value = solve_output.value;
   }
 
   float init_stats_and_rollout(auto &stats, auto &device,
                                pkmn_gen1_battle &battle,
                                pkmn_result result) noexcept {
-
     auto seed = device.uniform_64();
-    auto m = pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P1,
-                                      pkmn_result_p1(result), p1_choices.data(),
-                                      PKMN_GEN1_MAX_CHOICES);
+    auto [m, n] = get_choices(battle, result);
     auto c1 = p1_choices[seed % m];
-    auto n = pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P2,
-                                      pkmn_result_p2(result), p2_choices.data(),
-                                      PKMN_GEN1_MAX_CHOICES);
     seed >>= 32;
     auto c2 = p2_choices[seed % n];
     pkmn_gen1_battle_options_set(&options, nullptr, nullptr, nullptr);
@@ -644,13 +673,8 @@ template <SearchOptions Options = default_search> struct Search {
     }
     while (!pkmn_result_type(result)) {
       seed = device.uniform_64();
-      m = pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P1,
-                                   pkmn_result_p1(result), p1_choices.data(),
-                                   PKMN_GEN1_MAX_CHOICES);
+      std::tie(m, n) = get_choices(battle, result);
       c1 = p1_choices[seed % m];
-      n = pkmn_gen1_battle_choices(&battle, PKMN_PLAYER_P2,
-                                   pkmn_result_p2(result), p2_choices.data(),
-                                   PKMN_GEN1_MAX_CHOICES);
       seed >>= 32;
       c2 = p2_choices[seed % n];
       pkmn_gen1_battle_options_set(&options, nullptr, nullptr, nullptr);
@@ -673,7 +697,19 @@ template <SearchOptions Options = default_search> struct Search {
     };
   }
 
-  // pkmn_gen1_battle_options_set with constexpr logic
+  auto get_choices(const pkmn_gen1_battle &battle,
+                   pkmn_result result) noexcept {
+    const auto m = pkmn_gen1_battle_choices(
+        &battle, PKMN_PLAYER_P1, pkmn_result_p1(result), p1_choices.data(),
+        PKMN_GEN1_MAX_CHOICES);
+    const auto n = pkmn_gen1_battle_choices(
+        &battle, PKMN_PLAYER_P2, pkmn_result_p2(result), p2_choices.data(),
+        PKMN_GEN1_MAX_CHOICES);
+    assert(m > 0 && m <= 9);
+    assert(n > 0 && n <= 9);
+    return std::pair<uint8_t, uint8_t>{m, n};
+  }
+
   void battle_options_set(const pkmn_gen1_battle &battle, size_t depth) {
     if constexpr (!Options.clamping) {
       pkmn_gen1_battle_options_set(&options, nullptr, nullptr, nullptr);
@@ -697,7 +733,6 @@ template <SearchOptions Options = default_search> struct Search {
     }
   }
 
-  // use battle seed to quickly compute a clamped damage roll
   template <size_t n_rolls>
   inline static constexpr uint8_t roll_byte(const uint8_t seed) noexcept {
     constexpr uint8_t lowest_roll{217};
@@ -715,20 +750,27 @@ template <SearchOptions Options = default_search> struct Search {
     return *pkmn_gen1_battle_options_chance_durations(&options);
   }
 
+  // Network helpers
+
+  auto embedding(auto &eval) noexcept {
+    using Eval = std::remove_cvref_t<decltype(eval)>;
+    using T = typename Eval::T;
+    if constexpr (std::is_same_v<T, uint8_t>) {
+      return battle_embedding_quantized.data();
+    } else if constexpr (std::is_same_v<T, float>) {
+      return battle_embedding.data();
+    } else {
+      static_assert(!std::is_same_v<T, T>);
+    }
+  }
+
   template <typename Eval, typename... Caches>
-  auto write_battle_embedding(const PKMN::Battle &battle, Eval &eval,
-                              Caches &...caches) -> typename Eval::T * {
+  void write_battle_embedding(Eval &eval, const auto &b, Caches &...caches) {
     using T = typename Eval::T;
     constexpr auto activation = Eval::act;
     constexpr bool rewrite_hp = Eval::rewrite_hp;
-    auto *embedding = [this]() {
-      if constexpr (std::is_integral_v<T>) {
-        return battle_embedding_quantized.data();
-      } else {
-        return battle_embedding.data();
-      }
-    }();
-    auto *e = embedding;
+    auto *e = embedding(eval);
+    const auto &battle = PKMN::view(b);
     const auto &d = PKMN::view(durations());
     if constexpr (sizeof...(Caches) == 2) {
       auto &p1_cache = std::get<0>(std::tie(caches...));
@@ -743,125 +785,66 @@ template <SearchOptions Options = default_search> struct Search {
       e = NN::Battle::write_side_embedding<T, activation, rewrite_hp>(
           e, battle.sides[1], d.get(1), eval);
     }
-    assert(std::distance(embedding, e) ==
+    assert(std::distance(embedding(eval), e) ==
            2 * eval.side_embedding_dim(rewrite_hp));
-    return embedding;
   }
 
-  template <NN::Activation activation, bool rewrite_hp, typename T,
-            typename... Caches>
-  void rewrite_battle_embedding(T *embedding, const PKMN::Battle &battle,
-                                pkmn_choice p1_choice, pkmn_choice p2_choice,
-                                NN::Battle::NetworkBase &eval,
-                                Caches &...caches) {
+  template <typename Eval, typename... Caches>
+  void update_battle_embedding(Eval &eval, const auto &b, pkmn_choice p1_choice,
+                               pkmn_choice p2_choice, Caches &...caches) {
+    using T = typename Eval::T;
+    constexpr auto activation = Eval::act;
+    constexpr bool rewrite_hp = Eval::rewrite_hp;
+    const auto &battle = PKMN::view(b);
     const auto &d = PKMN::view(durations());
     if constexpr (sizeof...(Caches) == 2) {
       auto &p1_cache = std::get<0>(std::tie(caches...));
       auto &p2_cache = std::get<1>(std::tie(caches...));
       NN::Battle::rewrite_side_embedding<T, activation, rewrite_hp>(
-          embedding, battle.sides[0], d.get(0), p1_choice, eval, p1_cache);
+          embedding(eval), battle.sides[0], d.get(0), p1_choice, eval,
+          p1_cache);
       NN::Battle::rewrite_side_embedding<T, activation, rewrite_hp>(
-          embedding + eval.side_embedding_dim(rewrite_hp), battle.sides[1],
-          d.get(1), p2_choice, eval, p2_cache);
+          embedding(eval) + eval.side_embedding_dim(rewrite_hp),
+          battle.sides[1], d.get(1), p2_choice, eval, p2_cache);
     } else {
       NN::Battle::rewrite_side_embedding<T, activation, rewrite_hp>(
-          embedding, battle.sides[0], d.get(0), p1_choice, eval);
+          embedding(eval), battle.sides[0], d.get(0), p1_choice, eval);
       NN::Battle::rewrite_side_embedding<T, activation, rewrite_hp>(
-          embedding + eval.side_embedding_dim(rewrite_hp), battle.sides[1],
-          d.get(1), p2_choice, eval);
+          embedding(eval) + eval.side_embedding_dim(rewrite_hp),
+          battle.sides[1], d.get(1), p2_choice, eval);
     }
   }
 
-  template <bool policy_inference, typename... Caches>
-  float network_inference(auto &eval, const pkmn_gen1_battle &b, auto &stats,
-                          const auto &params, Caches &...caches) {
-    float value;
-    const auto &battle = PKMN::view(b);
-    auto *embedding = write_battle_embedding(battle, eval, caches...);
-
+  template <bool use_value, bool use_policy, bool use_trunk, typename... Caches>
+  auto network_inference(auto &eval, const auto &b, auto m, auto n,
+                         Caches &...caches) {
+    static_assert(use_value || use_policy);
     using Eval = std::remove_cvref_t<decltype(eval)>;
-    using T = typename Eval::T;
     constexpr auto activation = Eval::act;
-    constexpr bool rewrite_hp = Eval::rewrite_hp;
-
-    if constexpr (policy_inference) {
-      for (auto i = 0; i < stats.p1.k; ++i) {
+    const auto &battle = PKMN::view(b);
+    if constexpr (use_policy) {
+      for (auto i = 0; i < m; ++i) {
         p1_choice_index[i] =
             Encode::Battle::Policy::get_index(battle.sides[0], p1_choices[i]);
       }
-      for (auto i = 0; i < stats.p2.k; ++i) {
+      for (auto i = 0; i < n; ++i) {
         p2_choice_index[i] =
             Encode::Battle::Policy::get_index(battle.sides[1], p2_choices[i]);
       }
-      value = NN::Battle::sigmoid(
-          eval.main_net.template propagate<true, activation>(
-              embedding, stats.p1.k, stats.p2.k, p1_choice_index,
-              p2_choice_index, p1_logits, p2_logits));
-      stats.softmax_logits(params, p1_logits, p2_logits);
+      if constexpr (use_value) {
+        return NN::Battle::sigmoid(
+            eval.main_net.template propagate<true, activation, use_trunk>(
+                embedding(eval), m, n, p1_choice_index, p2_choice_index,
+                p1_logits, p2_logits));
+      } else {
+        return eval.main_net.template propagate<false, activation, use_trunk>(
+            embedding(eval), m, n, p1_choice_index, p2_choice_index, p1_logits,
+            p2_logits);
+      }
     } else {
-      value = NN::Battle::sigmoid(
-          eval.main_net.template propagate<activation>(embedding));
+      return NN::Battle::sigmoid(
+          eval.main_net.template propagate<activation>(embedding(eval)));
     }
-    return value;
-  }
-
-  void process_output(const Input &input, const auto &heap,
-                      Output &output) noexcept {
-
-    output.p1.k = pkmn_gen1_battle_choices(
-        &input.battle, PKMN_PLAYER_P1, pkmn_result_p1(input.result),
-        output.p1.choices.data(), PKMN_GEN1_MAX_CHOICES);
-    output.p2.k = pkmn_gen1_battle_choices(
-        &input.battle, PKMN_PLAYER_P2, pkmn_result_p2(input.result),
-        output.p2.choices.data(), PKMN_GEN1_MAX_CHOICES);
-
-    if constexpr (is_matrix_ucb_stats<decltype(heap.stats)>) {
-      for (auto i = 0; i < output.p1.k; ++i) {
-        for (auto j = 0; j < output.p2.k; ++j) {
-          const auto &entry = heap.stats.matrix[i][j];
-          output.visit_matrix[i][j] = entry.visits;
-          output.value_matrix[i][j] = entry.total_value;
-        }
-      }
-    }
-
-    double total_value = 0;
-
-    output.p1.empirical = {};
-    output.p2.empirical = {};
-
-    constexpr int discretize_factor = 256;
-    std::array<int, 9 * 9> solve_matrix;
-    for (int i = 0; i < output.p1.k; ++i) {
-      for (int j = 0; j < output.p2.k; ++j) {
-        total_value += output.value_matrix[i][j];
-        auto n = output.visit_matrix[i][j];
-        output.p1.empirical[i] += n;
-        output.p2.empirical[j] += n;
-        n += !n;
-        solve_matrix[output.p2.k * i + j] =
-            output.value_matrix[i][j] / n * discretize_factor;
-      }
-    }
-
-    output.empirical_value = total_value / output.iterations;
-    LRSNash::FastInput solve_input{static_cast<int>(output.p1.k),
-                                   static_cast<int>(output.p2.k),
-                                   solve_matrix.data(), discretize_factor};
-    // LRSNash convention: 2 extra entries needed for output denom, nash value
-    std::array<float, 9 + 2> nash1{}, nash2{};
-    LRSNash::FloatOneSumOutput solve_output{nash1.data(), nash2.data(), 0};
-    LRSNash::solve_fast(&solve_input, &solve_output);
-
-    for (int i = 0; i < output.p1.k; ++i) {
-      output.p1.empirical[i] /= (float)output.iterations;
-      output.p1.nash[i] = nash1[i];
-    }
-    for (int j = 0; j < output.p2.k; ++j) {
-      output.p2.empirical[j] /= (float)output.iterations;
-      output.p2.nash[j] = nash2[j];
-    }
-    output.nash_value = solve_output.value;
   }
 };
 

@@ -292,9 +292,11 @@ struct MatrixUCB : public Bandit {
   float c;
   uint32_t interval;
   uint32_t grow;
+  int discretize_factor;
   MatrixUCB(const Bandit &params, float c, uint32_t interval = 1,
-            uint32_t grow = 1000)
-      : c{c}, interval{interval}, grow{grow} {
+            uint32_t grow = 0, int discretize_factor = 256)
+      : c{c}, interval{interval}, grow{grow},
+        discretize_factor{discretize_factor} {
     this->data = params.data;
   }
 };

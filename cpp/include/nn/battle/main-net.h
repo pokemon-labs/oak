@@ -93,14 +93,16 @@ struct MainNet {
     return output;
   }
 
-  template <bool use_value, Activation activation>
+  template <bool use_value, Activation activation, bool use_trunk = true>
   auto propagate(const float *input_data, const auto m, const auto n,
                  const auto *p1_choice_index, const auto *p2_choice_index,
                  float *p1, float *p2)
       -> std::conditional_t<use_value, float, void> {
     float output;
-    fc0.propagate<activation>(input_data, buffer0.data());
-    fc1.propagate<activation>(buffer0.data(), buffer1.data());
+    if constexpr (use_trunk) {
+      fc0.propagate<activation>(input_data, buffer0.data());
+      fc1.propagate<activation>(buffer0.data(), buffer1.data());
+    }
     if constexpr (use_value) {
       value_fc2.propagate<activation>(buffer1.data(), value_buffer.data());
       value_fc3.propagate<>(value_buffer.data(), &output);
