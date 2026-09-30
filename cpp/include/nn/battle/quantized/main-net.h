@@ -65,7 +65,7 @@ struct MainNet {
     p2_policy_fc3.try_copy_parameters(p2_fc3);
   }
 
-  struct alignas(CacheLineSize) ValueBuffer {
+  struct alignas(CacheLineSize) ValuePolicyBuffer {
     alignas(CacheLineSize) typename decltype(fc0)::OutputBuffer fc0_out;
     alignas(CacheLineSize) typename decltype(ac0)::OutputBuffer ac0_out;
     alignas(CacheLineSize) typename decltype(fc1)::OutputBuffer fc1_out;
@@ -76,10 +76,6 @@ struct MainNet {
         typename decltype(value_ac2)::OutputBuffer value_ac2_out;
     alignas(CacheLineSize)
         typename decltype(value_fc3)::OutputBuffer value_fc3_out;
-    ValueBuffer() { std::memset(this, 0, sizeof(*this)); }
-  };
-
-  struct alignas(CacheLineSize) ValuePolicyBuffer : ValueBuffer {
     alignas(CacheLineSize)
         typename decltype(p1_policy_fc2)::OutputBuffer p1_policy_fc2_out;
     alignas(CacheLineSize)
@@ -95,10 +91,14 @@ struct MainNet {
     ValuePolicyBuffer() { std::memset(this, 0, sizeof(*this)); }
   };
 
+  // Shared by both propagate overloads so trunk outputs (ac1_out) persist
+  // between calls; required for use_trunk = false. Per-instance, so an
+  // instance must not be used from multiple threads concurrently.
+  ValuePolicyBuffer buffer;
+
   template <Activation activation, bool use_trunk = true>
-  float propagate(const uint8_t *input_data) const {
+  float propagate(const uint8_t *input_data) {
     static_assert(activation == Activation::clamp);
-    alignas(CacheLineSize) static thread_local ValueBuffer buffer;
     if constexpr (use_trunk) {
       fc0.propagate(input_data, buffer.fc0_out);
       ac0.propagate(buffer.fc0_out, buffer.ac0_out);
@@ -117,10 +117,9 @@ struct MainNet {
   auto propagate(const uint8_t *input_data, const int m, const int n,
                  const auto *p1_choice_index, const auto *p2_choice_index,
                  float *p1, float *p2)
-      -> std::conditional_t<use_value, float, void> const {
+      -> std::conditional_t<use_value, float, void> {
     static_assert(activation == Activation::clamp);
     constexpr float conversion = 127 * (1 << 6);
-    alignas(CacheLineSize) static thread_local ValuePolicyBuffer buffer;
     if constexpr (use_trunk) {
       fc0.propagate(input_data, buffer.fc0_out);
       ac0.propagate(buffer.fc0_out, buffer.ac0_out);

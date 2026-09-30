@@ -291,7 +291,7 @@ struct RuntimeOptions {
   uint32_t max_depth;
   uint32_t rollout_depth;
   float rollout_temp;
-  RuntimeOptions(uint32_t max_depth = 0, uint32_t rollout_depth = 1,
+  RuntimeOptions(uint32_t max_depth = 0, uint32_t rollout_depth = 0,
                  float rollout_temp = 1)
       : max_depth{max_depth}, rollout_depth{rollout_depth},
         rollout_temp{rollout_temp} {}
@@ -340,6 +340,9 @@ template <SearchOptions Options = default_search> struct Search {
       if constexpr (is_network<decltype(eval)>) {
         constexpr bool policy_inference =
             is_matrix_ucb_ || is_contextual_bandit_;
+        chance_options.durations = input.durations;
+        pkmn_gen1_battle_options_set(&options, nullptr, &chance_options,
+                                     nullptr);
         write_battle_embedding(eval, input.battle, caches...);
         output.initial_value = network_inference<true, policy_inference, true>(
             eval, input.battle, m, n, caches...);
@@ -546,12 +549,12 @@ template <SearchOptions Options = default_search> struct Search {
           }
           for (auto rollout = 0; rollout < live_options.rollout_depth;
                ++rollout) {
-            p1_rollout.fill(neg_inf);
-            p2_rollout.fill(neg_inf);
             if (!policy_inference || rollout) {
               network_inference<false, true, true>(eval, battle, m, n,
                                                    caches...);
             }
+            std::fill(p1_logits + m, p1_logits + 9, neg_inf);
+            std::fill(p2_logits + n, p2_logits + 9, neg_inf);
             softmax_9_temp(p1_rollout, p1_logits, live_options.rollout_temp);
             softmax_9_temp(p2_rollout, p2_logits, live_options.rollout_temp);
             c1 = p1_choices[device.sample_pdf(p1_rollout)];
@@ -576,7 +579,11 @@ template <SearchOptions Options = default_search> struct Search {
             leaf_value = network_inference<true, false, true>(eval, battle, m,
                                                               n, caches...);
           }
-
+          auto embedding_copy = embedding_clone(eval);
+          assert(
+              std::equal(embedding_copy.data(),
+                         embedding_copy.data() + eval.side_embedding_dim(true),
+                         embedding(eval)));
         } else if constexpr (is_poke_engine<Eval>) {
           leaf_value = eval.evaluate(battle);
         } else {
@@ -611,6 +618,8 @@ template <SearchOptions Options = default_search> struct Search {
                       Output &output) noexcept {
     std::tie(output.p1.k, output.p2.k) =
         get_choices(input.battle, input.result);
+    std::copy_n(p1_choices.begin(), output.p1.k, output.p1.choices.begin());
+    std::copy_n(p2_choices.begin(), output.p2.k, output.p2.choices.begin());
 
     if constexpr (is_matrix_ucb_stats<decltype(heap.stats)>) {
       for (auto i = 0; i < output.p1.k; ++i) {
@@ -745,6 +754,18 @@ template <SearchOptions Options = default_search> struct Search {
       return battle_embedding_quantized.data();
     } else if constexpr (std::is_same_v<T, float>) {
       return battle_embedding.data();
+    } else {
+      static_assert(!std::is_same_v<T, T>);
+    }
+  }
+
+  auto embedding_clone(auto &eval) const noexcept {
+    using Eval = std::remove_cvref_t<decltype(eval)>;
+    using T = typename Eval::T;
+    if constexpr (std::is_same_v<T, uint8_t>) {
+      return battle_embedding_quantized;
+    } else if constexpr (std::is_same_v<T, float>) {
+      return battle_embedding;
     } else {
       static_assert(!std::is_same_v<T, T>);
     }

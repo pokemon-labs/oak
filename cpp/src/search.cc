@@ -12,7 +12,7 @@
 // budget
 // #define NO_ITERATION
 // #define NO_DURATION
-#define NO_FLAG
+// #define NO_FLAG
 
 // evals
 // #define NO_MONTE_CARLO

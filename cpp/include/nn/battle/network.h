@@ -381,8 +381,8 @@ void rewrite_side_embedding(T *embedding, const PKMN::Side &side,
       } else {
         write_hp(e, pokemon);
         e = write_pokemon<T, activation>(e, index - 1, pokemon,
-                                         duration.sleep(index - 1), network,
-                                         caches...);
+                                         duration.sleep(choice_data - 1),
+                                         network, caches...);
         e = write_pokemon_moves<T, activation>(e, index - 1, pokemon.moves,
                                                network, caches...);
       }

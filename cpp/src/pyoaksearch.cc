@@ -464,7 +464,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
            py::arg("c"), py::arg("interval") = 1, py::arg("grow") = 1);
   py::class_<MCTS::RuntimeOptions>(m, "Options")
       .def(py::init<uint32_t, uint32_t, float>(), py::arg("max_depth") = 0,
-           py::arg("rollout_depth") = 1, py::arg("rollout_temp") = 1.0);
+           py::arg("rollout_depth") = 0, py::arg("rollout_temp") = 1.0);
 
   py::class_<MCTS::Output::Side>(m, "SideOutput")
       .def(py::init<>())
