@@ -32,17 +32,30 @@ struct TeamBuildingArgs : public argparse::Args {
     WRAPPER<std::string> &A##eval =                                            \
         kwarg(B "eval", "Eval mc/fp/<network-path>");                          \
                                                                                \
-    std::optional<std::string> &A##matrix_ucb =                                \
-        kwarg(B "matrix-ucb", "MatrixUCB c/start/interval/minimum");           \
+    std::optional<std::string> &A##matrix_ucb = kwarg(                         \
+        B "matrix-ucb",                                                        \
+        "MatrixUCB C-INTERVAL-GROW(-DISCRETIZE). The UCB Matrix is solved "    \
+        "iff "                                                                 \
+        "(total_visits + 1) \% INTERVAL == 0, otherwise the network "          \
+        "priors/uniform-strategy/cached-Nash are used. INTERVAL=1 in "         \
+        "the paper but that's untenably slow. GROW will 'expand' all extant "  \
+        "joint bandit nodes oorresponding to a choice pair in MatrixUCB "      \
+        "nodes, but only when the parent node's root visits + 1 == GROW. "     \
+        "This means GROW=0 will never expand nodes and GROW=1 "                \
+        "will immediately expand. DISCRETIZE is the quantization factor when " \
+        "coverting float matrices to int for LRSNash. Error (exploitability) " \
+        "is bounded by 2/DISCRETIZE");                                         \
                                                                                \
-    std::optional<std::string> &A##options =                                   \
-        kwarg(B "options",                                                     \
-              "Runtime search options max-depth/rollout-depth/rollout-temp");  \
+    std::optional<std::string> &A##options = kwarg(                            \
+        B "options",                                                           \
+        "Runtime search options DEPTH-ROLLOUT-TEMP. DEPTH is the max depth "   \
+        "the search tree will grow. The default value of 0 means unbounded. "  \
+        "ROLLOUT is how many updates a battle is updated at leaf node "        \
+        "evaluation. A value of 0 means always rollout until terminal, and a " \
+        "value of N>0 means rollout for N-1 many turns (default=1). TEMP is "  \
+        "the temperature of the network policy during rollout.");              \
                                                                                \
     bool &A##quantize = flag(B "quantize", "Use quantized main subnet");       \
-                                                                               \
-    bool &A##use_table =                                                       \
-        flag(B "use-table", "Use a transposition table instead of a tree");    \
   };
 
 #define MAKE_AGENT_POLICY_ARGS(NAME, BASE, WRAPPER, A, B)                      \

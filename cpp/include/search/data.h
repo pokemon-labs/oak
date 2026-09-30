@@ -414,14 +414,18 @@ inline Bandit bandit(const std::string &s) {
 }
 
 inline MatrixUCB matrix_ucb(const Bandit &params, const std::string &s) {
-  const auto matrix_ucb_split = ::Parse::split(s, '-');
-  // if (matrix_ucb_split.size() != 3) {
-  //   throw std::runtime_error{"Could not parse MatrixUCB name: " + s};
-  // }
-  const float c = std::stof(matrix_ucb_split[0]);
-  const uint32_t interval = std::stoull(matrix_ucb_split[1]);
-  const uint32_t grow = std::stoull(matrix_ucb_split[2]);
-  return MatrixUCB{params, c, interval, grow};
+  const auto split = ::Parse::split(s, '-');
+  if (split.size() < 3) {
+    throw std::runtime_error{"matrix-ucb: C-INTERVAL-GROW(-DISCRETIZE_FACTOR)"};
+  }
+  float c = std::stof(split[0]);
+  uint32_t interval = std::stoull(split[1]);
+  uint32_t grow = std::stoull(split[2]);
+  int discretize_factor = 256;
+  if (split.size() > 3) {
+    discretize_factor = std::stoi(split[3]);
+  }
+  return MatrixUCB{params, c, interval, grow, discretize_factor};
 }
 
 inline Heap heap(const Bandit &bandit) {
@@ -463,7 +467,7 @@ inline MCTS::RuntimeOptions options(const std::string &s) {
     rollout_depth = std::stoul(split[1]);
   }
   if (split.size() > 2) {
-    rollout_temp = std::stof(split[1]);
+    rollout_temp = std::stof(split[2]);
   }
   return {max_depth, rollout_depth, rollout_temp};
 }
