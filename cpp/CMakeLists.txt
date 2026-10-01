@@ -70,6 +70,9 @@ target_link_libraries(generate PRIVATE search_lib argparse)
 add_executable(vs src/vs.cc)
 target_link_libraries(vs PRIVATE search_lib argparse)
 
+add_executable(sprt src/sprt.cc)
+target_link_libraries(sprt PRIVATE search_lib argparse)
+
 add_library(pyoak SHARED src/pyoak.cc)
 target_include_directories(pyoak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(pyoak PRIVATE libpkmn_chance pybind11::module eigen lrslibgmp)

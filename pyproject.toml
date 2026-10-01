@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 vs = "oak.scripts.cli:vs"
+sprt = "oak.scripts.cli:sprt"
 generate = "oak.scripts.cli:generate"
 benchmark = "oak.scripts.cli:benchmark"
 chall = "oak.scripts.cli:chall"

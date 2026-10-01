@@ -34,6 +34,10 @@ def vs():
     _run_binary("vs")
 
 
+def sprt():
+    _run_binary("sprt")
+
+
 def generate():
     _run_binary("generate")
 

@@ -16,6 +16,7 @@ def get_paths(directory):
         f"_bin/{directory}/search-test",
         f"_bin/{directory}/generate",
         f"_bin/{directory}/vs",
+        f"_bin/{directory}/sprt",
         f"_bin/{directory}/chall",
         f"_bin/{directory}/benchmark",
     ]
