@@ -642,9 +642,11 @@ template <SearchOptions Options = default_search> struct Search {
         auto n = output.visit_matrix[i][j];
         output.p1.empirical[i] += n;
         output.p2.empirical[j] += n;
-        n += !n;
-        solve_matrix[output.p2.k * i + j] =
-            output.value_matrix[i][j] / n * discretize_factor;
+        double e = 0.5;
+        if (n) {
+          e = output.value_matrix[i][j] / n;
+        }
+        solve_matrix[output.p2.k * i + j] = e * discretize_factor;
       }
     }
 
