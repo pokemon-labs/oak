@@ -460,8 +460,10 @@ PYBIND11_MODULE(pyoaksearch, m) {
       .def(py::init<float, float, float>(), py::arg("lr"),
            py::arg("exploration"), py::arg("temp") = 1.0);
   py::class_<MatrixUCB, Bandit>(m, "MatrixUCB")
-      .def(py::init<Bandit, float, uint32_t, uint32_t>(), py::arg("bandit"),
-           py::arg("c"), py::arg("interval") = 1, py::arg("grow") = 1);
+      .def(py::init<Bandit, float, uint32_t, uint32_t, int, float>(),
+           py::arg("bandit"), py::arg("c"), py::arg("interval") = 1,
+           py::arg("grow") = 1, py::arg("discretize_factor") = 256,
+           py::arg("old_weight") = 0.0);
   py::class_<MCTS::RuntimeOptions>(m, "Options")
       .def(py::init<uint32_t, uint32_t, float>(), py::arg("max_depth") = 0,
            py::arg("rollout_depth") = 0, py::arg("rollout_temp") = 1.0);

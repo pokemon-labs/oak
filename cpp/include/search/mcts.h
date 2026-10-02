@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <span>
 #include <iostream>
 #include <random>
 #include <type_traits>
@@ -124,7 +125,7 @@ struct Output {
 // for std::map compatibility
 using Obs = std::array<uint8_t, 16>;
 
-template <typename strategy_type = uint16_t> struct MatrixUCBStats {
+template <typename strategy_type = float> struct MatrixUCBStats {
   struct Side {
     uint8_t k;
     std::array<strategy_type, 9> policy;
@@ -140,7 +141,7 @@ template <typename strategy_type = uint16_t> struct MatrixUCBStats {
         }
         return 0;
       } else {
-        return device.sample_pdf(policy);
+        return device.sample_pdf(std::span<const strategy_type>{policy.data(), k});
       }
     }
   };
@@ -163,7 +164,10 @@ template <typename strategy_type = uint16_t> struct MatrixUCBStats {
         matrix[i][j] = {};
       }
     }
-    constexpr auto uniform = std::numeric_limits<strategy_type>::max();
+    constexpr strategy_type uniform =
+        std::is_integral_v<strategy_type>
+            ? std::numeric_limits<strategy_type>::max()
+            : 1;
     p1.k = m;
     p2.k = n;
     std::fill_n(p1.policy.begin(), m, uniform / m);
@@ -210,16 +214,17 @@ template <typename strategy_type = uint16_t> struct MatrixUCBStats {
     LRSNash::FloatOneSumOutput solve_output{p1_nash.data(), p2_nash.data(), 0};
     LRSNash::solve_full(&solve_input, &solve_output);
 
-    if constexpr (std::is_integral_v<strategy_type>) {
-      for (auto i = 0; i < p1.k; ++i) {
-        p1.policy[i] = std::numeric_limits<strategy_type>::max() * p1_nash[i];
-      }
-      for (auto j = 0; j < p2.k; ++j) {
-        p2.policy[j] = std::numeric_limits<strategy_type>::max() * p2_nash[j];
-      }
-    } else {
-      std::copy_n(p1_nash, p1.policy, p1.k);
-      std::copy_n(p2_nash, p2.policy, p2.k);
+    // policy = w * old + (1 - w) * nash; w = 0 is a plain overwrite
+    const float w = params.old_weight;
+    constexpr float scale =
+        std::is_integral_v<strategy_type>
+            ? static_cast<float>(std::numeric_limits<strategy_type>::max())
+            : 1.0f;
+    for (auto i = 0; i < p1.k; ++i) {
+      p1.policy[i] = w * p1.policy[i] + (1 - w) * scale * p1_nash[i];
+    }
+    for (auto j = 0; j < p2.k; ++j) {
+      p2.policy[j] = w * p2.policy[j] + (1 - w) * scale * p2_nash[j];
     }
   }
 
@@ -267,6 +272,7 @@ template <typename Bandit> struct MatrixUCBParams {
   uint32_t interval;
   uint32_t grow;
   int discretize_factor = 256;
+  float old_weight = 0;
 };
 
 struct SearchOptions {

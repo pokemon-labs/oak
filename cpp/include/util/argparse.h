@@ -34,7 +34,8 @@ struct TeamBuildingArgs : public argparse::Args {
                                                                                \
     std::optional<std::string> &A##matrix_ucb = kwarg(                         \
         B "matrix-ucb",                                                        \
-        "MatrixUCB C-INTERVAL-GROW(-DISCRETIZE). The UCB Matrix is solved "    \
+        "MatrixUCB C-INTERVAL-GROW(-DISCRETIZE(-OLD_WEIGHT)). The UCB Matrix " \
+        "is solved "                                                           \
         "iff "                                                                 \
         "(total_visits + 1) \% INTERVAL == 0, otherwise the network "          \
         "priors/uniform-strategy/cached-Nash are used. INTERVAL=1 in "         \
@@ -44,7 +45,9 @@ struct TeamBuildingArgs : public argparse::Args {
         "This means GROW=0 will never expand nodes and GROW=1 "                \
         "will immediately expand. DISCRETIZE is the quantization factor when " \
         "coverting float matrices to int for LRSNash. Error (exploitability) " \
-        "is bounded by 2/DISCRETIZE");                                         \
+        "is bounded by 2/DISCRETIZE. OLD_WEIGHT in [0, 1) mixes each new "     \
+        "solve with the previous strategy: w * old + (1 - w) * Nash. "         \
+        "Default 0 overwrites (old behaviour).");                              \
                                                                                \
     std::optional<std::string> &A##options = kwarg(                            \
         B "options",                                                           \
