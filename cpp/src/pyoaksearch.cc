@@ -10,6 +10,7 @@
 #include <util/search.h>
 #include <util/strings.h>
 
+#include <pybind11/chrono.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -417,7 +418,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
           "weights. NOT bit-for-bit comparable to oak.torch's old "
           "hash_bytes()/blake2b-based hash() -- different algorithm.");
 
-  py::class_<std::shared_ptr<SideCache>>(m, "SideCache")
+  py::class_<SideCache, std::shared_ptr<SideCache>>(m, "SideCache")
       .def(py::init<>())
       .def(
           "precompute",
