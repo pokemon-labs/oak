@@ -34,7 +34,7 @@ struct TeamBuildingArgs : public argparse::Args {
                                                                                \
     std::optional<std::string> &A##matrix_ucb = kwarg(                         \
         B "matrix-ucb",                                                        \
-        "MatrixUCB C-INTERVAL-GROW(-DISCRETIZE(-OLD_WEIGHT)). The UCB Matrix " \
+        "MatrixUCB C-INTERVAL-GROW(-OLD_WEIGHT(-DISCRETIZE)). The UCB Matrix " \
         "is solved "                                                           \
         "iff "                                                                 \
         "(total_visits + 1) \% INTERVAL == 0, otherwise the network "          \
@@ -43,11 +43,11 @@ struct TeamBuildingArgs : public argparse::Args {
         "joint bandit nodes oorresponding to a choice pair in MatrixUCB "      \
         "nodes, but only when the parent node's root visits + 1 == GROW. "     \
         "This means GROW=0 will never expand nodes and GROW=1 "                \
-        "will immediately expand. DISCRETIZE is the quantization factor when " \
-        "coverting float matrices to int for LRSNash. Error (exploitability) " \
-        "is bounded by 2/DISCRETIZE. OLD_WEIGHT in [0, 1) mixes each new "     \
-        "solve with the previous strategy: w * old + (1 - w) * Nash. "         \
-        "Default 0 overwrites (old behaviour).");                              \
+        "will immediately expand. OLD_WEIGHT in [0, 1) mixes each new solve "  \
+        "with the previous strategy: w * old + (1 - w) * Nash. Default 0 "     \
+        "overwrites (old behaviour). DISCRETIZE is the quantization factor "   \
+        "when coverting float matrices to int for LRSNash. Error "             \
+        "(exploitability) is bounded by 2/DISCRETIZE.");                       \
                                                                                \
     std::optional<std::string> &A##options = kwarg(                            \
         B "options",                                                           \

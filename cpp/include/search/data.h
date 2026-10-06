@@ -421,21 +421,21 @@ inline MatrixUCB matrix_ucb(const Bandit &params, const std::string &s) {
   const auto split = ::Parse::split(s, '-');
   if (split.size() < 3) {
     throw std::runtime_error{
-        "matrix-ucb: C-INTERVAL-GROW(-DISCRETIZE_FACTOR(-OLD_WEIGHT))"};
+        "matrix-ucb: C-INTERVAL-GROW(-OLD_WEIGHT(-DISCRETIZE_FACTOR))"};
   }
   float c = std::stof(split[0]);
   uint32_t interval = std::stoull(split[1]);
   uint32_t grow = std::stoull(split[2]);
-  int discretize_factor = 256;
-  if (split.size() > 3) {
-    discretize_factor = std::stoi(split[3]);
-  }
   float old_weight = 0;
-  if (split.size() > 4) {
-    old_weight = std::stof(split[4]);
+  if (split.size() > 3) {
+    old_weight = std::stof(split[3]);
   }
   if (!(old_weight >= 0 && old_weight < 1)) {
     throw std::runtime_error{"matrix-ucb: OLD_WEIGHT must be in [0, 1)"};
+  }
+  int discretize_factor = 256;
+  if (split.size() > 4) {
+    discretize_factor = std::stoi(split[4]);
   }
   return MatrixUCB{params, c, interval, grow, discretize_factor, old_weight};
 }
