@@ -354,6 +354,10 @@ template <SearchOptions Options = default_search> struct Search {
             eval, input.battle, m, n, caches...);
         if constexpr (policy_inference) {
           heap.stats.softmax_logits(params, p1_logits, p2_logits);
+          std::copy_n(p1_logits, m, output.p1.logit.data());
+          std::copy_n(p2_logits, n, output.p2.logit.data());
+          softmax_k(output.p1.prior.data(), p1_logits, m);
+          softmax_k(output.p2.prior.data(), p2_logits, n);
         }
       }
     }

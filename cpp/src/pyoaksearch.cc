@@ -10,6 +10,7 @@
 #include <util/search.h>
 #include <util/strings.h>
 
+#include <pybind11/chrono.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -417,7 +418,7 @@ PYBIND11_MODULE(pyoaksearch, m) {
           "weights. NOT bit-for-bit comparable to oak.torch's old "
           "hash_bytes()/blake2b-based hash() -- different algorithm.");
 
-  py::class_<std::shared_ptr<SideCache>>(m, "SideCache")
+  py::class_<SideCache, std::shared_ptr<SideCache>>(m, "SideCache")
       .def(py::init<>())
       .def(
           "precompute",
@@ -434,6 +435,9 @@ PYBIND11_MODULE(pyoaksearch, m) {
           py::arg("network"), py::call_guard<py::gil_scoped_release>())
       .def("is_quantized",
            [](SideCache &cache) { return cache.is_quantized(); });
+  // Live (search-time) cache entries go in unguarded maps; only with them
+  // disabled can one SideCache be used by concurrent searches.
+  m.attr("side_cache_thread_safe") = NN::Battle::disable_live_cache;
 
   py::class_<CachePool>(m, "CachePool")
       .def(

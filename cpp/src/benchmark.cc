@@ -29,7 +29,7 @@ void benchmark(ProgramArgs *args_ptr, int index) {
   auto eval = Search::Parse::eval(args.eval.value_or("mc"), args.quantize);
   auto cache_pool = CachePool{};
   auto p1_cache = cache_pool.get(eval, PKMN::view(battle).sides[0], false);
-  auto p2_cache = cache_pool.get(eval, PKMN::view(battle).sides[0], false);
+  auto p2_cache = cache_pool.get(eval, PKMN::view(battle).sides[1], false);
   auto bandit = Search::Parse::bandit(args.bandit.value_or("ucb-1.0"));
   auto matrix_ucb =
       args.matrix_ucb.has_value()
