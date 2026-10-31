@@ -166,6 +166,9 @@ struct Bookkeeping {
   size_t i = 0;
   // The move each side's log line shows while its binding move goes on.
   std::array<bk::Move, 2> bind_shown{};
+  // The Metronome or Mirror Move that called each side's current lock, or
+  // None.
+  std::array<bk::Move, 2> via{};
 
   uint8_t side_of(uint8_t id) const { return ident_player(id); }
   PKMN::Side& side(uint8_t s) { return battle.sides[s]; }
@@ -457,6 +460,7 @@ struct Bookkeeping {
     battle.last_moves[s].index = 1;
     sd.last_used_move = bk::Move::None;
     od.last_used_move = bk::Move::None;
+    via[s] = bk::Move::None;
 
     PKMN::Pokemon& p = sd.stored();
     p.hp = hp_of(s, p, o.u16(3), o.u16(5));
@@ -580,18 +584,28 @@ struct Bookkeeping {
         ms->pp = uint8_t(std::max(0, ms->pp - int(spend)));
       }
     }
-    if (m != bk::Move::None && m != bk::Move::Struggle && !from_metronome && !from_mimic && !from_mirror) {
+    // A lock's later turn (Rage, Thrash, a charge's second turn, a bind)
+    // that a Metronome or Mirror Move started: the move isn't the Pokémon's,
+    // and PP comes off the caller.
+    const bool cont = (rage && v.rage()) || (thrashing && v.thrashing()) || (charging && v.charging()) ||
+                      (binding && v.binding());
+    const bool called = cont && via[s] != bk::Move::None;
+    const bk::Move own = called ? via[s] : m;
+    if (own != bk::Move::None && own != bk::Move::Struggle && !from_metronome && !from_mimic && !from_mirror) {
       if (!v.transform()) {
-        reveal(sd.stored().moves, m);
-        reveal(sd.active.moves, m);
+        if (!called) {
+          reveal(sd.stored().moves, own);
+          reveal(sd.active.moves, own);
+        }
         for (PKMN::MoveSlot& ms : sd.stored().moves) {
-          if (ms.id == m) ms.pp = uint8_t(std::max(0, ms.pp - int(spend)));
+          if (ms.id == own) ms.pp = uint8_t(std::max(0, ms.pp - int(spend)));
         }
       }
       for (PKMN::MoveSlot& ms : sd.active.moves) {
-        if (ms.id == m) ms.pp = uint8_t(std::max(0, ms.pp - int(spend)));
+        if (ms.id == own) ms.pp = uint8_t(std::max(0, ms.pp - int(spend)));
       }
     }
+    if (!cont) via[s] = from ? from_move : bk::Move::None;
     if ((rage || deduct || v.thrashing()) && !(charging && !v.charging())) {
       sd.last_used_move = m;
       sd.last_selected_move = m;
