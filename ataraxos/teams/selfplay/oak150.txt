@@ -1,0 +1,5699 @@
+=== [gen1ou] team 1 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunderbolt
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Hyper Beam
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 2 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 3 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Counter
+- Ice Beam
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 4 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 5 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 6 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 7 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Lapras
+- Blizzard
+- Body Slam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 8 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 9 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 10 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 11 ===
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Mega Drain
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 12 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 13 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Golem
+- Earthquake
+- Explosion
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 14 ===
+
+Starmie
+- Ice Beam
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 15 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Slowbro
+- Amnesia
+- Psychic
+- Rest
+- Thunder Wave
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 16 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Rest
+- Self-Destruct
+
+Golem
+- Earthquake
+- Explosion
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 17 ===
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 18 ===
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 19 ===
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Reflect
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 20 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 21 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 22 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Gyarados
+- Body Slam
+- Hydro Pump
+- Hyper Beam
+- Thunderbolt
+
+Jolteon
+- Double Kick
+- Rest
+- Thunderbolt
+- Thunder Wave
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 23 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 24 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Moltres
+- Agility
+- Fire Blast
+- Fire Spin
+- Hyper Beam
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 25 ===
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Sandslash
+- Earthquake
+- Rock Slide
+- Slash
+- Swords Dance
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 26 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Hyper Beam
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Amnesia
+- Blizzard
+- Body Slam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 27 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 28 ===
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 29 ===
+
+Jolteon
+- Double Kick
+- Pin Missile
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Rest
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 30 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 31 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Rest
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Starmie
+- Recover
+- Surf
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 32 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 33 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 34 ===
+
+Hypno
+- Hypnosis
+- Psychic
+- Rest
+- Thunder Wave
+
+Articuno
+- Agility
+- Blizzard
+- Hyper Beam
+- Ice Beam
+
+Dugtrio
+- Earthquake
+- Rock Slide
+- Slash
+- Toxic
+
+Kadabra
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Omastar
+- Blizzard
+- Body Slam
+- Hydro Pump
+- Rest
+
+Tentacruel
+- Blizzard
+- Hydro Pump
+- Surf
+- Wrap
+
+=== [gen1ou] team 35 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 36 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 37 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+- Toxic
+
+=== [gen1ou] team 38 ===
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Counter
+- Ice Beam
+- Sing
+- Soft-Boiled
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Rest
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 39 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Amnesia
+- Body Slam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 40 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 41 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 42 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Hyper Beam
+- Thunderbolt
+
+=== [gen1ou] team 43 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 44 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Lapras
+- Blizzard
+- Body Slam
+- Confuse Ray
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 45 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Fire Blast
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 46 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Counter
+- Earthquake
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 47 ===
+
+Jynx
+- Blizzard
+- Counter
+- Lovely Kiss
+- Psychic
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Amnesia
+- Blizzard
+- Body Slam
+- Rest
+
+Starmie
+- Recover
+- Surf
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 48 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Alakazam
+- Psychic
+- Recover
+- Reflect
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 49 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Rest
+
+Sandslash
+- Earthquake
+- Rock Slide
+- Slash
+- Swords Dance
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 50 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 51 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 52 ===
+
+Gengar
+- Explosion
+- Hypnosis
+- Mega Drain
+- Night Shade
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 53 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Dragonite
+- Agility
+- Blizzard
+- Hyper Beam
+- Wrap
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 54 ===
+
+Snorlax
+- Blizzard
+- Body Slam
+- Hyper Beam
+- Self-Destruct
+
+Alakazam
+- Psychic
+- Recover
+- Reflect
+- Thunder Wave
+
+Dragonite
+- Agility
+- Blizzard
+- Hyper Beam
+- Wrap
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Lapras
+- Blizzard
+- Body Slam
+- Confuse Ray
+- Sing
+
+Tauros
+- Blizzard
+- Body Slam
+- Hyper Beam
+- Thunderbolt
+
+=== [gen1ou] team 55 ===
+
+Arcanine
+- Body Slam
+- Fire Blast
+- Hyper Beam
+- Rest
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 56 ===
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Seismic Toss
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 57 ===
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 58 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Hyper Beam
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 59 ===
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Sandslash
+- Earthquake
+- Hyper Beam
+- Slash
+- Swords Dance
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Hyper Beam
+- Thunderbolt
+
+=== [gen1ou] team 60 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 61 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Persian
+- Body Slam
+- Bubble Beam
+- Slash
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Psychic
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 62 ===
+
+Jynx
+- Blizzard
+- Counter
+- Lovely Kiss
+- Psychic
+
+Chansey
+- Counter
+- Ice Beam
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 63 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+- Toxic
+
+=== [gen1ou] team 64 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 65 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 66 ===
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Counter
+- Ice Beam
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 67 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Amnesia
+- Body Slam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 68 ===
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Rest
+- Self-Destruct
+
+Golem
+- Earthquake
+- Explosion
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 69 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 70 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 71 ===
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 72 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Dragonite
+- Blizzard
+- Hyper Beam
+- Thunder Wave
+- Wrap
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Slowbro
+- Amnesia
+- Rest
+- Surf
+- Thunder Wave
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Victreebel
+- Body Slam
+- Razor Leaf
+- Sleep Powder
+- Wrap
+
+=== [gen1ou] team 73 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 74 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 75 ===
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 76 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 77 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 78 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Rest
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 79 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 80 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Lapras
+- Blizzard
+- Confuse Ray
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 81 ===
+
+Jolteon
+- Double Kick
+- Pin Missile
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Rest
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 82 ===
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Slowbro
+- Amnesia
+- Rest
+- Surf
+- Thunder Wave
+
+Starmie
+- Blizzard
+- Recover
+- Surf
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 83 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Persian
+- Bubble Beam
+- Hyper Beam
+- Slash
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Counter
+- Earthquake
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 84 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Alakazam
+- Psychic
+- Recover
+- Reflect
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 85 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 86 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 87 ===
+
+Jolteon
+- Double Kick
+- Pin Missile
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Leech Seed
+- Psychic
+- Rest
+- Stun Spore
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 88 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 89 ===
+
+Hypno
+- Hypnosis
+- Psychic
+- Rest
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 90 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Victreebel
+- Razor Leaf
+- Sleep Powder
+- Stun Spore
+- Wrap
+
+=== [gen1ou] team 91 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Lapras
+- Blizzard
+- Rest
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 92 ===
+
+Gengar
+- Explosion
+- Hypnosis
+- Night Shade
+- Thunderbolt
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Slowbro
+- Amnesia
+- Rest
+- Surf
+- Thunder Wave
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 93 ===
+
+Gengar
+- Explosion
+- Hypnosis
+- Night Shade
+- Thunderbolt
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 94 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Rest
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 95 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Hyper Beam
+- Tail Whip
+
+=== [gen1ou] team 96 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 97 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 98 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Reflect
+- Soft-Boiled
+- Thunderbolt
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Amnesia
+- Blizzard
+- Body Slam
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 99 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Gengar
+- Explosion
+- Hypnosis
+- Night Shade
+- Thunderbolt
+
+Snorlax
+- Amnesia
+- Blizzard
+- Body Slam
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 100 ===
+
+Jynx
+- Blizzard
+- Counter
+- Lovely Kiss
+- Psychic
+
+Alakazam
+- Counter
+- Psychic
+- Recover
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Counter
+- Self-Destruct
+- Surf
+
+Tauros
+- Blizzard
+- Body Slam
+- Hyper Beam
+- Thunderbolt
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 101 ===
+
+Jynx
+- Ice Beam
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Jolteon
+- Double Kick
+- Rest
+- Thunderbolt
+- Thunder Wave
+
+Snorlax
+- Amnesia
+- Ice Beam
+- Reflect
+- Rest
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 102 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 103 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 104 ===
+
+Jolteon
+- Double Kick
+- Pin Missile
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Surf
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 105 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Counter
+- Ice Beam
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 106 ===
+
+Jolteon
+- Double Kick
+- Pin Missile
+- Thunderbolt
+- Thunder Wave
+
+Articuno
+- Agility
+- Blizzard
+- Hyper Beam
+- Ice Beam
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 107 ===
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Seismic Toss
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Rest
+- Self-Destruct
+
+Golem
+- Earthquake
+- Explosion
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 108 ===
+
+Gengar
+- Explosion
+- Hypnosis
+- Psychic
+- Thunderbolt
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 109 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Jynx
+- Blizzard
+- Counter
+- Lovely Kiss
+- Psychic
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 110 ===
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Alakazam
+- Psychic
+- Recover
+- Reflect
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 111 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 112 ===
+
+Jolteon
+- Double Kick
+- Pin Missile
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Kingler
+- Body Slam
+- Crabhammer
+- Hyper Beam
+- Swords Dance
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Hyper Beam
+- Thunderbolt
+
+=== [gen1ou] team 113 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Snorlax
+- Amnesia
+- Blizzard
+- Body Slam
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Victreebel
+- Razor Leaf
+- Sleep Powder
+- Stun Spore
+- Wrap
+
+=== [gen1ou] team 114 ===
+
+Jynx
+- Blizzard
+- Counter
+- Lovely Kiss
+- Psychic
+
+Chansey
+- Counter
+- Ice Beam
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 115 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 116 ===
+
+Starmie
+- Blizzard
+- Recover
+- Surf
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunderbolt
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Slowbro
+- Amnesia
+- Rest
+- Surf
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 117 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunderbolt
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Toxic
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 118 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Ice Beam
+- Reflect
+- Rest
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 119 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Alakazam
+- Counter
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 120 ===
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Golem
+- Earthquake
+- Explosion
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 121 ===
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Moltres
+- Agility
+- Fire Blast
+- Fire Spin
+- Hyper Beam
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 122 ===
+
+Jolteon
+- Double Kick
+- Pin Missile
+- Thunderbolt
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Rest
+
+Dragonite
+- Agility
+- Blizzard
+- Thunder Wave
+- Wrap
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Victreebel
+- Razor Leaf
+- Sleep Powder
+- Stun Spore
+- Wrap
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 123 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Mega Drain
+- Psychic
+- Sleep Powder
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Fire Blast
+- Hyper Beam
+
+=== [gen1ou] team 124 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Rest
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 125 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Kabutops
+- Hyper Beam
+- Slash
+- Surf
+- Swords Dance
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Starmie
+- Recover
+- Surf
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 126 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Counter
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Fire Blast
+- Hyper Beam
+
+=== [gen1ou] team 127 ===
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 128 ===
+
+Starmie
+- Ice Beam
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 129 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Sandslash
+- Earthquake
+- Hyper Beam
+- Substitute
+- Swords Dance
+
+Snorlax
+- Amnesia
+- Blizzard
+- Body Slam
+- Self-Destruct
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+=== [gen1ou] team 130 ===
+
+Gengar
+- Explosion
+- Hypnosis
+- Mega Drain
+- Night Shade
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Starmie
+- Recover
+- Surf
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 131 ===
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 132 ===
+
+Starmie
+- Blizzard
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Victreebel
+- Body Slam
+- Razor Leaf
+- Sleep Powder
+- Wrap
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 133 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Slowbro
+- Amnesia
+- Psychic
+- Rest
+- Thunder Wave
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 134 ===
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Chansey
+- Seismic Toss
+- Sing
+- Soft-Boiled
+- Thunder Wave
+
+Golem
+- Earthquake
+- Rock Slide
+- Self-Destruct
+- Substitute
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 135 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 136 ===
+
+Gengar
+- Explosion
+- Hypnosis
+- Psychic
+- Thunderbolt
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Sing
+- Soft-Boiled
+- Thunderbolt
+
+Cloyster
+- Blizzard
+- Clamp
+- Double-Edge
+- Explosion
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+Zapdos
+- Agility
+- Drill Peck
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 137 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Jolteon
+- Double Kick
+- Rest
+- Thunderbolt
+- Thunder Wave
+
+Porygon
+- Ice Beam
+- Recover
+- Thunder Wave
+- Tri Attack
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+=== [gen1ou] team 138 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Machamp
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Low Kick
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Hyper Beam
+- Thunderbolt
+
+=== [gen1ou] team 139 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Clefable
+- Blizzard
+- Body Slam
+- Hyper Beam
+- Sing
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 140 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Reflect
+- Rest
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 141 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Counter
+- Ice Beam
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Jolteon
+- Double Kick
+- Rest
+- Thunderbolt
+- Thunder Wave
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 142 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Alakazam
+- Psychic
+- Recover
+- Reflect
+- Thunder Wave
+
+Chansey
+- Counter
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Counter
+- Earthquake
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 143 ===
+
+Starmie
+- Ice Beam
+- Psychic
+- Recover
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Kangaskhan
+- Body Slam
+- Counter
+- Earthquake
+- Hyper Beam
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 144 ===
+
+Kadabra
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Dugtrio
+- Earthquake
+- Rock Slide
+- Substitute
+- Toxic
+
+Gyarados
+- Blizzard
+- Body Slam
+- Hyper Beam
+- Thunderbolt
+
+Hypno
+- Hypnosis
+- Psychic
+- Rest
+- Thunder Wave
+
+Omastar
+- Blizzard
+- Body Slam
+- Hydro Pump
+- Rest
+
+Tentacruel
+- Blizzard
+- Rest
+- Surf
+- Wrap
+
+=== [gen1ou] team 145 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Reflect
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Explosion
+- Psychic
+- Sleep Powder
+- Stun Spore
+
+Lapras
+- Blizzard
+- Hyper Beam
+- Sing
+- Thunderbolt
+
+Snorlax
+- Body Slam
+- Earthquake
+- Reflect
+- Rest
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 146 ===
+
+Starmie
+- Blizzard
+- Psychic
+- Recover
+- Thunder Wave
+
+Alakazam
+- Psychic
+- Recover
+- Reflect
+- Thunder Wave
+
+Chansey
+- Counter
+- Seismic Toss
+- Soft-Boiled
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 147 ===
+
+Jynx
+- Blizzard
+- Lovely Kiss
+- Psychic
+- Rest
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Slowbro
+- Amnesia
+- Rest
+- Surf
+- Thunder Wave
+
+Snorlax
+- Body Slam
+- Counter
+- Earthquake
+- Self-Destruct
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
+
+=== [gen1ou] team 148 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Dragonite
+- Blizzard
+- Hyper Beam
+- Thunder Wave
+- Wrap
+
+Exeggutor
+- Explosion
+- Hyper Beam
+- Psychic
+- Sleep Powder
+
+Rhydon
+- Body Slam
+- Earthquake
+- Rock Slide
+- Substitute
+
+Snorlax
+- Body Slam
+- Hyper Beam
+- Reflect
+- Rest
+
+Starmie
+- Psychic
+- Recover
+- Thunderbolt
+- Thunder Wave
+
+=== [gen1ou] team 149 ===
+
+Gengar
+- Explosion
+- Hypnosis
+- Psychic
+- Thunderbolt
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Cloyster
+- Blizzard
+- Clamp
+- Explosion
+- Hyper Beam
+
+Dragonite
+- Agility
+- Surf
+- Thunder Wave
+- Wrap
+
+Victreebel
+- Razor Leaf
+- Sleep Powder
+- Stun Spore
+- Wrap
+
+=== [gen1ou] team 150 ===
+
+Alakazam
+- Psychic
+- Recover
+- Seismic Toss
+- Thunder Wave
+
+Chansey
+- Ice Beam
+- Soft-Boiled
+- Thunderbolt
+- Thunder Wave
+
+Exeggutor
+- Double-Edge
+- Explosion
+- Psychic
+- Sleep Powder
+
+Snorlax
+- Body Slam
+- Earthquake
+- Hyper Beam
+- Self-Destruct
+
+Starmie
+- Recover
+- Surf
+- Thunderbolt
+- Thunder Wave
+
+Tauros
+- Blizzard
+- Body Slam
+- Earthquake
+- Hyper Beam
