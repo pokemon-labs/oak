@@ -552,8 +552,16 @@ struct Bookkeeping {
       v.set_binding(false);
       d.set_binding(0);
     }
-    const bool deduct = !((rage && v.rage()) || (charging && !v.charging()) || (thrashing && v.thrashing()) ||
-                          (binding && v.binding()));
+    bool deduct = !((rage && v.rage()) || (charging && !v.charging()) || (thrashing && v.thrashing()) ||
+                    (binding && v.binding()));
+    // Metronome or Mirror Move calling a charging move: no PP on the turn it
+    // charges.
+    if (m == bk::Move::Metronome || m == bk::Move::MirrorMove) {
+      if (const Obs* n = next(); n && n->type == ArgType::Move && n->u8(3) && bk::Move(n->u8(4)) == m) {
+        const bk::Move called = bk::Move(n->u8(1));
+        if ((bk::charging_move(called) || bk::invulnerable_move(called)) && !v.charging()) deduct = false;
+      }
+    }
     // A Mimic'd move: the active's slot where the stored Pokémon has Mimic.
     int mimic = -1;
     for (int j = 0; j < 4; j++) {
