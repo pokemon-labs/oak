@@ -519,9 +519,11 @@ struct Bookkeeping {
         // No change: a hit can do 0 (base damage 1, resisted). Ours is exact;
         // the other side's percent can hide a few HP, so estimate it.
         const bk::Move m = od.last_used_move;
+        // a Jump Kick's crash (after its miss or immunity) is 1
+        const bool crash = prev() && (prev()->type == ArgType::Miss || prev()->type == ArgType::Immune);
         if (dmg == 0 && s == player) {
           battle.last_damage = 0;
-        } else if (dmg == 0 && !confusion && m != bk::Move::Bide && m != bk::Move::Counter) {
+        } else if (dmg == 0 && !crash && !confusion && m != bk::Move::Bide && m != bk::Move::Counter) {
           battle.last_damage = calc_damage(opp, s, m, crit_against(s));
         } else {
           battle.last_damage = std::max<uint16_t>(1, dmg);
