@@ -107,4 +107,24 @@ client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
 `botctl.py`), and their round-trip tests (`check_text_parser`,
 `check_client`). The user wants whatever scope birch has.
 
+- The user's calls (2026-10-31): the formatter is ataraxos's own
+  (`src/format.hpp`, a port of libpkmn's `src/pkg/protocol.ts`, which
+  libpkmn's integration test checks against Showdown), not oak's `log.h`
+  (approximate, and other oak modules use it); and a check against real
+  Showdown text from Showdown's simulator on the box.
+- Done: `src/names.hpp` (Showdown's Gen 1 names by libpkmn ID, from
+  `codegen/names.cjs` on the laptop's Showdown, 3de1c70), `src/format.hpp`
+  (Showdown's spellings where protocol.ts differs: Mist is -activate, no
+  trailing empty field), `src/text_parser.hpp` (a view's parser numbers the
+  foe by first switch-in, so the ladder needs only our nicknames), and
+  `check_text_parser`: 0 mismatches on 20000 games (seed 2); `forms` lists
+  the text forms covered.
+- Blocked: installing Node and Showdown on the box (into `~/oak-ataraxos/node`
+  and `~/oak-ataraxos/pokemon-showdown`, git-excluded) was denied by the
+  permission check (downloading and running external code); waiting on the
+  user. The real-sim check (`check_showdown`, not written) plays Gen 1 OU
+  with our teams in Showdown's simulator, parses both player streams
+  (no ParseError) and runs the bookkeeping on the parsed bytes.
+- Then: `client.hpp`, `check_client`, the ladder driver.
+
 `box/hf_sync.sh` targets `opencover/ataraxos-runs` (the user's OK).
