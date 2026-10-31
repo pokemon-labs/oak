@@ -2,7 +2,8 @@
 // libpkmn's own driver writes it (cpp/extern/engine/src/pkg/protocol.ts,
 // which libpkmn's integration test checks against Showdown's output) with
 // Showdown's spellings where the two differ (data/mods/gen1: Mist is
-// -activate, not -block; no trailing empty field on -activate). The text
+// -activate, not -block; no trailing empty field on -activate; no [of] on
+// Recoil, found by tests/cpp/check_showdown.cpp). The text
 // parser (text_parser.hpp) is its inverse; tests/cpp/check_text_parser.cpp
 // checks the round trip.
 //
@@ -173,8 +174,8 @@ class Formatter {
     case ArgType::Tie: out.push_back("|tie"); return;
     case ArgType::Damage: {
       std::string tail;
+      // Recoil's [of] (the other side's active) isn't in Showdown's text
       if (d[6] != DmgNone) tail = std::string("|[from] ") + DAMAGE[d[6]];
-      if (d[6] == DmgRecoilOf) tail += "|[of] " + ident(d[7]);
       return health_line("|-damage|" + ident(d[0]) + "|", d, 1, tail, out);
     }
     case ArgType::Heal: {

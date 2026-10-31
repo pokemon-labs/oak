@@ -19,6 +19,8 @@
 //   -prepare (the charging turn); one left over goes right after its line.
 // - "0 fnt" has no max HP or status: the last ones shown for that Pokémon.
 // - -activate||move: Splash has no ident: the last move line's user.
+// - Recoil's [of], which Showdown doesn't write: the other side's active
+//   Pokémon, as libpkmn's is.
 //
 // And what it can't, so a round trip differs there: the sleep counter and
 // Rest's flag ("slp" is status 1, as the view writes it).
@@ -145,6 +147,8 @@ class TextParser {
   uint8_t move_source_ = 0;
   bool still_ = false, miss_ = false;
 
+  // Per side, the active Pokémon's ident.
+  std::array<uint8_t, 2> active_{};
   // Per side and number, the last max HP and status shown.
   std::array<std::array<uint16_t, 6>, 2> max_hp_{};
   std::array<std::array<uint8_t, 6>, 2> status_{};
@@ -338,6 +342,7 @@ class TextParser {
                                                                         ? std::string_view::npos
                                                                         : d.find(", ") - 1)));
       }
+      active_[ident_player(x)] = x;
       t(ArgType::Switch);
       b(x);
       b(s);
@@ -375,7 +380,7 @@ class TextParser {
       if (!from) return b(DmgNone);
       const uint8_t r = index(DAMAGE, f, 1);
       b(r);
-      if (r == DmgRecoilOf) b(ident(l.get("[of]")));
+      if (r == DmgRecoilOf) b(l.has("[of]") ? ident(l.get("[of]")) : active_[1 - ident_player(x)]);
       return;
     }
     if (tag == "-heal") {
