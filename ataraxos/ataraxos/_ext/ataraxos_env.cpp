@@ -168,12 +168,10 @@ py::dict game_data() {
   auto move_accuracy = array<int16_t>({py::ssize_t(MOVES)});
   for (uint16_t m = 0; m < MOVES; m++) {
     const bool none = m == 0;
-    // Struggle is past MOVE_DATA's table.
-    const bool table = !none && m < MOVES - 1;
-    move_bp.mutable_data()[m] = table ? D::move_data(m).bp : none ? 0 : 50;
-    move_type.mutable_data()[m] = table ? int16_t(D::move_data(m).type) : 0;
+    move_bp.mutable_data()[m] = none ? 0 : D::move_data(m).bp;
+    move_type.mutable_data()[m] = none ? 0 : int16_t(D::move_data(m).type);
     // MOVE_DATA's accuracy is out of 255.
-    move_accuracy.mutable_data()[m] = table ? int16_t(D::move_data(m).accuracy * 100 / 255) : 100;
+    move_accuracy.mutable_data()[m] = none ? 0 : int16_t(D::move_data(m).accuracy * 100 / 255);
   }
   auto types = array<int16_t>({py::ssize_t(SPECIES), 2});
   auto stats = array<int16_t>({py::ssize_t(SPECIES), 5});

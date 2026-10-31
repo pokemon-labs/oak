@@ -75,7 +75,7 @@ struct BattleData {
         for (const PKMN::Pokemon& p : state().sides[s].pokemon) teamsize[s] += p.species != PKMN::Data::Species::None;
       }
       for (uint8_t p = 0; p < 2; p++) {
-        bk[p] = Bookkeeping(p, teamsize);
+        bk[p] = Bookkeeping(p, teamsize, state().sides[p]);
         history[p].clear();
       }
     }
@@ -91,6 +91,7 @@ struct BattleData {
   // Showdown's side.choose: `c` must be one of legal[p].
   Chosen choose(uint8_t p, pkmn_choice c) {
     assert(needs_choice(p));
+    if (track) bk[p].chose(c);
     pending[p] = c;
     chosen[p] = true;
     const uint8_t q = 1 - p;
@@ -136,6 +137,7 @@ struct BattleData {
       n_legal[p] = uint8_t(pkmn_gen1_battle_choices(&battle, p == 0 ? PKMN_PLAYER_P1 : PKMN_PLAYER_P2, kind,
                                                     legal[p].data(), legal[p].size()));
       request[p] = request_data(state(), p, kind, {legal[p].data(), n_legal[p]});
+      if (track) bk[p].request(request[p]);
     }
     chosen[0] = chosen[1] = false;
   }
