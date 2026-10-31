@@ -610,7 +610,8 @@ struct Bookkeeping {
     // A binding move's later turns show the move that started it: the
     // binding move, or the Metronome or Mirror Move that called it. Any
     // other move means the bind ran out (silently) before this one.
-    if (v.binding() && m != bind_shown[s]) {
+    const bool ran_out = v.binding() && m != bind_shown[s];
+    if (ran_out) {
       v.set_binding(false);
       d.set_binding(0);
     }
@@ -673,8 +674,10 @@ struct Bookkeeping {
       sd.last_selected_move = m;
     }
     // The other side's selected slot: the move it chose, not one Metronome
-    // or Mirror Move called (ours comes from our choice, `chose`).
-    if (s != player && !from) {
+    // or Mirror Move called (ours comes from our choice, `chose`, but a
+    // choice under maybeLocked, taken as the bind going on, shows here once
+    // the bind ran out).
+    if ((s != player || ran_out) && !from) {
       battle.last_moves[s].index = 1;
       for (uint8_t j = 0; j < 4; j++) {
         if (sd.active.moves[j].id == m) {
