@@ -6,7 +6,8 @@
 // for each Pokémon must be the simulator's: exact in the raw log and for a
 // player's own side, the other side as Showdown's percent/100 (view.hpp).
 // A status is compared only while the Pokémon stands ("0 fnt" keeps the
-// last one shown).
+// last one shown), and a benched one's "tox" may be the truth's "psn"
+// (Gen 1's toxic reverts on a switch out, shown on the next switch in).
 //
 // It also counts the lines the parser read past, by tag, so what real text
 // carries that libpkmn doesn't is on show.
@@ -50,9 +51,11 @@ std::vector<std::string> split_tabs(const std::string& s) {
 }
 
 using Shown = std::array<std::map<std::string, std::tuple<uint16_t, uint16_t, uint8_t>>, 2>;
+// Per stream and side, the active Pokémon's nickname.
+using Active = std::array<std::string, 2>;
 
 // What one parsed update shows: the last HP, max and status per Pokémon.
-void track(const std::vector<uint8_t>& bytes, const Names& names, Shown& shown) {
+void track(const std::vector<uint8_t>& bytes, const Names& names, Shown& shown, Active& active) {
   size_t i = 0;
   while (i < bytes.size() && bytes[i] != 0) {
     const ArgType t = ArgType(bytes[i]);
@@ -66,7 +69,10 @@ void track(const std::vector<uint8_t>& bytes, const Names& names, Shown& shown) 
                                                uint16_t(d[at + 2] | d[at + 3] << 8), d[at + 4]};
     };
     switch (t) {
-    case ArgType::Switch: health(3); break;
+    case ArgType::Switch:
+      health(3);
+      active[ident_player(d[0])] = nick(d[0]);
+      break;
     case ArgType::Damage:
     case ArgType::Heal: health(1); break;
     case ArgType::Status: std::get<2>(shown[ident_player(d[0])][nick(d[0])]) = d[1]; break;
@@ -82,6 +88,7 @@ struct Battle {
   std::array<Names, 3> names;  // the raw log's, p1's, p2's
   std::array<std::unique_ptr<TextParser>, 3> parsers;
   std::array<Shown, 3> shown;
+  std::array<Active, 3> active;
 };
 
 } // namespace
@@ -112,7 +119,7 @@ int main(int argc, char** argv) {
     for (int c = 0; c < 3; c++) {
       try {
         const std::vector<uint8_t> bytes = b->parsers[c]->parse(text[c]);
-        track(bytes, b->names[c], b->shown[c]);
+        track(bytes, b->names[c], b->shown[c], b->active[c]);
       } catch (const ParseError& e) {
         broken = true;
         if (errors++ < 10) {
@@ -135,7 +142,10 @@ int main(int argc, char** argv) {
         std::string what;
         if (hp != want_hp) what = "hp";
         else if (hp && max != want_max) what = "max";
-        else if (hp && format::status(st) != t.status) what = "status";
+        else if (hp && format::status(st) != t.status &&
+                 !(format::status(st) == "tox" && t.status == "psn" && b->active[c][t.side] != t.nick)) {
+          what = "status";
+        }
         if (what.empty()) continue;
         const std::string key = std::string(c == 0 ? "raw " : c == 1 ? "p1 " : "p2 ") + what;
         mismatches[key]++;
