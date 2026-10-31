@@ -65,6 +65,9 @@ class TextParser {
     tables();
   }
 
+  // Whether lines tagged `tag` are read past (SKIP).
+  static bool skips(std::string_view tag) { return SKIP.contains(tag); }
+
   // When set, counts the lines read past (SKIP's) by tag.
   std::map<std::string, size_t, std::less<>>* skipped = nullptr;
 

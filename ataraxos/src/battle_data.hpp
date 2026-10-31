@@ -1,7 +1,10 @@
 // One battle as a Showdown server runs it: each player chooses on its own
 // (`choose`, Showdown's side.choose), and the update runs once both have a
-// choice. Gen 1 has no hidden-illegal choice (request_data.hpp), so every
-// choice libpkmn offers is accepted.
+// choice. The request and its choices are Showdown's (request_data.hpp's
+// `options`); each choice is played as libpkmn's `engine_choice`. Gen 1 has
+// no hidden-illegal choice, so every one is accepted.
+// Showdown's request shows a bind's turns, which `binds` tracks
+// (request_data.hpp).
 //
 // Each player reads its own view of the log (view.hpp, Showdown's stream
 // for that player): each update's bytes are rewritten per player and
@@ -36,9 +39,12 @@ struct BattleData {
   View view[2];
   pkmn_result result;
   RequestData request[2];
-  // libpkmn's choices for each player's request.
+  // Showdown's choices for each player's request, and libpkmn's.
+  std::array<pkmn_choice, MAX_CHOICES> option[2];
+  uint8_t n_option[2];
   std::array<pkmn_choice, MAX_CHOICES> legal[2];
   uint8_t n_legal[2];
+  Binds binds;
   pkmn_choice pending[2];
   bool chosen[2];
   // The server's: a request handed out and not yet answered.
@@ -80,6 +86,7 @@ struct BattleData {
       }
     }
     asked[0] = asked[1] = false;
+    binds = Binds{};
     advance(0, 0);
   }
 
@@ -88,11 +95,11 @@ struct BattleData {
   // Whether `p` has a request to answer: not Wait, and no choice held.
   bool needs_choice(uint8_t p) const { return !over() && !chosen[p] && request[p].kind != RequestData::Wait; }
 
-  // Showdown's side.choose: `c` must be one of legal[p].
+  // Showdown's side.choose: `c` must be one of option[p].
   Chosen choose(uint8_t p, pkmn_choice c) {
     assert(needs_choice(p));
-    if (track) bk[p].chose(c);
-    pending[p] = c;
+    if (track) bk[p].chose(bk[p].selected(request[p], c));
+    pending[p] = engine_choice(c, {legal[p].data(), n_legal[p]});
     chosen[p] = true;
     const uint8_t q = 1 - p;
     if (request[q].kind == RequestData::Wait) {
@@ -108,7 +115,9 @@ struct BattleData {
   void advance(pkmn_choice c1, pkmn_choice c2) {
     pkmn_gen1_log_options log{buffer.data(), buffer.size()};
     pkmn_gen1_battle_options_set(&options, &log, nullptr, nullptr);
+    const PKMN::Battle before = state();
     result = pkmn_gen1_battle_update(&battle, c1, c2, &options);
+    binds.update(before, state());
     assert(pkmn_result_type(result) != PKMN_RESULT_ERROR);
     size_t used = 0;
     while (buffer[used] != 0) used += 1 + message_size(ArgType(buffer[used]), &buffer[used + 1]);
@@ -130,13 +139,14 @@ struct BattleData {
       if (over()) {
         request[p] = RequestData{};
         request[p].kind = RequestData::Wait;
-        n_legal[p] = 0;
+        n_legal[p] = n_option[p] = 0;
         continue;
       }
       const pkmn_choice_kind kind = p == 0 ? pkmn_result_p1(result) : pkmn_result_p2(result);
       n_legal[p] = uint8_t(pkmn_gen1_battle_choices(&battle, p == 0 ? PKMN_PLAYER_P1 : PKMN_PLAYER_P2, kind,
                                                     legal[p].data(), legal[p].size()));
-      request[p] = request_data(state(), p, kind, {legal[p].data(), n_legal[p]});
+      request[p] = request_data(state(), p, kind, binds.of(state(), p));
+      n_option[p] = showdown_choices(request[p], option[p].data());
       if (track) bk[p].request(request[p]);
     }
     chosen[0] = chosen[1] = false;

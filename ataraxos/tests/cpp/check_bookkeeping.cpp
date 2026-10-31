@@ -157,6 +157,7 @@ int main(int argc, char** argv) {
     Bookkeeping bks[2] = {Bookkeeping(0, {6, 6}, PKMN::view(b).sides[0]),
                           Bookkeeping(1, {6, 6}, PKMN::view(b).sides[1])};
     View views[2] = {View{0}, View{1}};
+    Binds binds;
     std::array<uint8_t, LOG_SIZE> buf{};
     pkmn_gen1_battle_options options{};
     pkmn_choice c[2] = {0, 0};
@@ -169,7 +170,9 @@ int main(int argc, char** argv) {
       chance.durations = std::bit_cast<pkmn_gen1_chance_durations>(truth_d);
       pkmn_gen1_battle_options_set(&options, &log, &chance, nullptr);
       for (uint8_t p = 0; p < 2; p++) bks[p].chose(c[p]);
+      const PKMN::Battle before = PKMN::view(b);
       const pkmn_result r = pkmn_gen1_battle_update(&b, c[0], c[1], &options);
+      binds.update(before, PKMN::view(b));
       truth_d = std::bit_cast<PKMN::Durations>(*pkmn_gen1_battle_options_chance_durations(&options));
       updates++;
       {
@@ -212,7 +215,7 @@ int main(int argc, char** argv) {
         bks[p].update(split({v.data(), len}));
         if (!pkmn_result_type(r)) {
           const pkmn_choice_kind kind = p ? pkmn_result_p2(r) : pkmn_result_p1(r);
-          bks[p].request(request_data(PKMN::view(b), p, kind, {opts[p].data(), n[p]}));
+          bks[p].request(request_data(PKMN::view(b), p, kind, binds.of(PKMN::view(b), p)));
         }
         const auto [key, dkey] = keys(uint8_t(1 - p), bks[p].battle, psy_sub);
         std::string reason;

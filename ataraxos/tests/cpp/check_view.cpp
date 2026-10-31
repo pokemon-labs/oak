@@ -1,6 +1,7 @@
 // Checks the view, the tokens and the requests (src/view.hpp, tokens.hpp,
 // request_data.hpp) on random self-play: truly random teams (teams.hpp),
-// uniform choices over libpkmn's, every update through BattleData.
+// uniform choices over Showdown's (request_data.hpp's showdown_choices),
+// each played as its engine_choice.
 //
 // - each update's omniscient bytes walk to their null by message_size, and
 //   split's Obs give them back exactly;
@@ -9,11 +10,15 @@
 //   and the other side's slots; the other side's numbers go 1, 2, ... in
 //   order of first sight, each party slot keeping its number;
 // - tokenize gives one token per message, KIND nonzero, idents in range;
-// - every request with two or more choices has them all legal for its
-//   kind, and a locked request has exactly one move and no switch.
+// - Showdown's choices for each request (from request_data and Binds) and
+//   libpkmn's agree: the same switches, every move choice maps to a legal
+//   move, there's a move choice when libpkmn has one, and a one-entry
+//   request has one move choice (and no switch when trapped); a wait is a
+//   pass.
 //
 //   check_view [GAMES] [SEED]
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <random>
@@ -50,19 +55,22 @@ int health_at(ArgType t) {
 int main(int argc, char** argv) {
   const size_t games = argc > 1 ? std::strtoul(argv[1], nullptr, 10) : 2000;
   std::mt19937_64 rng(argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 1);
-  size_t updates = 0, messages = 0;
+  size_t updates = 0, messages = 0, fights = 0, semi = 0, hidden = 0;
   for (size_t g = 0; g < games; g++) {
     const Team t1 = random_team(rng), t2 = random_team(rng);
     pkmn_gen1_battle b = init_battle(rng(), t1, t2);
     std::array<uint8_t, LOG_SIZE> buf{};
     pkmn_gen1_battle_options options{};
     View views[2] = {View{0}, View{1}};
+    Binds binds;
     std::array<std::array<uint8_t, 7>, 2> seen_number{};
     pkmn_choice c1 = 0, c2 = 0;
     for (int turn = 0; turn < 1000; turn++) {
       pkmn_gen1_log_options log{buf.data(), buf.size()};
       pkmn_gen1_battle_options_set(&options, &log, nullptr, nullptr);
+      const PKMN::Battle before = PKMN::view(b);
       const pkmn_result r = pkmn_gen1_battle_update(&b, c1, c2, &options);
+      binds.update(before, PKMN::view(b));
       updates++;
       size_t used = 0;
       while (buf[used] != 0) {
@@ -141,27 +149,47 @@ int main(int argc, char** argv) {
         const pkmn_choice_kind kind = p ? pkmn_result_p2(r) : pkmn_result_p1(r);
         const size_t n = pkmn_gen1_battle_choices(&b, p ? PKMN_PLAYER_P2 : PKMN_PLAYER_P1, kind, opts.data(),
                                                   opts.size());
-        const RequestData q = request_data(PKMN::view(b), p, kind, {opts.data(), n});
+        const RequestData q = request_data(PKMN::view(b), p, kind, binds.of(PKMN::view(b), p));
+        std::array<pkmn_choice, MAX_CHOICES> shown{};
+        const uint8_t k = showdown_choices(q, shown.data());
+        const auto has = [](const pkmn_choice* xs, size_t m, pkmn_choice c) { return std::find(xs, xs + m, c) != xs + m; };
         uint8_t moves = 0, switches = 0;
-        for (size_t k = 0; k < n; k++) {
-          const uint8_t ty = choice_type(opts[k]), d = choice_data(opts[k]);
+        bool hit = false, any_move = false;
+        for (size_t i = 0; i < n; i++) {
+          any_move |= choice_type(opts[i]) == PKMN_CHOICE_MOVE;
+          if (choice_type(opts[i]) == PKMN_CHOICE_SWITCH && !has(shown.data(), k, opts[i])) fail("a legal switch not shown", g);
+        }
+        for (uint8_t i = 0; i < k; i++) {
+          const uint8_t ty = choice_type(shown[i]), d = choice_data(shown[i]);
           moves += ty == PKMN_CHOICE_MOVE;
           switches += ty == PKMN_CHOICE_SWITCH;
-          if (n >= 2) {
-            if (q.kind == RequestData::Move_ && ty == PKMN_CHOICE_PASS) fail("a pass in a move request", g);
-            if (q.kind == RequestData::Switch && ty != PKMN_CHOICE_SWITCH) fail("a non-switch in a switch request", g);
-            if (ty == PKMN_CHOICE_SWITCH && (d < 2 || d > q.size)) fail("a switch past the side", g);
-            if (ty == PKMN_CHOICE_MOVE && d > 4) fail("a move past slot 4", g);
+          if (ty == PKMN_CHOICE_SWITCH && !has(opts.data(), n, shown[i])) fail("a shown switch not legal", g);
+          if (ty == PKMN_CHOICE_SWITCH && (d < 2 || d > q.size)) fail("a switch past the side", g);
+          if (ty == PKMN_CHOICE_MOVE && (d < 1 || d > 4)) fail("a move outside slots 1-4", g);
+          if (ty == PKMN_CHOICE_MOVE) {
+            bool legal_move = false;
+            for (size_t j = 0; j < n; j++) legal_move |= choice_type(opts[j]) == PKMN_CHOICE_MOVE;
+            if (!legal_move) fail("a shown move with no legal move", g);
+            else hit = true;
           }
+          if (q.kind == RequestData::Move_ && ty == PKMN_CHOICE_PASS) fail("a pass in a move request", g);
+          if (q.kind == RequestData::Switch && ty == PKMN_CHOICE_MOVE) fail("a move in a switch request", g);
         }
-        if (q.active.locked && (moves != 1 || switches != 0)) fail("a locked request with other choices", g);
-        if (q.kind == RequestData::Wait && (n != 1 || opts[0] != 0)) fail("a wait that isn't a pass", g);
-        chosen[p] = opts[rng() % n];
+        if (any_move && !hit) fail("libpkmn has a move, Showdown shows none", g);
+        if (q.kind == RequestData::Move_ && q.active.locked && (moves != 1 || (q.active.trapped && switches)))
+          fail("a one-entry request with other choices", g);
+        if (q.kind == RequestData::Wait && (k != 1 || shown[0] != 0)) fail("a wait that isn't a pass", g);
+        if (q.active.locked && !q.active.trapped && q.active.moves[0].id == PKMN::Data::Move::None) fights++;
+        if (q.active.maybe_locked) hidden++;
+        if (q.active.locked && !q.active.trapped && q.active.moves[0].id != PKMN::Data::Move::None) semi++;
+        chosen[p] = engine_choice(shown[rng() % k], {opts.data(), n});
       }
       c1 = chosen[0];
       c2 = chosen[1];
     }
   }
-  std::printf("check_view: %zu games, %zu updates, %zu messages: %zu failures\n", games, updates, messages, failures);
+  std::printf("check_view: %zu games, %zu updates, %zu messages (%zu Fight, %zu one-entry locks with switches, "
+              "%zu maybeLocked requests): %zu failures\n",
+              games, updates, messages, fights, semi, hidden, failures);
   return failures != 0;
 }

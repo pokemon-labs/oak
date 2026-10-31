@@ -13,6 +13,9 @@
 //   ...lines...                 |split| triplets and all; 1, 2: that player's
 //   .                           stream), up to the "." line
 //   T SIDE NICK\tHP\tMAX\tSTATUS  the truth after that update
+//   R SIDE JSON                 a side's request after that update
+//   C SIDE CHOICE\tCHOICE...     the choices it could make (for check_client)
+//   X SIDE CHOICE               the one it made
 //   E RESULT                    the battle ended (or "cap" at 300 turns)
 'use strict';
 const path = require('path');
@@ -80,15 +83,22 @@ for (let g = 0; g < games; g++) {
     b.sides.forEach((side, s) => {
       for (const p of side.pokemon) emit(`T ${s} ${p.name}\t${p.hp}\t${p.maxhp}\t${p.fainted ? '' : p.status}`);
     });
+    if (!b.ended) b.sides.forEach((side, s) => side.activeRequest && emit(`R ${s} ${JSON.stringify(side.activeRequest)}`));
   };
   update();
   while (!b.ended && b.turn <= 300) {
-    for (const side of b.sides) {
+    b.sides.forEach((side, s) => {
+      const opts = choices(side);
+      if (!opts.length) return;
+      emit(`C ${s} ${[...opts].sort().join('\t')}`);
       // the first the simulator takes (a hidden trap refuses a switch)
-      for (const c of choices(side)) {
-        if (b.choose(side.id, c)) break;
+      for (const c of opts) {
+        if (b.choose(side.id, c)) {
+          emit(`X ${s} ${c}`);
+          break;
+        }
       }
-    }
+    });
     update();
   }
   emit(`E ${b.ended ? (b.winner || 'tie') : 'cap'}`);

@@ -381,8 +381,8 @@ class SelfPlay {
         again = false;
         for (uint8_t p = 0; p < 2; p++) {
           if (d.asked[p] || !d.needs_choice(p)) continue;
-          Decision x{uint32_t(b), games_[b], p, d.n_legal[p], {}};
-          std::copy_n(d.legal[p].begin(), x.n, x.options.begin());
+          Decision x{uint32_t(b), games_[b], p, d.n_option[p], {}};
+          std::copy_n(d.option[p].begin(), x.n, x.options.begin());
           assert(x.n >= 1);
           if (x.n == 1) {
             sh.forced++;

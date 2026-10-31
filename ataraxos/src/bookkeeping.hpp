@@ -143,6 +143,32 @@ struct Bookkeeping {
     }
   }
 
+  // Showdown's choice `option` of request `q` as the libpkmn choice we know
+  // we made, for `chose`; the env and the client both pass it, so the
+  // bookkeeping never reads a choice the player can't see. A one-entry
+  // request: a hard lock is a pass (nothing selected), Struggle move(0), a
+  // semi-lock its move's slot, Fight our first move with PP left and not
+  // disabled (libpkmn's first legal move, by our own PP). A move under
+  // `maybe_locked` while we know we bind is a pass: the bind goes on.
+  pkmn_choice selected(const RequestData& q, pkmn_choice option) const {
+    if (choice_type(option) != PKMN_CHOICE_MOVE || q.kind != RequestData::Move_) return option;
+    const PKMN::ActivePokemon& a = battle.sides[player].active;
+    const auto move = [](uint8_t slot) { return pkmn_choice(PKMN_CHOICE_MOVE | slot << 2); };
+    const RequestData::Active& r = q.active;
+    if (!r.locked) return r.maybe_locked && a.volatiles.binding() ? 0 : option;
+    if (r.trapped) return 0;
+    const PKMN::Data::Move id = r.moves[0].id;
+    if (id == bk::Move::Struggle) return move(0);
+    for (uint8_t i = 0; i < 4; i++) {
+      if (id != bk::Move::None ? a.moves[i].id == id
+                               : a.moves[i].id != bk::Move::None && a.moves[i].pp &&
+                                     !(a.volatiles.disable_left() && a.volatiles.disable_move() == i + 1)) {
+        return move(i + 1);
+      }
+    }
+    return 0;
+  }
+
   // Our own active's moves and PP as the request shows them (a Transform's,
   // a Mimic's), after the update.
   void request(const RequestData& q) {
