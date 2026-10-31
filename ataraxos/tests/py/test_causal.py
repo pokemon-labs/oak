@@ -3,8 +3,10 @@ the env's bookkeeping state, in float32:
 
     ~/oak/.venv/bin/python tests/py/test_causal.py [--device cuda] [--games N] [TEAM_FILE ...]
 
-- the state (src/state_tokens.hpp): the foe's active is its slot 1, ours
-  is the request's, boosts within -6..6, nothing seen that doesn't exist;
+- the state (src/state_tokens.hpp): each active is its side's active
+  Pokémon (ours the request's) unless transformed, boosts within -6..6,
+  nothing seen that doesn't exist, an unseen Pokémon and an empty move
+  slot all zeros, our team all seen;
 - the learner, on the stored trajectories, gives every decision the
   log-probs and W/D/L values the actor gave it (the key/value ring past its
   window, game resets, the buffer's state column and its compaction across
@@ -36,7 +38,6 @@ from ataraxos.nets.policy import CHOICES, SIZES  # noqa: E402
 from ataraxos.rl import train  # noqa: E402
 
 TEAMS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "teams", "selfplay", "oak1500.txt")
-# the env's state (the Gen 1 bookkeeping) is phase 2: off until written
 STATE = SIZES["cs"].state
 
 
@@ -45,19 +46,34 @@ def check_state(teams, seed):
     env = ataraxos_env.SelfPlay(64, seed, teams=teams, max_turns=200, state=STATE)
     obs = env.reset()
     rng = np.random.default_rng(seed)
-    F, A, M = cn.FIELD_FIELDS, cn.ACTIVE_FIELDS, cn.MON_FIELDS
+    A, M = cn.ACTIVE_FIELDS, cn.MON_FIELDS
+    transformed = 1 << 15  # the last active flag
     rows = 0
     for _ in range(300):
         s = obs["state"]
         assert s.shape == (len(obs["n"]), cn.STATE_FIELDS)
-        foe, slot1 = s[:, F + A], s[:, F + 2 * A + 2]
-        assert ((foe == slot1) | (foe == 0)).all()
-        ours, req = s[:, F], obs["request"][:, 7 + 16]  # the request's side slot 0 species
+        act = s[:, 1:1 + 2 * A].reshape(-1, 2, A)
+        mons = s[:, 1 + 2 * A:].reshape(-1, 2, 6, M)
+        exists, seen, active = mons[..., 0], mons[..., 1], mons[..., 2]
+        assert (seen <= exists).all() and (active <= seen).all() and (active.sum(-1) <= 1).all()
+        # an unseen Pokémon is all zeros past its flags; an empty slot has no PP
+        assert (mons[..., 3:][seen == 0] == 0).all()
+        assert (mons[..., 13:17][mons[..., 9:13] == 0] == 0).all()
+        assert (act[..., 17:21][act[..., 13:17] == 0] == 0).all()
+        # our side is the request's team, all seen
+        assert (seen[:, 0] == exists[:, 0]).all()
+        # each active is its side's active Pokémon, unless transformed
+        for side in range(2):
+            species = act[:, side, 0]
+            mon = (mons[:, side, :, 3] * active[:, side]).sum(-1)
+            ok = (species == mon) | (species == 0) | ((act[:, side, -1].astype(np.uint16) & transformed) > 0)
+            assert ok.all(), side
+        req = obs["request"][:, 7 + 16]  # the request's side slot 0 species: our active
+        ours = (mons[:, 0, :, 3] * active[:, 0]).sum(-1)
         assert ((ours == req) | (ours == 0)).all()
-        boosts = np.concatenate([s[:, F + 3:F + 10], s[:, F + A + 3:F + A + 10]], 1)
+        boosts = act[..., 3:9]
         assert ((boosts >= -6) & (boosts <= 6)).all()
-        mons = s[:, F + 2 * A:].reshape(-1, 6, M)
-        assert (mons[..., 1] <= mons[..., 0]).all()
+        assert (s[:, 0] >= 0).all() and (s[:, 0] <= 1000).all()
         rows += len(s)
         obs = env.step((rng.random(len(obs["n"])) * obs["n"]).astype(np.uint8))
     plain = ataraxos_env.SelfPlay(4, seed, teams=teams)
