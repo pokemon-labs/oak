@@ -713,7 +713,7 @@ struct Bookkeeping {
     const D::Effect effect = bk::data(m).effect;
     const bool on_begin = uint8_t(effect) > 0 && uint8_t(effect) <= uint8_t(D::Effect::Transform);
     if (m == bk::Move::Roar || m == bk::Move::Whirlwind) battle.last_damage = 0;
-    if (!still && !on_begin && m != bk::Move::Counter) battle.last_damage = 0;
+    if (!still && !on_begin && m != bk::Move::Counter && !rebind) battle.last_damage = 0;
   }
 
   // Adds `m` to the first empty slot unless it's there (oak's
