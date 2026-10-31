@@ -549,6 +549,8 @@ struct Bookkeeping {
     const bool from = o.u8(3) != 0;
     // A move Metronome or Mirror Move calls is the same action as the call.
     if (!from) before_move(s);
+    // Moving shows it wasn't recharging (a flinch can clear it unseen).
+    v.set_recharging(false);
     store_stats();
     const bk::Move from_move = from ? bk::Move(o.u8(4)) : bk::Move::None;
     const bool missed = amended(ArgType::LastMiss);
