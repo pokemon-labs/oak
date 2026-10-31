@@ -174,7 +174,10 @@ client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
   net, a schedule of 3 games, chat redacted, botctl state / games /
   propose / choose: 3 games each, both quit, no client failure or unknown
   tag. Not done: anything on the real server (outward-facing: ask first).
-- Then: a training run on the Showdown-shaped env (none yet), the real
-  ladder when the user says.
+- Training: `runs/rby1` on the box (started 2026-10-31, `box/run_rby1.sh`):
+  cs2b's flags (cs2, 8.35M params, 8192 battles) on oak1500, evals vs
+  random and maxdamage every 25 iterations (512 battles), synced to
+  `opencover/ataraxos-runs`. ~48 s an iteration, ~10 GB GPU. The user
+  stopped birch's cs2b for it. Then: the real ladder when the user says.
 
 `box/hf_sync.sh` targets `opencover/ataraxos-runs` (the user's OK).
