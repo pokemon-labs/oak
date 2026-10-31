@@ -66,31 +66,37 @@ was built there with `/opt/zig-0.16` (zig master is too new) into
 Phase 1 (env, view, tokens, request, teams, binding, the Python package,
 box scripts): every test passes on the box.
 
-Phase 2 (bookkeeping, state tokens): `src/bookkeeping.hpp` written;
-`build/check_bookkeeping 2000 1` is at 16 of 2000 games mismatched (from
-1756; seeds 2-4: 17, 21, 21). `check_bookkeeping GAMES SEED - REASON`
-prints the mismatches whose reason contains REASON with the log and both
-battles. Left: PP / moveset ("X: pp not found in true moveset", most of
-them), Mimic's PP (on hold, the user's call), a few last_damage within a
-percent or two (the other side's HP is the middle of its percent). Most
-non-Mimic PP / moveset mismatches are one thing: in Showdown mode a
-binding side's selected move is logged and becomes last_used_move but
-the bind just continues (no PP, the same damage; libpkmn `mechanics.zig`
-154-162, 723), and the bind's end is silent, so a continuation and a real
-move after the end look alike. `a30cadb` ("a different move ends a bind")
-treats every new move as a new bind: right for last_used_move, wrong for
-PP. Not fixed; the user wants to move on. The
-substitute's HP is an upper bound (compare_battles fails one below the
-truth whatever the key): Psywave into it counts 1, and the key skips the
-sub's HP once a Psywave hit it (the user's call). Tried and reverted: a bind's later turns
-keeping last_damage (libpkmn reuses it, capped by a KO) made every seed
-worse; the reason is unknown. The key also skips the foe's recharging
-after a flinch move hit it (the user's call: a flinch clears the recharge
-with no message). Fixes found so far are in the git log of
-`src/bookkeeping.hpp` (each commit names the rule). After the bookkeeping
-passes: write `src/state_tokens.hpp` and the net's `embed_state` for the
-approved layout, turn `state` back on (`CausalConfig.state`), rerun
-`tests/py/test_causal.py`.
+Phase 2 (bookkeeping, state tokens):
+
+- Bookkeeping (`src/bookkeeping.hpp`) is done for now (the user: move on).
+  `build/check_bookkeeping 2000 SEED` mismatches 16, 17, 21, 21 of 2000
+  games on seeds 1-4 (from 1756). `check_bookkeeping GAMES SEED - REASON`
+  prints the mismatches whose reason contains REASON with the log and both
+  battles. Each fix's commit names the rule (`git log src/bookkeeping.hpp`).
+- Test key additions (the user's calls): the foe's recharging is skipped
+  after a flinch move hit it (a flinch clears the recharge, no message); a
+  substitute's HP is skipped once a Psywave hit it (damage never shown).
+  The substitute's HP must stay an upper bound: compare_battles fails one
+  below the truth whatever the key, so Psywave into a sub counts 1 (as
+  safari). Our own recharging comes from the request's `recharge`.
+- Left open: (1) binding selections, most of the non-Mimic PP / moveset
+  mismatches: in Showdown mode a binding side's selected move is logged
+  and becomes last_used_move but the bind just continues (no PP, the same
+  damage; libpkmn `mechanics.zig` 154-162, 723), and the bind's end is
+  silent, so a continuation and a real move after it look alike. `a30cadb`
+  ("a different move ends a bind") treats a new move as a new bind: right
+  for last_used_move, wrong for PP. (2) Mimic's PP, on hold (the user's
+  call). (3) a few last_damage off 20-40% (the other side's HP is the
+  middle of its percent; big-HP Pokémon). (4) one thrashing, one
+  counterable. Tried and reverted: a bind's later turns keeping
+  last_damage (libpkmn reuses it, capped by a KO) made every seed worse.
+- **Next**: `src/state_tokens.hpp` and the net's `embed_state` for the
+  approved layout (Decisions), turn `state` back on (`CausalConfig.state`),
+  rerun `tests/py/test_causal.py` on the box. Two questions were put to the
+  user and not yet answered, ask again before writing the columns: the
+  foe's unseen Pokémon as "unseen" tokens (species None) so each side has
+  6 (Claude's recommendation), and the foe's PP known only for revealed
+  moves, unrevealed moves None with PP 0 (Claude's recommendation).
 
 Phase 3: Showdown text to the binary log (birch's `text_parser.hpp`), the
 client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
