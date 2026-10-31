@@ -67,14 +67,15 @@ Phase 1 (env, view, tokens, request, teams, binding, the Python package,
 box scripts): every test passes on the box.
 
 Phase 2 (bookkeeping, state tokens): `src/bookkeeping.hpp` written;
-`build/check_bookkeeping 2000 1` is at 19 of 2000 games mismatched (from
-1756; seeds 2-4: 17, 19, 21). `check_bookkeeping GAMES SEED - REASON`
+`build/check_bookkeeping 2000 1` is at 16 of 2000 games mismatched (from
+1756; seeds 2-4: 17, 21, 21). `check_bookkeeping GAMES SEED - REASON`
 prints the mismatches whose reason contains REASON with the log and both
 battles. Left: PP / moveset ("X: pp not found in true moveset", most of
-them), Mimic's PP (on hold, the user's call), substitute HP after a
-Psywave (its damage to a sub is never shown; safari estimates 1 too:
-open), a few last_damage within a percent or two (the other side's HP is
-the middle of its percent). Tried and reverted: a bind's later turns
+them), Mimic's PP (on hold, the user's call), a few last_damage within a
+percent or two (the other side's HP is the middle of its percent). The
+substitute's HP is an upper bound (compare_battles fails one below the
+truth whatever the key): Psywave into it counts 1, and the key skips the
+sub's HP once a Psywave hit it (the user's call). Tried and reverted: a bind's later turns
 keeping last_damage (libpkmn reuses it, capped by a KO) made every seed
 worse; the reason is unknown. The key also skips the foe's recharging
 after a flinch move hit it (the user's call: a flinch clears the recharge
