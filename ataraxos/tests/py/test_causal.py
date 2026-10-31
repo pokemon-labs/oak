@@ -126,7 +126,7 @@ def check_learner(cfg, teams, games, seed):
     for take in range(2):  # the second take reads trajectories compacted across the first
         obs = play(actor, env, games, buffer, obs)
         data = buffer.take()
-        assert data.state is not None and data.state.shape == (len(data.n), cn.STATE_FIELDS)
+        assert (data.state is not None and data.state.shape == (len(data.n), cn.STATE_FIELDS)) if STATE else data.state is None
         assert data.value.shape == (len(data.n), 3)
         assert data.length.max() > learner.net.c.window  # the ring wraps
         keep = np.ones(len(data.n), bool)
