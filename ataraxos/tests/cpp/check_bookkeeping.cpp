@@ -4,7 +4,8 @@
 // the truth by oak's compare_battles (cpp/include/libpkmn/client.h) under
 // safari's key: the substitute's HP within 20, Bide's damage within 50,
 // binding not compared, the other side's HP within 15, its last selected
-// move not compared, the last damage within 15.
+// move and the slot it selected not compared (a full paralysis or a sleep
+// leaves the choice out of the log), the last damage within 15.
 //
 // Teams: 6 distinct species a side, level 100, 4 random moves each (the
 // species distinct so the bench matches by species); a banned move is left
@@ -90,6 +91,7 @@ std::pair<PKMN::Battle, PKMN::Durations> keys(uint8_t foe) {
   }
   b.sides[foe].pokemon[0].hp = 15;
   b.sides[foe].last_selected_move = PKMN::Data::Move(1);
+  b.last_moves[foe].index = 1;
   b.last_damage = 15;
   return {b, d};
 }
