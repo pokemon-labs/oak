@@ -557,7 +557,12 @@ struct Bookkeeping {
     const bool charging = bk::charging_move(m) || bk::invulnerable_move(m);
     const bool thrashing = bk::thrashing_move(m);
     // A binding move's later turns show the move that started it: the
-    // binding move, or the Metronome or Mirror Move that called it.
+    // binding move, or the Metronome or Mirror Move that called it. Any
+    // other move means the bind ran out (silently) before this one.
+    if (v.binding() && m != bind_shown[s]) {
+      v.set_binding(false);
+      d.set_binding(0);
+    }
     const bool binding = bk::binding_move(m) || (v.binding() && m == bind_shown[s]);
     if (binding) {
       od.active.volatiles.set_recharging(false);
