@@ -517,8 +517,7 @@ struct Bookkeeping {
       }
     }
     const bool counts = (reason == bk::DmgNone || confusion) && !from_sub;
-    // (a KO caps it at the HP that was left, which the HP shows)
-    const bool again = rebind && hp > 0 && prev() && prev()->type == ArgType::Move;
+    const bool again = rebind && prev() && prev()->type == ArgType::Move;
     if (is_damage && counts && !bind_into_ghost && !again) {
       if (confusion && hp == 0) {
         const uint16_t def = od.active.stats.def;
@@ -714,7 +713,7 @@ struct Bookkeeping {
     const D::Effect effect = bk::data(m).effect;
     const bool on_begin = uint8_t(effect) > 0 && uint8_t(effect) <= uint8_t(D::Effect::Transform);
     if (m == bk::Move::Roar || m == bk::Move::Whirlwind) battle.last_damage = 0;
-    if (!still && !on_begin && m != bk::Move::Counter && !rebind) battle.last_damage = 0;
+    if (!still && !on_begin && m != bk::Move::Counter) battle.last_damage = 0;
   }
 
   // Adds `m` to the first empty slot unless it's there (oak's
