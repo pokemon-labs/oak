@@ -50,10 +50,16 @@ was built there with `/opt/zig-0.16` (zig master is too new) into
   re-request path is gone. `maybe_locked` isn't filled yet.
 - Nets: only the causal net's infrastructure; MoveNet and HistoryNet merged
   away into `ataraxos/nets/policy.py`.
-- State tokens (approved, not written yet): the turn uncapped to 1000 (int16;
-  libpkmn's turn is 16-bit), no field token; two actives (species, types,
-  boosts, stats, moves, disabled move, the duration counters, the volatile
-  flags); both sides' 6 Pokémon with PP (the request has no bench PP).
+- State tokens (`src/state_tokens.hpp`, 265 int16s, 14 tokens): the turn
+  clamped to 1000 (int16; libpkmn's turn is 16-bit), no field token; two
+  actives (species, types, boosts, stats, moves with PP, disabled move,
+  the Durations, sub HP, toxic counter, Bide's damage, 16 volatile flags;
+  libpkmn's hidden counters left out); both sides' 6 Pokémon with PP (the
+  request has no bench PP), ours by party position, the foe's by first
+  appearance, each with an active flag. The foe's unseen Pokémon are
+  "unseen" rows (species 0, all zeros), so each side has 6; the foe's
+  unrevealed moves are 0 with PP 0 (both Claude's recommendations, the
+  user's OK). The turn rides on both active tokens.
 - Bookkeeping = safari's `PSBattle` + `Mechanics` (`~/safari/src/battle.py`,
   `mechanics.py`, text-based Python) ported to the binary log, including
   Gen 1's stat modification glitch. Tested like safari's `tests/client.py`
@@ -90,13 +96,11 @@ Phase 2 (bookkeeping, state tokens):
   middle of its percent; big-HP Pokémon). (4) one thrashing, one
   counterable. Tried and reverted: a bind's later turns keeping
   last_damage (libpkmn reuses it, capped by a KO) made every seed worse.
-- **Next**: `src/state_tokens.hpp` and the net's `embed_state` for the
-  approved layout (Decisions), turn `state` back on (`CausalConfig.state`),
-  rerun `tests/py/test_causal.py` on the box. Two questions were put to the
-  user and not yet answered, ask again before writing the columns: the
-  foe's unseen Pokémon as "unseen" tokens (species None) so each side has
-  6 (Claude's recommendation), and the foe's PP known only for revealed
-  moves, unrevealed moves None with PP 0 (Claude's recommendation).
+- State tokens and `embed_state` are done (`a5e2a04`), `CausalConfig.state`
+  is on by default; `tests/py/test_causal.py` passes on the box on CPU
+  (`check_state`'s invariants rewritten for the layout), the cs net is
+  4.40M params. Not run: test_causal's CUDA graphed-actor check (the GPU
+  is the user's birch run).
 
 Phase 3: Showdown text to the binary log (birch's `text_parser.hpp`), the
 client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
