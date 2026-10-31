@@ -583,13 +583,15 @@ struct Bookkeeping {
     if ((rage || deduct || v.thrashing()) && !(charging && !v.charging())) {
       sd.last_used_move = m;
       sd.last_selected_move = m;
-      if (s != player) {
-        battle.last_moves[s].index = 1;
-        for (uint8_t j = 0; j < 4; j++) {
-          if (sd.active.moves[j].id == m) {
-            battle.last_moves[s].index = uint8_t(j + 1);
-            break;
-          }
+    }
+    // The other side's selected slot: the move it chose, not one Metronome
+    // or Mirror Move called (ours comes from our choice, `chose`).
+    if (s != player && !from) {
+      battle.last_moves[s].index = 1;
+      for (uint8_t j = 0; j < 4; j++) {
+        if (sd.active.moves[j].id == m) {
+          battle.last_moves[s].index = uint8_t(j + 1);
+          break;
         }
       }
     }
