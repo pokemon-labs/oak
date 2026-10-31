@@ -426,7 +426,8 @@ int showdown(const char* path) {
         std::string w, g;
         for (const std::string& x : want) w += " [" + x + "]";
         for (const std::string& x : got) g += " [" + x + "]";
-        fail(s, "choices", "Showdown's" + w + "\n  the client's" + g);
+        fail(s, "choices", "Showdown's" + w + "\n  the client's" + g + " (request kind " +
+                               std::to_string(int(c.req.kind)) + ", rqid " + std::to_string(c.rqid) + ")");
       }
     } else if (line.starts_with("X ")) {
       const int s = line[2] - '0';
