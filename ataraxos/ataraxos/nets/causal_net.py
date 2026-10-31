@@ -12,9 +12,9 @@ the user's idea).
      one new position (ataraxos/nets/causal_actor.py); the learner runs one pass per
      trajectory.
   3. Decision block: `depth` layers over [value, the history's output, the
-     11 request tokens, and with `state` the 9 bookkeeping tokens
-     (src/state_tokens.hpp: the field, the two actives, the foe's 6
-     Pokémon)], then the Policy's heads.
+     11 request tokens, and with `state` the 14 bookkeeping tokens
+     (src/state_tokens.hpp: the two actives, both sides' 6 Pokémon)],
+     then the Policy's heads.
   4. Value: W/D/L logits, (loss, draw, win) (the user's, 2026-10-27: draws
      happen in stall against stall), by cross-entropy against TD(lambda)
      returns over the distribution (ataraxos/rl/buffer.py).
@@ -34,9 +34,13 @@ import torch.nn.functional as F
 from ataraxos.nets.policy import (ACTIVE_MOVES, CHOICES, REQUEST_TOKENS, SIZES, SLOTS, Policy,  # noqa: E402
                                   PolicyConfig, buckets, targets)
 
-# src/state_tokens.hpp's layout: written with the Gen 1 bookkeeping (phase
-# 2); until then the env has no state and `state` is off.
-STATE_FIELDS = 1
+# src/state_tokens.hpp's layout
+ACTIVE_FLAGS = 16
+ACTIVE_FIELDS = 1 + 2 + 6 + 4 + 8 + 1 + 4 + 3 + 1
+MON_FIELDS = 3 + 5 + 1 + 8
+STATE_FIELDS = 1 + 2 * ACTIVE_FIELDS + 12 * MON_FIELDS
+STATE_TOKENS = 2 + 12
+TYPES = 16  # Gen 1's 15, + 1 (0 none)
 
 # lines per update are padded up to one of these (the learner's shapes stay
 # few, so the compiled graphs don't multiply)
@@ -56,7 +60,7 @@ class CausalConfig(PolicyConfig):
     causal_depth: int = 2
     window: int = 32        # a decision attends to itself and the 31 before
     max_pos: int = 256      # decision index in the game, clamped
-    state: bool = False     # the bookkeeping tokens: Gen 1's are phase 2
+    state: bool = True
 
 
 class CausalLayer(nn.Module):
@@ -107,7 +111,12 @@ class CausalPolicy(Policy):
         self.out_norm = nn.LayerNorm(d)
         self.h_type = nn.Parameter(torch.randn(d) * c.pos_std)
         if c.state:
-            raise NotImplementedError("the Gen 1 state tokens are phase 2")
+            self.type_emb = nn.Embedding(TYPES, d)
+            self.active_scalars = nn.Linear(6 + 4 + 4 + 3 + ACTIVE_FLAGS + 1, d)
+            self.disabled_move = nn.Linear(d, d, bias=False)
+            self.move_pp = nn.Sequential(nn.Linear(d + 1, d), nn.GELU())  # a move with its PP
+            self.mon_state = nn.Linear(8, d)
+            self.state_type = nn.Parameter(torch.randn(STATE_TOKENS, d) * c.pos_std)
 
     def run_core(self, x):
         """x [G, T, d] a trajectory's summaries per row (right-padded) ->
@@ -120,6 +129,33 @@ class CausalPolicy(Policy):
             x = layer(x, allowed)
         return self.out_norm(x)
 
+    def moveset(self, ids, pp):
+        """ids, pp [..., 4] -> [..., d]: the moves with their PP, as a set
+        (an empty slot adds nothing)."""
+        x = self.move_pp(torch.cat([self.move(ids), pp[..., None].float() / 64], -1))
+        return (x * (ids > 0)[..., None]).sum(-2)
+
+    def embed_state(self, s):
+        """s [B, STATE_FIELDS] int -> [B, STATE_TOKENS, d]."""
+        s = s.long()
+        B = s.shape[0]
+        turn = s[:, :1].float() / 100
+        a = s[:, 1:1 + 2 * ACTIVE_FIELDS].view(B, 2, ACTIVE_FIELDS)
+        bits = ((a[..., -1:] >> torch.arange(ACTIVE_FLAGS, device=s.device)) & 1).float()
+        scalars = torch.cat([a[..., 3:9].float() / 6, a[..., 9:13].float() / 512, a[..., 22:26].float() / 7,
+                             a[..., 26:27].float() / 256, a[..., 27:28].float() / 16, a[..., 28:29].float() / 512,
+                             bits, turn[:, None].expand(B, 2, 1)], -1)
+        act = (self.species(a[..., 0]) + self.type_emb(a[..., 1].clamp(0, TYPES - 1))
+               + self.type_emb(a[..., 2].clamp(0, TYPES - 1)) + self.moveset(a[..., 13:17], a[..., 17:21])
+               + self.disabled_move(self.move(a[..., 21])) + self.active_scalars(scalars))
+        m = s[:, 1 + 2 * ACTIVE_FIELDS:].view(B, 12, MON_FIELDS)
+        hp, max_hp = m[..., 5].float(), m[..., 6].float()
+        mons = (self.species(m[..., 3]) + self.status(m[..., 7] & 0xFF) + self.moveset(m[..., 9:13], m[..., 13:17])
+                + self.mon_state(torch.stack([m[..., 0].float(), m[..., 1].float(), m[..., 2].float(),
+                                              m[..., 4].float() / 100, hp / max_hp.clamp(min=1),
+                                              (max_hp > 0).float(), max_hp / 512, m[..., 8].float() / 7], -1)))
+        return torch.cat([act, mons], 1) + self.state_type
+
     def decide(self, h, request, choices, n, state=None):
         """h [B, d] the history's output at this decision. Returns (logits
         [B, CHOICES], -inf past n; value logits [B, 3])."""
@@ -127,6 +163,8 @@ class CausalPolicy(Policy):
         dev = h.device
         parts = [self.value_token.expand(B, 1, -1), (h.to(self.value_token.dtype) + self.h_type)[:, None],
                  self.embed_request(request)]
+        if self.c.state:
+            parts.append(self.embed_state(state))
         x = self.norm(self.history_encoder(torch.cat(parts, 1)))
         value = self.value_head(x[:, 0])
         req = x[:, 2:2 + REQUEST_TOKENS]
