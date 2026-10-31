@@ -8,6 +8,8 @@
 // leaves the choice out of the log), the last damage within 15. Also the
 // other side's recharging after a move that can flinch hit it: a flinch
 // clears the recharge, and moving second it leaves nothing in the log.
+// And a substitute's HP once a Psywave hit it, until it goes: Psywave's
+// damage to it is never shown.
 //
 // Teams: 6 distinct species a side, level 100, 4 random moves each (the
 // species distinct so the bench matches by species); a banned move is left
@@ -88,12 +90,12 @@ bool flinch_move(PKMN::Data::Move m) {
 
 // safari's get_match_keys, the other side being `foe`, `own` the
 // bookkeeping it checks.
-std::pair<PKMN::Battle, PKMN::Durations> keys(uint8_t foe, const PKMN::Battle& own) {
+std::pair<PKMN::Battle, PKMN::Durations> keys(uint8_t foe, const PKMN::Battle& own, const bool psy_sub[2]) {
   PKMN::Battle b{};
   PKMN::Durations d{};
   for (uint8_t i = 0; i < 2; i++) {
     PKMN::Volatiles& v = b.sides[i].active.volatiles;
-    bk::set_substitute_hp(v, 20);
+    bk::set_substitute_hp(v, psy_sub[i] ? 255 : 20);
     v.set_state(50);
     v.set_binding(true);
     d.get(i).set_binding(1);
@@ -159,6 +161,7 @@ int main(int argc, char** argv) {
     pkmn_gen1_battle_options options{};
     pkmn_choice c[2] = {0, 0};
     std::vector<std::string> text;
+    bool psy_sub[2] = {false, false};
     bool bad = false;
     for (int turn = 0; turn < 1000 && !bad; turn++) {
       pkmn_gen1_log_options log{buf.data(), buf.size()};
@@ -175,7 +178,25 @@ int main(int argc, char** argv) {
         parser.parse();
         text.push_back("-- " + PKMN::side_choice_string(PKMN::view(b).sides[0], c[0]) + " / " +
                        PKMN::side_choice_string(PKMN::view(b).sides[1], c[1]));
-        for (const std::string& l : parser.log) text.push_back(l);
+        for (size_t j = 0; j < parser.log.size(); j++) {
+          const std::string& l = parser.log[j];
+          text.push_back(l);
+          // `|kind|pNa: ...`: N is the side
+          const auto side_of = [](const std::string& line) {
+            const size_t k = line.find("|p", 1);
+            return k == std::string::npos ? -1 : line[k + 2] - '1';
+          };
+          const int k = side_of(l);
+          if (k < 0 || k > 1) continue;
+          const bool sub = l.find("|Substitute") != std::string::npos;
+          if ((sub && (l.starts_with("|-start|") || l.starts_with("|-end|"))) || l.starts_with("|switch|") ||
+              l.starts_with("|faint|")) {
+            psy_sub[k] = false;
+          } else if (sub && l.starts_with("|-activate|") && j > 0 &&
+                     parser.log[j - 1].find("|Psywave|") != std::string::npos) {
+            psy_sub[k] = true;
+          }
+        }
       }
       size_t used = 0;
       while (buf[used] != 0) used += 1 + message_size(ArgType(buf[used]), &buf[used + 1]);
@@ -193,7 +214,7 @@ int main(int argc, char** argv) {
           const pkmn_choice_kind kind = p ? pkmn_result_p2(r) : pkmn_result_p1(r);
           bks[p].request(request_data(PKMN::view(b), p, kind, {opts[p].data(), n[p]}));
         }
-        const auto [key, dkey] = keys(uint8_t(1 - p), bks[p].battle);
+        const auto [key, dkey] = keys(uint8_t(1 - p), bks[p].battle, psy_sub);
         std::string reason;
         if (!PKMN::Client::compare_battles(bks[p].battle, bks[p].durations, PKMN::view(b), truth_d, key, dkey, reason)) {
           bad = true;
