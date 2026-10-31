@@ -119,12 +119,21 @@ client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
   foe by first switch-in, so the ladder needs only our nicknames), and
   `check_text_parser`: 0 mismatches on 20000 games (seed 2); `forms` lists
   the text forms covered.
-- Blocked: installing Node and Showdown on the box (into `~/oak-ataraxos/node`
-  and `~/oak-ataraxos/pokemon-showdown`, git-excluded) was denied by the
-  permission check (downloading and running external code); waiting on the
-  user. The real-sim check (`check_showdown`, not written) plays Gen 1 OU
-  with our teams in Showdown's simulator, parses both player streams
-  (no ParseError) and runs the bookkeeping on the parsed bytes.
+- Real Showdown text (`check_showdown`): Node 22.11 and Showdown (5b01be8)
+  are on the box in `~/oak-ataraxos/node` and `pokemon-showdown`
+  (git-excluded; the user installed them). `tests/showdown/play.cjs` plays
+  Gen 1 OU in Showdown's simulator (our teams, "No Ability" as the
+  validator would set, uniform choices) and dumps every stream with the
+  simulator's HP and status; `check_showdown DUMP` parses the raw log and
+  both player streams and compares what they show with the truth: 0 parse
+  errors and 0 mismatches on 5000 battles (seed 2). Found and fixed:
+  Showdown writes no [of] on Recoil (the parser takes the other active, as
+  libpkmn does). Run: `../node/bin/node tests/showdown/play.cjs 1000 1
+  teams/selfplay/oak1500.txt > dump.txt && build/check_showdown dump.txt`.
+- Open (for the user): Showdown's Sleep Clause and Freeze Clause, which
+  libpkmn doesn't have. On Showdown a blocked sleep move is the move line,
+  a -message and a -hint (read past), so the parsed bytes show a move that
+  did nothing; self-play training has no clause at all.
 - Then: `client.hpp`, `check_client`, the ladder driver.
 
 `box/hf_sync.sh` targets `opencover/ataraxos-runs` (the user's OK).
