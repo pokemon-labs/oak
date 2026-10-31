@@ -153,16 +153,18 @@ client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
   the one made): all 188k real requests of 1000 battles parse and give
   Showdown's choices exactly. Request shapes per move request, env vs
   Showdown on oak1500: Fight 11.5/11.0%, hard lock 1.10/1.00%, semi-lock
-  0.22/0.25%, maybeLocked 0.050/0.087% (open: every Showdown maybeLocked
-  is a bind and the cases traced match the rule, the rate gap isn't
-  found), Struggle 0.15/0.03% (the env's games run longer: no clauses).
+  0.22/0.25%, maybeLocked 89/106 per 1000 games (noise at ~100 counts,
+  the user's call; every Showdown maybeLocked is a bind and the cases
+  traced match the rule), Struggle 0.15/0.03% (the env's games run
+  longer: no clauses).
 - `check_view` checks Showdown's choices against libpkmn's (same
   switches, every move maps to a legal move).
 - `check_bookkeeping` now chooses as training does (Showdown's choices,
   `selected`): 76, 65, 66, 80 of 2000 on seeds 1-4 (16-21 with libpkmn's
-  choices, which showed whether a bind goes on). Most of what's left is a
-  pick on a hidden bind turn that the log never shows (`last_moves.index`
-  after a bind, `last_selected_move`): hidden state, left for the user.
+  choices, which leaked whether a bind goes on: the new numbers are the
+  baseline, the user's call). Most of what's left is a pick on a hidden
+  bind turn that the log never shows (`last_moves.index` after a bind,
+  `last_selected_move`): hidden state.
 - The ladder driver (`ataraxos/play/showdown.py`, `botctl.py`, birch's
   with gen1ou, `Client.choose` for the choice sent, `--server local`
   with `--name`), the binding `ataraxos/_ext/ataraxos_client.cpp`, the pool
