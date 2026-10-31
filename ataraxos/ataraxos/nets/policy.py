@@ -17,14 +17,16 @@ infrastructure).
   3. each player reads their own view of the log (src/view.hpp), as at test
      time.
 
-A decision's choices are libpkmn choice bytes (type in bits 0-1, data
-above), up to 9, in the env's order. The logit of choice c is q . k_c /
+A decision's choices are Showdown's, as libpkmn choice bytes (type in bits
+0-1, data above), up to 9, in the env's order (src/request_data.hpp's
+showdown_choices: switch(s) for "switch s", move(i) for "move i", a
+one-entry request's lock, Fight or Struggle being move(1)). The logit of choice c is q . k_c /
 sqrt(d):
   - q from the active Pokémon's request token (side slot 1, listed first);
   - k_c = key(E[c's byte] + target), E a learned embedding per choice byte,
     the target the decision block's output for what c points to: move slot
-    i's request token for move(i), side slot s's for switch(s), nothing for
-    move(0) (Struggle, the only move(0) that reaches the net).
+    i's request token for move(i), side slot s's for switch(s) (move(0)
+    no longer reaches the net).
 """
 
 from dataclasses import dataclass

@@ -45,9 +45,18 @@ was built there with `/opt/zig-0.16` (zig master is too new) into
   same). Note: oak's `log.h` lacks the 99 cap.
 - Tokens: 11 columns (KIND, SUB, ACTOR, OTHER, MOVE, MOVE2, SPECIES, NUM,
   HP, MAX_HP, STATUS). Request: 107 fields (`src/tokens.hpp`).
-- Choices are libpkmn's; Gen 1 has no hidden-illegal choice (Disable is
-  announced, partial trapping only stops the move), so birch's error /
-  re-request path is gone. `maybe_locked` isn't filled yet.
+- Training follows Showdown's request (the user's call, 2026-10-31): the
+  request (`request_data`) is the JSON Showdown would send (a hard lock;
+  a semi-lock for Bide and a bind's second turn; "Fight" while asleep,
+  frozen or bound by a bind's first turn; Struggle; `disabled` for no PP;
+  `maybeLocked` on a bind's later turns and the turn after it ends on its
+  own unless it lasted 5, from Showdown's gen1 conditions.ts), the env's
+  choices are Showdown's (`showdown_choices`), each played as libpkmn's
+  (`engine_choice`: the same, else the first legal move). `Binds` tracks
+  the bind lengths libpkmn doesn't keep. The bookkeeping hears each
+  choice as the player knows it (`Bookkeeping::selected`), the same in the
+  env and the client. Gen 1 has no hidden-illegal choice, so birch's
+  error / re-request path is gone.
 - Nets: only the causal net's infrastructure; MoveNet and HistoryNet merged
   away into `ataraxos/nets/policy.py`.
 - State tokens (`src/state_tokens.hpp`, 265 int16s, 14 tokens): the turn
@@ -102,7 +111,7 @@ Phase 2 (bookkeeping, state tokens):
   4.40M params. Not run: test_causal's CUDA graphed-actor check (the GPU
   is the user's birch run).
 
-Phase 3: Showdown text to the binary log (birch's `text_parser.hpp`), the
+Phase 3 (done but the open items): Showdown text to the binary log (birch's `text_parser.hpp`), the
 client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
 `botctl.py`), and their round-trip tests (`check_text_parser`,
 `check_client`). The user wants whatever scope birch has.
@@ -134,6 +143,36 @@ client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
   libpkmn doesn't have. On Showdown a blocked sleep move is the move line,
   a -message and a -hint (read past), so the parsed bytes show a move that
   did nothing; self-play training has no clause at all.
-- Then: `client.hpp`, `check_client`, the ladder driver.
+- The client (`src/client.hpp`, birch's; `src/json.hpp` is hoenn's JSON
+  reader): our side's Bookkeeping from the first request's sets through
+  libpkmn's Init (the user's call), so a rejoin's state is off.
+  `check_client 2000 1` (birch's: formatter text and this file's Showdown
+  JSON vs BattleData's tokens, fields, choices, state): 0 failures, also
+  on `teams/selfplay/oak1500.txt` (3rd argument). `check_client showdown
+  DUMP` (play.cjs now dumps each request, the choices Showdown takes and
+  the one made): all 188k real requests of 1000 battles parse and give
+  Showdown's choices exactly. Request shapes per move request, env vs
+  Showdown on oak1500: Fight 11.5/11.0%, hard lock 1.10/1.00%, semi-lock
+  0.22/0.25%, maybeLocked 0.050/0.087% (open: every Showdown maybeLocked
+  is a bind and the cases traced match the rule, the rate gap isn't
+  found), Struggle 0.15/0.03% (the env's games run longer: no clauses).
+- `check_view` checks Showdown's choices against libpkmn's (same
+  switches, every move maps to a legal move).
+- `check_bookkeeping` now chooses as training does (Showdown's choices,
+  `selected`): 76, 65, 66, 80 of 2000 on seeds 1-4 (16-21 with libpkmn's
+  choices, which showed whether a bind goes on). Most of what's left is a
+  pick on a hidden bind turn that the log never shows (`last_moves.index`
+  after a bind, `last_selected_move`): hidden state, left for the user.
+- The ladder driver (`ataraxos/play/showdown.py`, `botctl.py`, birch's
+  with gen1ou, `Client.choose` for the choice sent, `--server local`
+  with `--name`), the binding `ataraxos/_ext/ataraxos_client.cpp`, the pool
+  packer `codegen/pack_teams.cjs`, and `tests/showdown/local_server.cjs`
+  (Showdown's server on 127.0.0.1:8123, noguestsecurity, config.js
+  untouched). Tested end to end there: two bots with an untrained cs_tiny
+  net, a schedule of 3 games, chat redacted, botctl state / games /
+  propose / choose: 3 games each, both quit, no client failure or unknown
+  tag. Not done: anything on the real server (outward-facing: ask first).
+- Then: a training run on the Showdown-shaped env (none yet), the real
+  ladder when the user says.
 
 `box/hf_sync.sh` targets `opencover/ataraxos-runs` (the user's OK).
