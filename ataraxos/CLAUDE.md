@@ -67,12 +67,14 @@ Phase 1 (env, view, tokens, request, teams, binding, the Python package,
 box scripts): every test passes on the box.
 
 Phase 2 (bookkeeping, state tokens): `src/bookkeeping.hpp` written;
-`build/check_bookkeeping 2000 1` is at 24 of 2000 games mismatched (from
-1756). `check_bookkeeping GAMES SEED - REASON` prints the mismatches whose
-reason contains REASON with the log and both battles. Left: recharging
-(3), last_used_move (3), Mimic's PP on the stored Pokémon after a Mimic (a
-Mimic'd move used: deduct from the Mimic slot's stored PP, not the copied
-move), a few others. Fixes found so far are in the git log of
+`build/check_bookkeeping 2000 1` is at 23 of 2000 games mismatched (from
+1756; seed 2: 18). `check_bookkeeping GAMES SEED - REASON` prints the mismatches whose
+reason contains REASON with the log and both battles. Left: PP / moveset
+("X: pp not found in true moveset", ~14), Mimic's PP (4: a Mimic'd move
+used: deduct from the Mimic slot's stored PP, not the copied move),
+substitute HP (3), last_selected_move (2), last_damage (1). The key also
+skips the foe's recharging after a flinch move hit it (the user's call: a
+flinch clears the recharge with no message). Fixes found so far are in the git log of
 `src/bookkeeping.hpp` (each commit names the rule). After the bookkeeping
 passes: write `src/state_tokens.hpp` and the net's `embed_state` for the
 approved layout, turn `state` back on (`CausalConfig.state`), rerun
