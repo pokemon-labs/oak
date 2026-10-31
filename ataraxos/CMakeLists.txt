@@ -47,7 +47,7 @@ endforeach()
 # oak's submodule.
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
 add_subdirectory(${OAK_DIR}/cpp/extern/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/pybind11 EXCLUDE_FROM_ALL)
-foreach(name ataraxos_env)
+foreach(name ataraxos_env ataraxos_client)
   pybind11_add_module(${name} ataraxos/_ext/${name}.cpp)
   target_link_libraries(${name} PRIVATE ataraxos)
   set_target_properties(${name} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ataraxos/_ext)
