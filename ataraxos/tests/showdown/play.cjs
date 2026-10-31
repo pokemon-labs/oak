@@ -88,6 +88,8 @@ for (let g = 0; g < games; g++) {
   update();
   while (!b.ended && b.turn <= 300) {
     b.sides.forEach((side, s) => {
+      // a replacement's choice runs on at once: dump that update first
+      if (b.log.length > at) update();
       const opts = choices(side);
       if (!opts.length) return;
       emit(`C ${s} ${[...opts].sort().join('\t')}`);
