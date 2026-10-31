@@ -72,7 +72,14 @@ Phase 2 (bookkeeping, state tokens): `src/bookkeeping.hpp` written;
 prints the mismatches whose reason contains REASON with the log and both
 battles. Left: PP / moveset ("X: pp not found in true moveset", most of
 them), Mimic's PP (on hold, the user's call), a few last_damage within a
-percent or two (the other side's HP is the middle of its percent). The
+percent or two (the other side's HP is the middle of its percent). Most
+non-Mimic PP / moveset mismatches are one thing: in Showdown mode a
+binding side's selected move is logged and becomes last_used_move but
+the bind just continues (no PP, the same damage; libpkmn `mechanics.zig`
+154-162, 723), and the bind's end is silent, so a continuation and a real
+move after the end look alike. `a30cadb` ("a different move ends a bind")
+treats every new move as a new bind: right for last_used_move, wrong for
+PP. Not fixed; the user wants to move on. The
 substitute's HP is an upper bound (compare_battles fails one below the
 truth whatever the key): Psywave into it counts 1, and the key skips the
 sub's HP once a Psywave hit it (the user's call). Tried and reverted: a bind's later turns
