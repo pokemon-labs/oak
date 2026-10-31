@@ -71,6 +71,8 @@ void track(const std::vector<uint8_t>& bytes, const Names& names, Shown& shown) 
     case ArgType::Heal: health(1); break;
     case ArgType::Status: std::get<2>(shown[ident_player(d[0])][nick(d[0])]) = d[1]; break;
     case ArgType::CureStatus: std::get<2>(shown[ident_player(d[0])][nick(d[0])]) = 0; break;
+    // Self-Destruct's and Explosion's user faints with no -damage
+    case ArgType::Faint: std::get<0>(shown[ident_player(d[0])][nick(d[0])]) = 0; break;
     default: break;
     }
   }

@@ -26,6 +26,8 @@ const [games, seed, teamFile] = [Number(process.argv[2] || 100), Number(process.
 const dex = Dex.mod('gen1');
 const teams = fs.readFileSync(teamFile, 'utf8').split(/^=== .* ===$/m).map(t => t.trim()).filter(Boolean)
   .map(t => Teams.import(t));
+// Gen 1 has none; the validator, which a Battle skips, would set it
+for (const team of teams) for (const p of team) p.ability = 'No Ability';
 const rng = new PRNG([seed, seed + 1, seed + 2, seed + 3]);
 const out = [];
 const emit = s => out.push(s);
