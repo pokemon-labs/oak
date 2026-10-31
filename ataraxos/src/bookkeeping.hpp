@@ -164,6 +164,8 @@ struct Bookkeeping {
  private:
   std::span<const Obs> msgs;
   size_t i = 0;
+  // The move each side's log line shows while its binding move goes on.
+  std::array<bk::Move, 2> bind_shown{};
 
   uint8_t side_of(uint8_t id) const { return ident_player(id); }
   PKMN::Side& side(uint8_t s) { return battle.sides[s]; }
@@ -545,21 +547,24 @@ struct Bookkeeping {
     // Fly and Dig charge as the charging moves do
     const bool charging = bk::charging_move(m) || bk::invulnerable_move(m);
     const bool thrashing = bk::thrashing_move(m);
-    const bool binding = bk::binding_move(m);
+    // A binding move's later turns show the move that started it: the
+    // binding move, or the Metronome or Mirror Move that called it.
+    const bool binding = bk::binding_move(m) || (v.binding() && m == bind_shown[s]);
     if (binding) {
       od.active.volatiles.set_recharging(false);
     } else {
       v.set_binding(false);
       d.set_binding(0);
     }
-    bool deduct = !((rage && v.rage()) || (charging && !v.charging()) || (thrashing && v.thrashing()) ||
-                    (binding && v.binding()));
+    const bool deduct = !((rage && v.rage()) || (charging && !v.charging()) || (thrashing && v.thrashing()) ||
+                          (binding && v.binding()));
     // Metronome or Mirror Move calling a charging move: no PP on the turn it
     // charges.
+    bool spend = deduct;
     if (m == bk::Move::Metronome || m == bk::Move::MirrorMove) {
       if (const Obs* n = next(); n && n->type == ArgType::Move && n->u8(3) && bk::Move(n->u8(4)) == m) {
         const bk::Move called = bk::Move(n->u8(1));
-        if ((bk::charging_move(called) || bk::invulnerable_move(called)) && !v.charging()) deduct = false;
+        if ((bk::charging_move(called) || bk::invulnerable_move(called)) && !v.charging()) spend = false;
       }
     }
     // A Mimic'd move: the active's slot where the stored Pokémon has Mimic.
@@ -573,7 +578,7 @@ struct Bookkeeping {
     const bool from_mimic = mimic >= 0 && sd.active.moves[mimic].id == m;
     if (from_mimic) {
       for (PKMN::MoveSlot* ms : {&sd.active.moves[mimic], &sd.stored().moves[mimic]}) {
-        ms->pp = uint8_t(std::max(0, ms->pp - int(deduct)));
+        ms->pp = uint8_t(std::max(0, ms->pp - int(spend)));
       }
     }
     if (m != bk::Move::None && m != bk::Move::Struggle && !from_metronome && !from_mimic && !from_mirror) {
@@ -581,11 +586,11 @@ struct Bookkeeping {
         reveal(sd.stored().moves, m);
         reveal(sd.active.moves, m);
         for (PKMN::MoveSlot& ms : sd.stored().moves) {
-          if (ms.id == m) ms.pp = uint8_t(std::max(0, ms.pp - int(deduct)));
+          if (ms.id == m) ms.pp = uint8_t(std::max(0, ms.pp - int(spend)));
         }
       }
       for (PKMN::MoveSlot& ms : sd.active.moves) {
-        if (ms.id == m) ms.pp = uint8_t(std::max(0, ms.pp - int(deduct)));
+        if (ms.id == m) ms.pp = uint8_t(std::max(0, ms.pp - int(spend)));
       }
     }
     if ((rage || deduct || v.thrashing()) && !(charging && !v.charging())) {
@@ -634,6 +639,7 @@ struct Bookkeeping {
         } else {
           v.set_binding(true);
           d.set_binding(1);
+          bind_shown[s] = from ? from_move : m;
         }
       }
       if (m == bk::Move::Bide) {
