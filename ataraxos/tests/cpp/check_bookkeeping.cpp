@@ -5,7 +5,9 @@
 // safari's key: the substitute's HP within 20, Bide's damage within 50,
 // binding not compared, the other side's HP within 15, its last selected
 // move and the slot it selected not compared (a full paralysis or a sleep
-// leaves the choice out of the log), the last damage within 15.
+// leaves the choice out of the log), the last damage within 15. Also the
+// other side's recharging after a move that can flinch hit it: a flinch
+// clears the recharge, and moving second it leaves nothing in the log.
 //
 // Teams: 6 distinct species a side, level 100, 4 random moves each (the
 // species distinct so the bench matches by species); a banned move is left
@@ -78,8 +80,15 @@ Team test_team(std::mt19937_64& rng, const std::vector<PKMN::Data::Move>& banned
   return team;
 }
 
-// safari's get_match_keys, the other side being `foe`.
-std::pair<PKMN::Battle, PKMN::Durations> keys(uint8_t foe) {
+bool flinch_move(PKMN::Data::Move m) {
+  using enum PKMN::Data::Move;
+  return m == Headbutt || m == Stomp || m == Bite || m == LowKick || m == BoneClub || m == HyperFang ||
+         m == RollingKick;
+}
+
+// safari's get_match_keys, the other side being `foe`, `own` the
+// bookkeeping it checks.
+std::pair<PKMN::Battle, PKMN::Durations> keys(uint8_t foe, const PKMN::Battle& own) {
   PKMN::Battle b{};
   PKMN::Durations d{};
   for (uint8_t i = 0; i < 2; i++) {
@@ -93,6 +102,9 @@ std::pair<PKMN::Battle, PKMN::Durations> keys(uint8_t foe) {
   b.sides[foe].last_selected_move = PKMN::Data::Move(1);
   b.last_moves[foe].index = 1;
   b.last_damage = 15;
+  if (own.sides[foe].active.volatiles.recharging() && flinch_move(own.sides[1 - foe].last_used_move)) {
+    b.sides[foe].active.volatiles.set_recharging(true);
+  }
   return {b, d};
 }
 
@@ -181,7 +193,7 @@ int main(int argc, char** argv) {
           const pkmn_choice_kind kind = p ? pkmn_result_p2(r) : pkmn_result_p1(r);
           bks[p].request(request_data(PKMN::view(b), p, kind, {opts[p].data(), n[p]}));
         }
-        const auto [key, dkey] = keys(uint8_t(1 - p));
+        const auto [key, dkey] = keys(uint8_t(1 - p), bks[p].battle);
         std::string reason;
         if (!PKMN::Client::compare_battles(bks[p].battle, bks[p].durations, PKMN::view(b), truth_d, key, dkey, reason)) {
           bad = true;
