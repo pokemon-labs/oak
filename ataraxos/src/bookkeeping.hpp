@@ -36,6 +36,7 @@
 
 #include <libpkmn/data.h>
 #include <libpkmn/init.h>
+#include <libpkmn/pkmn.h>
 
 #include "obs.hpp"
 #include "request_data.hpp"
