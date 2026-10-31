@@ -155,7 +155,10 @@ struct Bookkeeping {
     const PKMN::ActivePokemon& a = battle.sides[player].active;
     const auto move = [](uint8_t slot) { return pkmn_choice(PKMN_CHOICE_MOVE | slot << 2); };
     const RequestData::Active& r = q.active;
-    if (!r.locked) return r.maybe_locked && a.volatiles.binding() ? 0 : option;
+    // (our binding flag outlives a bind's silent end: a foe binding us is
+    // the foe's maybeLocked)
+    const bool ours = a.volatiles.binding() && !battle.sides[1 - player].active.volatiles.binding();
+    if (!r.locked) return r.maybe_locked && ours ? 0 : option;
     if (r.trapped) return 0;
     const PKMN::Data::Move id = r.moves[0].id;
     if (id == bk::Move::Struggle) return move(0);
