@@ -853,13 +853,9 @@ struct Bookkeeping {
     switch (o.u8(1)) {
     case bk::ActSubstitute: {
       // a hit the substitute took without breaking
-      uint16_t x = sub_damage(opp);
+      // (Psywave's damage is never shown: 1, keeping the HP an upper bound)
+      const uint16_t x = sub_damage(opp);
       const uint8_t hp = v.substitute_hp();
-      // Psywave's 1 to 1.5 * level - 1 is never shown: the middle of what
-      // the substitute could have survived
-      if (side(opp).last_used_move == bk::Move::Psywave && hp > 1) {
-        x = uint16_t((1 + std::min<uint16_t>(side(opp).stored().level * 3 / 2 - 1, hp - 1)) / 2);
-      }
       bk::set_substitute_hp(v, uint8_t(hp - std::min<uint16_t>(hp ? hp - 1 : 0, x)));
       if (bk::drain(side(opp).last_used_move)) battle.last_damage = std::max<uint16_t>(1, battle.last_damage / 2);
       break;
