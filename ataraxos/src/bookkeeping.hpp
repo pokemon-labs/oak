@@ -220,7 +220,13 @@ struct Bookkeeping {
     if (s == player || max == 0) return hp;
     if (hp == 0) return 0;
     if (view_percent(p.hp, p.stats.hp) == hp) return p.hp;
-    return uint16_t(uint32_t(p.stats.hp) * hp / max);
+    // the middle of the HP that show as this (ceil) percent, 99 being any
+    // HP short of full
+    const uint32_t m = p.stats.hp;
+    if (hp >= max) return uint16_t(m);
+    const uint32_t lo = m * (hp - 1) / max + 1;
+    const uint32_t hi = hp == max - 1 ? m - 1 : m * hp / max;
+    return uint16_t((lo + std::max(lo, hi)) / 2);
   }
 
   // Mechanics.interrupt
