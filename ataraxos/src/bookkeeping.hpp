@@ -258,6 +258,8 @@ struct Bookkeeping {
     }
     if (why == Why::Confusion || why == Why::Paralysis) {
       interrupt(s);
+      // hitting itself ends a Fly or Dig; a full paralysis doesn't
+      if (why == Why::Confusion) v.set_invulnerable(false);
       return;
     }
     if (v.bide()) v.set_state(uint16_t(v.state() + battle.last_damage));
