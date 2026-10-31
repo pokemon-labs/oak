@@ -541,7 +541,8 @@ struct Bookkeeping {
     const bool from_metronome = from_move == bk::Move::Metronome;
     const bool from_mirror = from_move == bk::Move::MirrorMove;
     const bool rage = m == bk::Move::Rage;
-    const bool charging = bk::charging_move(m);
+    // Fly and Dig charge as the charging moves do
+    const bool charging = bk::charging_move(m) || bk::invulnerable_move(m);
     const bool thrashing = bk::thrashing_move(m);
     const bool binding = bk::binding_move(m);
     if (binding) {
@@ -727,7 +728,7 @@ struct Bookkeeping {
     } else if (byte == bk::TOX) {
       sd.active.volatiles.set_toxic(true);
       sd.active.volatiles.set_toxic_counter(0);
-      sd.stored().status = D::Status(bk::PSN);
+      sd.stored().status = D::Status(bk::TOX);
     } else {
       sd.stored().status = D::Status(byte);
     }

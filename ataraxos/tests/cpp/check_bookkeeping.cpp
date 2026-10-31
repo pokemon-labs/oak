@@ -12,9 +12,10 @@
 // which is counted by its reason; the first few are printed with the
 // update's log (oak's text) and both battles.
 //
-//   check_bookkeeping [GAMES] [SEED] [BANNED,MOVES,...]
+//   check_bookkeeping [GAMES] [SEED] [BANNED,MOVES,...|-] [REASON]
 // BANNED is a comma-separated list of move names as libpkmn spells them
-// (e.g. Wrap,Bind,Clamp,FireSpin).
+// (e.g. Wrap,Bind,Clamp,FireSpin), or - for none; with REASON only the
+// mismatches whose reason contains it are printed.
 
 #include <cstdio>
 #include <cstdlib>
@@ -128,7 +129,9 @@ std::string battle_string(const PKMN::Battle& b, const PKMN::Durations& d) {
 int main(int argc, char** argv) {
   const size_t games = argc > 1 ? std::strtoul(argv[1], nullptr, 10) : 1000;
   std::mt19937_64 rng(argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 1);
-  const std::vector<PKMN::Data::Move> banned = banned_moves(argc > 3 ? argv[3] : nullptr);
+  const std::vector<PKMN::Data::Move> banned =
+      banned_moves(argc > 3 && std::string(argv[3]) != "-" ? argv[3] : nullptr);
+  const std::string only = argc > 4 ? argv[4] : "";
   std::map<std::string, size_t> reasons;
   size_t failed = 0, updates = 0, printed = 0;
   for (size_t g = 0; g < games; g++) {
@@ -182,9 +185,9 @@ int main(int argc, char** argv) {
           bad = true;
           failed++;
           reasons["p" + std::to_string(p + 1) + "'s view: " + reason]++;
-          if (printed++ < 3) {
+          if (reason.find(only) != std::string::npos && printed++ < 3) {
             std::printf("== game %zu, turn %d, p%d's view: %s\n", g, turn, p + 1, reason.c_str());
-            const size_t from = text.size() > 60 ? text.size() - 60 : 0;
+            const size_t from = text.size() > 30 ? text.size() - 30 : 0;
             for (size_t j = from; j < text.size(); j++) std::printf("%s\n", text[j].c_str());
             std::printf("truth:\n%sbookkeeping:\n%s", battle_string(PKMN::view(b), truth_d).c_str(),
                         battle_string(bks[p].battle, bks[p].durations).c_str());
