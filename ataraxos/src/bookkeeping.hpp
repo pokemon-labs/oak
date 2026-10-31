@@ -146,8 +146,11 @@ struct Bookkeeping {
   // Our own active's moves and PP as the request shows them (a Transform's,
   // a Mimic's), after the update.
   void request(const RequestData& q) {
-    if (q.kind != RequestData::Move_ || q.active.locked) return;
+    if (q.kind != RequestData::Move_) return;
     PKMN::ActivePokemon& a = battle.sides[player].active;
+    // A flinch clears the recharge without a message; the request shows it.
+    a.volatiles.set_recharging(q.active.recharge);
+    if (q.active.locked) return;
     for (uint8_t i = 0; i < 4; i++) {
       a.moves[i].id = q.active.moves[i].id;
       a.moves[i].pp = q.active.moves[i].pp;
