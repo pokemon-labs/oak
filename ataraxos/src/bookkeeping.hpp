@@ -403,6 +403,8 @@ struct Bookkeeping {
       if (prev() && prev()->type == ArgType::Boost) unstore_stats();
       break;
     case ArgType::Miss: {
+      // a miss against Fly or Dig leaves the last damage as it was
+      if (side(1 - side_of(o.u8(0))).active.volatiles.invulnerable()) break;
       battle.last_damage = 0;
       const bk::Move last = side(side_of(o.u8(0))).last_used_move;
       if (last == bk::Move::JumpKick || last == bk::Move::HighJumpKick) battle.last_damage = 1;
