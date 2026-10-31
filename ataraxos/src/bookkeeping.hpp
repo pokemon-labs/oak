@@ -221,6 +221,7 @@ struct Bookkeeping {
     v.set_bide(false);
     v.set_thrashing(false);
     v.set_charging(false);
+    v.set_invulnerable(false);
     v.set_binding(false);
     dur(s).set_attacking(0);
     dur(s).set_binding(0);
@@ -593,6 +594,12 @@ struct Bookkeeping {
       }
     }
     if ((rage || deduct || v.thrashing() || charging) && !v.charging()) sd.last_selected_move = m;
+    // A Mirror Move with nothing to copy fails, its selection None.
+    if (m == bk::Move::MirrorMove) {
+      if (const Obs* n = next(); n && n->type == ArgType::Fail && ident_player(n->u8(0)) == s) {
+        sd.last_selected_move = bk::Move::None;
+      }
+    }
     if (rage || deduct || v.thrashing() || charging) {
       const bk::Move last = sd.last_selected_move;
       const D::MoveData md = bk::data(last);
@@ -603,7 +610,10 @@ struct Bookkeeping {
       v.set_thrashing(true);
       d.set_attacking(1);
     }
-    if (charging && v.charging()) v.set_charging(false);
+    if (charging && v.charging()) {
+      v.set_charging(false);
+      v.set_invulnerable(false);
+    }
     if (missed) {
       v.set_binding(false);
       d.set_binding(0);
