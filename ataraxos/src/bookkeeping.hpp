@@ -222,8 +222,7 @@ struct Bookkeeping {
     if (!v.rage()) v.set_state(0);
     v.set_bide(false);
     v.set_thrashing(false);
-    v.set_charging(false);
-    v.set_invulnerable(false);
+    v.set_charging(false); // invulnerable stays: Gen 1's Fly/Dig glitch
     v.set_binding(false);
     dur(s).set_attacking(0);
     dur(s).set_binding(0);
