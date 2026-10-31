@@ -173,9 +173,6 @@ struct Bookkeeping {
   // The Metronome or Mirror Move that called each side's current lock, or
   // None.
   std::array<bk::Move, 2> via{};
-  // Whether the last Move was a binding move's later turn, which deals the
-  // first turn's damage again.
-  bool rebind = false;
 
   uint8_t side_of(uint8_t id) const { return ident_player(id); }
   PKMN::Side& side(uint8_t s) { return battle.sides[s]; }
@@ -517,8 +514,7 @@ struct Bookkeeping {
       }
     }
     const bool counts = (reason == bk::DmgNone || confusion) && !from_sub;
-    const bool again = rebind && prev() && prev()->type == ArgType::Move;
-    if (is_damage && counts && !bind_into_ghost && !again) {
+    if (is_damage && counts && !bind_into_ghost) {
       if (confusion && hp == 0) {
         const uint16_t def = od.active.stats.def;
         od.active.stats.def = sd.active.stats.def;
@@ -596,7 +592,6 @@ struct Bookkeeping {
       v.set_binding(false);
       d.set_binding(0);
     }
-    rebind = binding && v.binding();
     const bool deduct = !((rage && v.rage()) || (charging && !v.charging()) || (thrashing && v.thrashing()) ||
                           (binding && v.binding()));
     // Metronome or Mirror Move calling a charging move: no PP on the turn it
