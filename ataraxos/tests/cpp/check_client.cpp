@@ -18,8 +18,13 @@
 // `check_client showdown DUMP` (tests/showdown/play.cjs's dump: every
 // request parses, and the Client's choices are the ones Showdown takes).
 //
-//   check_client [GAMES] [SEED]
+//   check_client [GAMES] [SEED] [TEAM_FILE]
 //   check_client showdown DUMP
+//
+// With TEAM_FILE, the teams are drawn from it (with its nicknames' species
+// names) instead of truly random; both modes count each move request's
+// shape (a lock, Fight, maybeLocked, ...), so the env's bind tracking can
+// be held up to Showdown's on one pool.
 
 #include <cstdio>
 #include <cstdlib>
@@ -130,9 +135,20 @@ std::string to_json(const RequestData& r, uint16_t rqid, const PKMN::Side& side,
   return j;
 }
 
+// A move request's shape, for comparing how often each comes up here and
+// on Showdown.
+const char* shape(const RequestData& q) {
+  const RequestData::Active& a = q.active;
+  return a.trapped                                  ? "hard lock"
+         : !a.locked                                ? (a.maybe_locked ? "maybeLocked" : "move list")
+         : a.moves[0].id == PKMN::Data::Move::None  ? "Fight"
+         : a.moves[0].id == PKMN::Data::Move::Struggle ? "Struggle"
+                                                    : "semi-lock";
+}
+
 struct Counts {
   uint64_t games = 0, decisions = 0, forced = 0, tokens = 0, capped = 0;
-  uint64_t fight = 0, semi = 0, hidden = 0;
+  std::map<std::string, uint64_t> shapes;
   std::map<std::string, uint64_t> failures;
   std::map<std::string, uint64_t> unknown;
   int printed = 0;
@@ -305,13 +321,7 @@ struct Game {
         if (failed || d.over() || !d.needs_choice(p)) continue;
         acted = true;
         const uint8_t k = d.n_option[p];
-        const RequestData::Active& a = d.request[p].active;
-        if (d.request[p].kind == RequestData::Move_) {
-          n->fight += a.locked && !a.trapped && a.moves[0].id == PKMN::Data::Move::None;
-          n->semi += a.locked && !a.trapped && a.moves[0].id != PKMN::Data::Move::None &&
-                     a.moves[0].id != PKMN::Data::Move::Struggle;
-          n->hidden += a.maybe_locked;
-        }
+        if (d.request[p].kind == RequestData::Move_) n->shapes[shape(d.request[p])]++;
         compare(p, k > 1);
         if (k > 1) n->decisions++;
         else n->forced++;
@@ -397,13 +407,6 @@ int showdown(const char* path) {
       requests++;
       try {
         clients[s]->request(line.substr(4));
-        const RequestData& q = clients[s]->req;
-        if (q.kind == RequestData::Move_) {
-          const RequestData::Active& a = q.active;
-          shapes[a.trapped ? "hard lock" : !a.locked ? (a.maybe_locked ? "maybeLocked" : "move list")
-                 : a.moves[0].id == PKMN::Data::Move::None ? "Fight"
-                 : a.moves[0].id == PKMN::Data::Move::Struggle ? "Struggle" : "semi-lock"]++;
-        }
       } catch (const std::exception& e) {
         fail(s, "request", std::string(e.what()) + "\n  " + line.substr(4));
       }
@@ -422,6 +425,7 @@ int showdown(const char* path) {
       Client& c = *clients[s];
       for (uint8_t i = 0; i < c.n; i++) got.insert(choice_key(c.choice(i)));
       choices++;
+      if (c.req.kind == RequestData::Move_) shapes[shape(c.req)]++;
       if (want != got) {
         std::string w, g;
         for (const std::string& x : want) w += " [" + x + "]";
@@ -446,7 +450,7 @@ int showdown(const char* path) {
   }
   std::printf("%llu battles, %llu requests, %llu choice sets compared\n", (unsigned long long)battles,
               (unsigned long long)requests, (unsigned long long)choices);
-  for (const auto& [shape, count] : shapes) std::printf("  move request: %-14s %llu\n", shape.c_str(), (unsigned long long)count);
+  for (const auto& [what, count] : shapes) std::printf("  move request: %-14s %llu\n", what.c_str(), (unsigned long long)count);
   for (const auto& [tag, count] : unknown) std::printf("  unknown tag %-20s %llu\n", tag.c_str(), (unsigned long long)count);
   for (const auto& [what, count] : failures) std::printf("  %-30s %llu\n", what.c_str(), (unsigned long long)count);
   std::printf("%llu failures\n", (unsigned long long)failed);
@@ -460,10 +464,20 @@ int main(int argc, char** argv) {
   const uint64_t games = argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 1000;
   const uint64_t seed = argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 1;
 
+  std::vector<Team> pool;
+  if (argc > 3) {
+    size_t errors = 0;
+    pool = load_teams({argv[3]}, errors);
+    if (pool.empty() || errors) {
+      std::printf("%s: %zu teams, %zu errors\n", argv[3], pool.size(), errors);
+      return 2;
+    }
+  }
   std::mt19937_64 rng(seed);
   Counts n;
   for (uint64_t g = 0; g < games; g++) {
-    const Team t1 = random_team(rng), t2 = random_team(rng);
+    const Team t1 = pool.empty() ? random_team(rng) : pool[rng() % pool.size()];
+    const Team t2 = pool.empty() ? random_team(rng) : pool[rng() % pool.size()];
     auto game = std::make_unique<Game>();
     game->rng = &rng;
     game->n = &n;
@@ -481,11 +495,10 @@ int main(int argc, char** argv) {
     }
     game->play(init_battle(rng(), t1, t2));
   }
-  std::printf("%llu games (%llu capped at turn 300), %llu decisions, %llu forced, %llu tokens compared; "
-              "%llu Fight, %llu semi-locks, %llu maybeLocked\n",
+  std::printf("%llu games (%llu capped at turn 300), %llu decisions, %llu forced, %llu tokens compared\n",
               (unsigned long long)n.games, (unsigned long long)n.capped, (unsigned long long)n.decisions,
-              (unsigned long long)n.forced, (unsigned long long)n.tokens, (unsigned long long)n.fight,
-              (unsigned long long)n.semi, (unsigned long long)n.hidden);
+              (unsigned long long)n.forced, (unsigned long long)n.tokens);
+  for (const auto& [what, count] : n.shapes) std::printf("  move request: %-14s %llu\n", what.c_str(), (unsigned long long)count);
   for (const auto& [tag, count] : n.unknown) std::printf("  unknown tag %-20s %llu\n", tag.c_str(), (unsigned long long)count);
   uint64_t total = 0;
   for (const auto& [what, count] : n.failures) {
