@@ -15,8 +15,13 @@
 // parses as status 1), so the omniscient bytes are compared with their
 // status bytes as the view writes them.
 //
-//   check_text_parser [GAMES] [SEED]
+//   check_text_parser [GAMES] [SEED] [forms]
+//
+// With `forms`, also prints each text form seen (a line's tag, its fixed
+// words and its [keywords], idents, numbers and names left out) and its
+// count, so what the round trip covered can be read off.
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -35,6 +40,36 @@ namespace {
 
 std::map<std::string, size_t> failures;
 int printed = 0;
+std::map<std::string, size_t> forms;
+
+// A line's form: its tag, its [keywords] (without values) and the fields
+// that aren't idents, HP, numbers or a species' or move's name.
+void count_form(const std::string& line) {
+  std::string form;
+  size_t start = 1;
+  int field = 0;
+  while (start <= line.size()) {
+    size_t bar = line.find('|', start);
+    if (bar == std::string::npos) bar = line.size();
+    std::string f = line.substr(start, bar - start);
+    start = bar + 1;
+    if (field++ == 0) {
+      form = f;
+      continue;
+    }
+    if (f.starts_with("[")) f = f.substr(0, f.find(' ') == std::string::npos ? f.size() : f.find(' '));
+    else if (f.size() > 4 && f[0] == 'p' && f[2] == 'a' && f[3] == ':') f = "ID";
+    else if (!f.empty() && (std::isdigit(static_cast<unsigned char>(f[0])))) f = "N";
+    else {
+      bool named = false;
+      for (const auto& n : names::SPECIES) named |= f.starts_with(n) && !n.empty() && f.size() >= n.size();
+      for (const auto& n : names::MOVES) named |= f == n;
+      if (named) f = "NAME";
+    }
+    form += "|" + f;
+  }
+  forms[form]++;
+}
 
 const char* kind_name(ArgType t) {
   static const char* NAMES[ARG_TYPES] = {
@@ -99,6 +134,7 @@ void compare(const char* stream, const std::vector<uint8_t>& want, const std::ve
 int main(int argc, char** argv) {
   const size_t games = argc > 1 ? std::strtoul(argv[1], nullptr, 10) : 2000;
   std::mt19937_64 rng(argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 1);
+  const bool show_forms = argc > 3 && std::string(argv[3]) == "forms";
   size_t updates = 0, errors = 0;
   for (size_t g = 0; g < games; g++) {
     const Team t1 = random_team(rng), t2 = random_team(rng);
@@ -145,6 +181,9 @@ int main(int argc, char** argv) {
       std::vector<uint8_t> raw(buf.begin(), buf.begin() + std::ptrdiff_t(used + 1));
       try {
         const std::vector<std::string> text = omni_fmt.format(raw);
+        if (show_forms) {
+          for (const std::string& l : text) count_form(l);
+        }
         std::vector<uint8_t> want = raw;
         text_statuses(want);
         compare("omniscient", want, omni_parser.parse(text), text);
@@ -180,6 +219,7 @@ int main(int argc, char** argv) {
     }
     for (TextParser* x : parsers) delete x;
   }
+  for (const auto& [f, n] : forms) std::printf("  %8zu  %s\n", n, f.c_str());
   size_t total = 0;
   for (const auto& [k, n] : failures) {
     std::printf("  %s: %zu\n", k.c_str(), n);
