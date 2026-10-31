@@ -63,6 +63,9 @@ class TextParser {
     tables();
   }
 
+  // When set, counts the lines read past (SKIP's) by tag.
+  std::map<std::string, size_t, std::less<>>* skipped = nullptr;
+
   // One update's lines -> its bytes, ending with None.
   std::vector<uint8_t> parse(const std::vector<std::string>& lines) {
     std::vector<std::string_view> ls;
@@ -296,7 +299,10 @@ class TextParser {
   void line(const Line& l) {
     using namespace format;
     const std::string_view tag = l.tag;
-    if (SKIP.contains(tag)) return;
+    if (SKIP.contains(tag)) {
+      if (skipped) (*skipped)[std::string(tag)]++;
+      return;
+    }
     if (tag == "move") {
       flush();
       const uint8_t source = ident(l[0]);
