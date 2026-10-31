@@ -515,9 +515,18 @@ struct Bookkeeping {
         battle.last_damage = calc_damage(s, opp, bk::Move::None, false, false, 255);
         od.active.stats.def = def;
       } else {
-        const uint16_t dmg = sd.stored().hp > hp ? uint16_t(sd.stored().hp - hp) : 0;
-        battle.last_damage = std::max<uint16_t>(1, dmg);
-        if (!confusion && bk::drain(od.last_used_move)) {
+        uint16_t dmg = sd.stored().hp > hp ? uint16_t(sd.stored().hp - hp) : 0;
+        // No change: a hit can do 0 (base damage 1, resisted). Ours is exact;
+        // the other side's percent can hide a few HP, so estimate it.
+        const bk::Move m = od.last_used_move;
+        if (dmg == 0 && s == player) {
+          battle.last_damage = 0;
+        } else if (dmg == 0 && !confusion && m != bk::Move::Bide && m != bk::Move::Counter) {
+          battle.last_damage = calc_damage(opp, s, m, crit_against(s));
+        } else {
+          battle.last_damage = std::max<uint16_t>(1, dmg);
+        }
+        if (!confusion && battle.last_damage && bk::drain(od.last_used_move)) {
           battle.last_damage = std::max<uint16_t>(1, battle.last_damage / 2);
         }
       }
@@ -638,10 +647,11 @@ struct Bookkeeping {
       }
     }
     if ((rage || deduct || v.thrashing() || charging) && !v.charging()) sd.last_selected_move = m;
-    // A Mirror Move with nothing to copy fails, its selection None.
+    // Mirror Move selects the foe's last used move, even when it fails
+    // (None, or Mirror Move itself).
     if (m == bk::Move::MirrorMove) {
       if (const Obs* n = next(); n && n->type == ArgType::Fail && ident_player(n->u8(0)) == s) {
-        sd.last_selected_move = bk::Move::None;
+        sd.last_selected_move = od.last_used_move;
       }
     }
     if (rage || deduct || v.thrashing() || charging) {
