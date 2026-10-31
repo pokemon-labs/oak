@@ -517,7 +517,8 @@ struct Bookkeeping {
       }
     }
     const bool counts = (reason == bk::DmgNone || confusion) && !from_sub;
-    const bool again = rebind && prev() && prev()->type == ArgType::Move;
+    // (a KO caps it at the HP that was left, which the HP shows)
+    const bool again = rebind && hp > 0 && prev() && prev()->type == ArgType::Move;
     if (is_damage && counts && !bind_into_ghost && !again) {
       if (confusion && hp == 0) {
         const uint16_t def = od.active.stats.def;
