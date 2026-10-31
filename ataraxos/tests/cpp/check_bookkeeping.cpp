@@ -13,7 +13,7 @@
 //
 // Teams: 6 distinct species a side, level 100, 4 random moves each (the
 // species distinct so the bench matches by species); a banned move is left
-// out. Choices uniform over libpkmn's. A game stops at its first mismatch,
+// out. Choices uniform over Showdown's (request_data.hpp), played as libpkmn's, and the bookkeeping hears each as the player knows it (Bookkeeping::selected), as in training. A game stops at its first mismatch,
 // which is counted by its reason; the first few are printed with the
 // update's log (oak's text) and both battles.
 //
@@ -161,6 +161,9 @@ int main(int argc, char** argv) {
     std::array<uint8_t, LOG_SIZE> buf{};
     pkmn_gen1_battle_options options{};
     pkmn_choice c[2] = {0, 0};
+    // each player's last request, and the choice as it knows it (training's)
+    RequestData rq[2]{};
+    pkmn_choice sel[2] = {0, 0};
     std::vector<std::string> text;
     bool psy_sub[2] = {false, false};
     bool bad = false;
@@ -169,7 +172,7 @@ int main(int argc, char** argv) {
       pkmn_gen1_chance_options chance{};
       chance.durations = std::bit_cast<pkmn_gen1_chance_durations>(truth_d);
       pkmn_gen1_battle_options_set(&options, &log, &chance, nullptr);
-      for (uint8_t p = 0; p < 2; p++) bks[p].chose(c[p]);
+      for (uint8_t p = 0; p < 2; p++) bks[p].chose(sel[p]);
       const PKMN::Battle before = PKMN::view(b);
       const pkmn_result r = pkmn_gen1_battle_update(&b, c[0], c[1], &options);
       binds.update(before, PKMN::view(b));
@@ -215,7 +218,8 @@ int main(int argc, char** argv) {
         bks[p].update(split({v.data(), len}));
         if (!pkmn_result_type(r)) {
           const pkmn_choice_kind kind = p ? pkmn_result_p2(r) : pkmn_result_p1(r);
-          bks[p].request(request_data(PKMN::view(b), p, kind, binds.of(PKMN::view(b), p)));
+          rq[p] = request_data(PKMN::view(b), p, kind, binds.of(PKMN::view(b), p));
+          bks[p].request(rq[p]);
         }
         const auto [key, dkey] = keys(uint8_t(1 - p), bks[p].battle, psy_sub);
         std::string reason;
@@ -233,7 +237,14 @@ int main(int argc, char** argv) {
         }
       }
       if (pkmn_result_type(r)) break;
-      for (uint8_t p = 0; p < 2; p++) c[p] = opts[p][rng() % n[p]];
+      // uniform over Showdown's choices, played as libpkmn's, as in training
+      for (uint8_t p = 0; p < 2; p++) {
+        std::array<pkmn_choice, MAX_CHOICES> shown{};
+        const uint8_t k = showdown_choices(rq[p], shown.data());
+        const pkmn_choice option = shown[rng() % k];
+        c[p] = engine_choice(option, {opts[p].data(), n[p]});
+        sel[p] = bks[p].selected(rq[p], option);
+      }
     }
   }
   std::printf("check_bookkeeping: %zu games, %zu updates: %zu games mismatched\n", games, updates, failed);
