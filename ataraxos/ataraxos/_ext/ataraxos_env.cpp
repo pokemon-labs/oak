@@ -47,6 +47,7 @@
 #include <stdexcept>
 
 #include "env.hpp"
+#include "rollouts.hpp"
 
 namespace py = pybind11;
 using ataraxos::SelfPlay;
@@ -64,7 +65,7 @@ py::array_t<T> array(std::vector<py::ssize_t> shape) {
   return py::array_t<T>(shape);
 }
 
-py::dict observe(const SelfPlay& env) {
+template <class Source> py::dict observe(const Source& env) {
   const auto& shards = env.shards();
   size_t D = 0, T = 0, E = 0;
   std::vector<size_t> d0(shards.size()), t0(shards.size()), e0(shards.size());
@@ -157,6 +158,26 @@ py::dict observe(const SelfPlay& env) {
   out["end_capped"] = end_capped;
   out["end_team"] = end_team;
   out["end_prob"] = end_prob;
+  return out;
+}
+
+// Rollouts' decisions: observe's dict (`battle` the rollout) with leaf u8
+// [D], 1 where only the value is read, and root u32 [D].
+py::dict observe_rollouts(const ataraxos::Rollouts& r) {
+  py::dict out = observe(r);
+  size_t D = 0;
+  for (const auto& sh : r.shards()) D += sh.decisions.size();
+  auto leaf = array<uint8_t>({py::ssize_t(D)});
+  auto root = array<uint32_t>({py::ssize_t(D)});
+  size_t i = 0;
+  for (size_t s = 0; s < r.shards().size(); s++) {
+    for (size_t k = 0; k < r.shards()[s].decisions.size(); k++, i++) {
+      leaf.mutable_data()[i] = r.leaves()[s][k];
+      root.mutable_data()[i] = r.rollouts()[r.shards()[s].decisions[k].battle].root;
+    }
+  }
+  out["leaf"] = leaf;
+  out["root"] = root;
   return out;
 }
 
@@ -285,6 +306,7 @@ PYBIND11_MODULE(ataraxos_env, m) {
       .def_property_readonly("team_names", [](const Env& env) { return env.names; })
       .def_property_readonly("battles", &SelfPlay::size)
       .def_property_readonly("decisions", &SelfPlay::decisions)
+      .def("set_keep_after", &SelfPlay::set_keep_after, py::arg("on"))
       .def_property_readonly("stats", [](const Env& env) {
         uint64_t forced = 0, games = 0, capped = 0;
         for (const ataraxos::Shard& sh : env.shards()) {
@@ -297,4 +319,127 @@ PYBIND11_MODULE(ataraxos_env, m) {
         d["capped"] = capped; // games ended by max_turns
         return d;
       });
+
+  // src/rollouts.hpp. Rollouts(teams, keep, shards=64, threads=8,
+  // state=True, ratio=0.1): the sampler's pool (Showdown export files) and
+  // its rank-decay prior; `keep` the foe's prefill summaries kept.
+  py::class_<ataraxos::Rollouts>(m, "Rollouts")
+      .def(py::init([](std::vector<std::string> teams, size_t keep, size_t shards, int threads, bool state,
+                       double ratio) {
+             size_t errors = 0;
+             std::vector<ataraxos::Team> pool = ataraxos::load_teams(teams, errors);
+             if (pool.empty()) throw std::invalid_argument("no team parses");
+             auto* r = new ataraxos::Rollouts(std::move(pool), keep, shards, threads, state);
+             r->pool() = ataraxos::Pool(r->pool().teams, ratio);
+             return r;
+           }),
+           py::arg("teams"), py::arg("keep"), py::arg("shards") = 64, py::arg("threads") = 8,
+           py::arg("state") = true, py::arg("ratio") = 0.1)
+      .def("clear", &ataraxos::Rollouts::clear)
+      .def("set_prior",
+           [](ataraxos::Rollouts& r, py::array_t<double, py::array::c_style | py::array::forcecast> w) {
+             if (size_t(w.size()) != r.pool().teams.size()) throw std::invalid_argument("set_prior: one weight per team");
+             r.pool().set_prior({w.data(), size_t(w.size())});
+           },
+           py::arg("w"))
+      // a search at a SelfPlay battle's decision (the env with state and
+      // set_keep_after(True)); returns the root
+      .def("add_selfplay",
+           [](ataraxos::Rollouts& r, const Env& env, size_t b, uint8_t p, uint32_t worlds, uint32_t reps,
+              uint16_t depth, uint64_t seed) {
+             const ataraxos::BattleData& d = env.battle(b);
+             if (!d.track || !d.keep_after) throw std::invalid_argument("add_selfplay: the env needs state and keep_after");
+             if (!d.needs_choice(p)) throw std::invalid_argument("add_selfplay: no decision there");
+             py::gil_scoped_release release;
+             return r.add(p, d.bk[p], d.history[p], d.after[p], d.request[p], {d.option[p].data(), d.n_option[p]},
+                          d.binds, worlds, reps, depth, seed);
+           },
+           py::arg("env"), py::arg("battle"), py::arg("player"), py::arg("worlds"), py::arg("reps"),
+           py::arg("depth"), py::arg("seed"))
+      // each world's foe prefill: tokens i16 [T, COLUMNS], offsets i64
+      // [S + 1] over summaries, request i16 [S, REQUEST_FIELDS], summaries i64 [W + 1] (world w's are
+      // summaries[w]:summaries[w + 1]), t0 i64 [W], root u32 [W], source u8
+      // [W] (0 a team, 1 sets, 2 random); and each rollout's world u32 [N],
+      // action u8 [N], differs u8 [N]
+      .def("layout",
+           [](const ataraxos::Rollouts& r) {
+             const auto& ws = r.worlds();
+             size_t T = 0, S = 0;
+             for (const auto& w : ws) T += w.tokens.size(), S += w.ends.size();
+             auto tokens = array<int16_t>({py::ssize_t(T), py::ssize_t(ataraxos::COLUMNS)});
+             auto offsets = array<int64_t>({py::ssize_t(S + 1)});
+             auto request = array<int16_t>({py::ssize_t(S), py::ssize_t(ataraxos::REQUEST_FIELDS)});
+             auto summaries = array<int64_t>({py::ssize_t(ws.size() + 1)});
+             auto t0 = array<int64_t>({py::ssize_t(ws.size())});
+             auto root = array<uint32_t>({py::ssize_t(ws.size())});
+             auto source = array<uint8_t>({py::ssize_t(ws.size())});
+             size_t t = 0, s = 0;
+             for (size_t i = 0; i < ws.size(); i++) {
+               const auto& w = ws[i];
+               std::memcpy(tokens.mutable_data() + t * ataraxos::COLUMNS, w.tokens.data(), w.tokens.size() * sizeof(ataraxos::Token));
+               summaries.mutable_data()[i] = int64_t(s);
+               std::memcpy(request.mutable_data() + s * ataraxos::REQUEST_FIELDS, w.requests.data(), w.requests.size() * 2);
+               for (const uint32_t e : w.ends) offsets.mutable_data()[++s] = int64_t(t + e);
+               t += w.tokens.size();
+               t0.mutable_data()[i] = w.t0;
+               root.mutable_data()[i] = w.root;
+               source.mutable_data()[i] = uint8_t(w.source);
+             }
+             offsets.mutable_data()[0] = 0;
+             summaries.mutable_data()[ws.size()] = int64_t(s);
+             const auto& rs = r.rollouts();
+             auto world = array<uint32_t>({py::ssize_t(rs.size())});
+             auto action = array<uint8_t>({py::ssize_t(rs.size())});
+             auto differs = array<uint8_t>({py::ssize_t(rs.size())});
+             for (size_t i = 0; i < rs.size(); i++) {
+               world.mutable_data()[i] = rs[i].world;
+               action.mutable_data()[i] = rs[i].action;
+               differs.mutable_data()[i] = rs[i].differs;
+             }
+             py::dict out;
+             out["tokens"] = tokens;
+             out["offsets"] = offsets;
+             out["request"] = request;
+             out["summaries"] = summaries;
+             out["t0"] = t0;
+             out["root"] = root;
+             out["source"] = source;
+             out["world"] = world;
+             out["action"] = action;
+             out["differs"] = differs;
+             return out;
+           })
+      .def("start",
+           [](ataraxos::Rollouts& r, uint64_t seed) {
+             {
+               py::gil_scoped_release release;
+               r.start(seed);
+               r.release();
+             }
+             return observe_rollouts(r);
+           },
+           py::arg("seed"))
+      .def("step",
+           [](ataraxos::Rollouts& r, py::array_t<uint8_t, py::array::c_style | py::array::forcecast> picks,
+              py::array_t<float, py::array::c_style | py::array::forcecast> values) {
+             size_t D = 0;
+             for (const auto& sh : r.shards()) D += sh.decisions.size();
+             if (size_t(picks.size()) != D || size_t(values.size()) != D) {
+               throw std::invalid_argument("step: one pick and value per decision");
+             }
+             {
+               py::gil_scoped_release release;
+               r.step({picks.data(), D}, {values.data(), D});
+             }
+             return observe_rollouts(r);
+           },
+           py::arg("picks"), py::arg("values"))
+      .def_property_readonly("done", &ataraxos::Rollouts::done)
+      .def_property_readonly("rollouts", [](const ataraxos::Rollouts& r) { return r.rollouts().size(); })
+      .def("q",
+           [](const ataraxos::Rollouts& r, size_t root) {
+             const std::vector<double> q = r.q(root);
+             return py::array_t<double>(py::ssize_t(q.size()), q.data());
+           },
+           py::arg("root"));
 }

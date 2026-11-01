@@ -262,6 +262,12 @@ class SelfPlay {
   size_t size() const { return size_; }
   int threads() const { return threads_; }
   bool state() const { return state_; }
+  const BattleData& battle(size_t b) const { return battles_[b]; }
+  // Keep each player's Bookkeeping after every update (with `state`), for
+  // searching (rollouts.hpp). Takes effect as games start.
+  void set_keep_after(bool on) {
+    for (size_t b = 0; b < size_; b++) battles_[b].keep_after = on;
+  }
 
  private:
   std::unique_ptr<BattleData[]> battles_;

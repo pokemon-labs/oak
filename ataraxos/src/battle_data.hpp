@@ -58,6 +58,11 @@ struct BattleData {
   std::vector<size_t> trace_ends;
   Bookkeeping bk[2];
   std::vector<std::vector<Obs>> history[2];
+  // With `track` and `keep_after`, each player's Bookkeeping after each
+  // update, before the request that follows it (the history sampler's
+  // `after`).
+  bool keep_after = false;
+  std::vector<Bookkeeping> after[2];
 
   BattleData() = default;
   // `options` points at `buffer`.
@@ -83,11 +88,40 @@ struct BattleData {
       for (uint8_t p = 0; p < 2; p++) {
         bk[p] = Bookkeeping(p, teamsize, state().sides[p]);
         history[p].clear();
+        after[p].clear();
       }
     }
     asked[0] = asked[1] = false;
     binds = Binds{};
     advance(0, 0);
+  }
+
+  // Starts from world `b` mid-game (a history sample's), each player's
+  // request of kind `kinds[p]`, with the players' Bookkeeping `bks` (with
+  // `track`); `durations` go to the first update as libpkmn's chance
+  // durations (oak's MCTS sets them for each iteration's root). The views
+  // keep the numbering as it is (`identity_view`).
+  void resume(const pkmn_gen1_battle& b, const pkmn_gen1_chance_durations& durations,
+              const std::array<pkmn_choice_kind, 2>& kinds, const Binds& bd, const Bookkeeping* bks) {
+    battle = b;
+    for (auto& c : chunk) c.clear();
+    trace_log.clear();
+    trace_ends.clear();
+    for (uint8_t p = 0; p < 2; p++) {
+      view[p] = identity_view(p);
+      if (track) {
+        bk[p] = bks[p];
+        history[p].clear();
+        after[p].clear();
+      }
+      asked[p] = false;
+    }
+    binds = bd;
+    result = 0;
+    chance_.durations = durations;
+    first_ = true;
+    for (uint8_t p = 0; p < 2; p++) ask(p, kinds[p]);
+    chosen[0] = chosen[1] = false;
   }
 
   bool over() const { return pkmn_result_type(result) != PKMN_RESULT_NONE; }
@@ -114,7 +148,8 @@ struct BattleData {
  private:
   void advance(pkmn_choice c1, pkmn_choice c2) {
     pkmn_gen1_log_options log{buffer.data(), buffer.size()};
-    pkmn_gen1_battle_options_set(&options, &log, nullptr, nullptr);
+    pkmn_gen1_battle_options_set(&options, &log, first_ ? &chance_ : nullptr, nullptr);
+    first_ = false;
     const PKMN::Battle before = state();
     result = pkmn_gen1_battle_update(&battle, c1, c2, &options);
     binds.update(before, state());
@@ -135,6 +170,7 @@ struct BattleData {
         std::vector<Obs> obs = split({copy.data(), n});
         bk[p].update(obs, history[p]);
         history[p].push_back(std::move(obs));
+        if (keep_after) after[p].push_back(bk[p]);
       }
       if (over()) {
         request[p] = RequestData{};
@@ -142,15 +178,22 @@ struct BattleData {
         n_legal[p] = n_option[p] = 0;
         continue;
       }
-      const pkmn_choice_kind kind = p == 0 ? pkmn_result_p1(result) : pkmn_result_p2(result);
-      n_legal[p] = uint8_t(pkmn_gen1_battle_choices(&battle, p == 0 ? PKMN_PLAYER_P1 : PKMN_PLAYER_P2, kind,
-                                                    legal[p].data(), legal[p].size()));
-      request[p] = request_data(state(), p, kind, binds.of(state(), p));
-      n_option[p] = showdown_choices(request[p], option[p].data());
-      if (track) bk[p].request(request[p]);
+      ask(p, p == 0 ? pkmn_result_p1(result) : pkmn_result_p2(result));
     }
     chosen[0] = chosen[1] = false;
   }
+
+  // p's request of `kind` on the battle now, its choices and libpkmn's.
+  void ask(uint8_t p, pkmn_choice_kind kind) {
+    n_legal[p] = uint8_t(pkmn_gen1_battle_choices(&battle, p == 0 ? PKMN_PLAYER_P1 : PKMN_PLAYER_P2, kind,
+                                                  legal[p].data(), legal[p].size()));
+    request[p] = request_data(state(), p, kind, binds.of(state(), p));
+    n_option[p] = showdown_choices(request[p], option[p].data());
+    if (track) bk[p].request(request[p]);
+  }
+
+  pkmn_gen1_chance_options chance_{};
+  bool first_ = false;
 };
 
 } // namespace ataraxos

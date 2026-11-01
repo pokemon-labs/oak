@@ -155,4 +155,12 @@ struct View {
   }
 };
 
+// A View that keeps the numbering as it is (every slot already its number).
+inline View identity_view(uint8_t p) {
+  View v{p};
+  for (uint8_t s = 1; s <= 6; s++) v.number[s] = s;
+  v.seen = 6;
+  return v;
+}
+
 } // namespace ataraxos
