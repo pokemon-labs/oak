@@ -474,6 +474,11 @@ class Sampler {
   void rewrite(Obs& o, const std::array<std::array<uint16_t, 7>, 2>& max,
                std::array<std::array<uint16_t, 7>, 2>& est) const {
     uint8_t* d = nullptr;
+    if (o.type == ArgType::Faint) {
+      // Explosion's user faints with no Damage line
+      est[ident_player(o.data[0])][ident_slot(o.data[0])] = 0;
+      return;
+    }
     switch (o.type) {
     case ArgType::Switch: d = o.data + 3; break;
     case ArgType::Damage:
