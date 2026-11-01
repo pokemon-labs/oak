@@ -46,6 +46,7 @@
 #include <cstring>
 #include <stdexcept>
 
+#include "client.hpp"
 #include "env.hpp"
 #include "rollouts.hpp"
 
@@ -358,6 +359,17 @@ PYBIND11_MODULE(ataraxos_env, m) {
            },
            py::arg("env"), py::arg("battle"), py::arg("player"), py::arg("worlds"), py::arg("reps"),
            py::arg("depth"), py::arg("seed"), py::arg("truth") = false)
+      // a search at the ladder Client's request now (ataraxos_client's
+      // Client, which keeps no Binds: Binds{}); returns the root
+      .def("add_client",
+           [](ataraxos::Rollouts& r, const ataraxos::Client& c, uint32_t worlds, uint32_t reps, uint16_t depth,
+              uint64_t seed) {
+             if (c.req.kind == ataraxos::RequestData::Wait || c.n == 0) throw std::invalid_argument("add_client: no decision");
+             py::gil_scoped_release release;
+             return r.add(c.viewer(), c.bookkeeping(), c.history(), c.after(), c.req, {c.options.data(), c.n},
+                          ataraxos::Binds{}, worlds, reps, depth, seed);
+           },
+           py::arg("client"), py::arg("worlds"), py::arg("reps"), py::arg("depth"), py::arg("seed"))
       // each world's foe prefill: tokens i16 [T, COLUMNS], offsets i64
       // [S + 1] over summaries, request i16 [S, REQUEST_FIELDS], summaries i64 [W + 1] (world w's are
       // summaries[w]:summaries[w + 1]), t0 i64 [W], root u32 [W], source u8

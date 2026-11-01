@@ -40,7 +40,13 @@ with every probability under `--min-prob`/k (k the legal choices; 1 prunes
 whatever is under uniform; 0, the default, prunes nothing) set to 0 and the
 rest renormalized (the most probable choice always stays), on
 the CPU, through causal_actor with the net's own window and the client's
-bookkeeping state.
+bookkeeping state. With `--search-pool` (2026-11-01), every decision
+with two or more choices is searched (ataraxos/search.py: `--search-budget`
+rollouts, `--search-reps` per world and choice, `--search-depth` turns, the
+history sampler's pool from that Showdown export file, on
+`--search-device`) and the pick is drawn from the search's policy; the
+jsonl keeps the net's log-probs and q too. A failed search plays the net's
+pick.
 
 Schedule (2026-10-28, the user's ask, for a bot-vs-bot match):
 `--schedule FILE --challenge USER` challenges USER to one game at a time,
@@ -131,6 +137,7 @@ import websockets
 
 from ataraxos._ext import ataraxos_client  # noqa: E402
 from ataraxos.nets.causal_actor import make_actor  # noqa: E402
+from ataraxos.search import Search, SearchConfig  # noqa: E402
 from ataraxos.eval.agents import load_policy  # noqa: E402
 
 SERVER = "wss://sim3.psim.us/showdown/websocket"
@@ -419,6 +426,17 @@ class Battle:
                     picks, logp, value = self.actor.act(obs)
                 n = self.client.n
                 cmds = [self.client.choice(k) for k in range(n)]
+                net_lp, q, searched = logp[0, :n].tolist(), None, None
+                if self.bot.search is not None:
+                    try:
+                        tic = time.monotonic()
+                        sp, qs, slp = self.bot.search.run_client(self.client, self.actor, 0, obs, logp)
+                        picks, logp, q = sp, slp, [round(float(x), 4) for x in qs[0]]
+                        searched = round(time.monotonic() - tic, 2)
+                    except Exception as e:  # noqa: BLE001
+                        say(self.room, "search failed, playing the net's pick:", repr(e))
+                        self.out.write(json.dumps({"error": "search", "what": repr(e),
+                                                   "trace": traceback.format_exc()}) + "\n")
                 lp = logp[0, :n].tolist()
                 t, floor = self.bot.args.temperature, self.bot.args.min_prob
                 if t == 1 and floor <= 0:
@@ -429,7 +447,8 @@ class Battle:
                 self.propose(dict(rqid=rqid, cmds=cmds, labels=[label(req, c) for c in cmds], logp=lp,
                                   used=used.tolist(), revealed=[self.client.revealed(k) for k in range(n)],
                                   pick=pick, p_win=round(self.last_p_win, 4),
-                                  tokens=int(d["offsets"][1]), request=req))
+                                  tokens=int(d["offsets"][1]), request=req,
+                                  **({"net_logp": net_lp, "q": q, "search_s": searched} if q is not None else {})))
                 return
             except Exception as e:  # noqa: BLE001
                 self.fail("request", e)
@@ -536,6 +555,11 @@ class Bot:
         self.args = args
         torch.set_num_threads(args.threads)
         self.policy = load_policy(args.ckpt, "cpu", args.weights)
+        self.search = None
+        if args.search_pool:
+            cfg = SearchConfig(budget=args.search_budget, reps=args.search_reps, depth=args.search_depth)
+            self.search = Search(load_policy(args.ckpt, args.search_device, args.weights), [args.search_pool],
+                                 args.search_device, cfg, threads=args.threads)
         self.pool = [line.rstrip("\n").split("\t") for line in open(args.teams) if "\t" in line]
         self.rng = np.random.default_rng()
         self.battles = {}
@@ -1004,6 +1028,12 @@ def main():
     ap.add_argument("--chat-top", type=int, default=4, help="the most probable choices the chat line names")
     ap.add_argument("--control-port", type=int, default=0, help="the harness's port on 127.0.0.1 (0: none)")
     ap.add_argument("--mode", default="auto", choices=MODES, help="how new battles decide")
+    ap.add_argument("--search-pool", default="",
+                    help="search (ataraxos/search.py) with this team file as the history sampler's pool (none: no search)")
+    ap.add_argument("--search-budget", type=int, default=128, help="rollouts per decision")
+    ap.add_argument("--search-reps", type=int, default=2, help="rollouts per (world, choice)")
+    ap.add_argument("--search-depth", type=int, default=10, help="turns before the leaf")
+    ap.add_argument("--search-device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--deadline", type=float, default=60.0,
                     help="seconds a proposed decision waits before the policy's pick goes")
     args = ap.parse_args()
@@ -1024,7 +1054,9 @@ def main():
     os.makedirs(args.games_dir, exist_ok=True)
     bot = Bot(args)
     say(f"policy {args.ckpt} ({args.weights}), temperature {args.temperature}, min prob {args.min_prob}; "
-        f"{len(bot.pool)} teams; accepting {FORMAT} challenges from {args.accept_from or 'anyone'}; mode {args.mode}"
+        + (f"search: pool {args.search_pool}, budget {args.search_budget}, reps {args.search_reps}, "
+           f"depth {args.search_depth} on {args.search_device}; " if args.search_pool else "")
+        + f"{len(bot.pool)} teams; accepting {FORMAT} challenges from {args.accept_from or 'anyone'}; mode {args.mode}"
         + (f"; schedule {args.schedule} against {args.challenge}, next game {bot.sched_state()['next']}"
            if bot.schedule else "")
         + (f", control on 127.0.0.1:{args.control_port}" if args.control_port else "")

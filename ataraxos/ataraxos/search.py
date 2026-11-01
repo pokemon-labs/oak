@@ -122,17 +122,38 @@ class Search:
                     actor.v[l, k, t % R] = vl.to(actor.v.dtype)
             actor.t[k] = t + 1
 
-    @torch.no_grad()
     def run(self, env, real: CausalActor, obs, logp, seed=None, truth=False, check=None):
-        """Searches decisions `obs` (rows of `env`'s output, all ours, the
-        real actor having just run on them; `logp` [D, CHOICES] its
-        log-probs) and returns (picks u8 [D], q list, search log-probs [D,
-        CHOICES]). `truth`: every world has the foe's true sets. `check`
+        """Searches decisions `obs` (rows of the SelfPlay `env`'s output, all
+        ours, the real actor having just run on them; `logp` [D, CHOICES]
+        its log-probs) and returns (picks u8 [D], q list, search log-probs
+        [D, CHOICES]). `truth`: every world has the foe's true sets. `check`
         (tests, a dict): fills in "ours", the copied cache rerun on the
         root summary against `logp` (max abs), and "foe", per root whose
         rollouts start with a foe decision: (root, the mean of their first
         foe log-probs, that decision's request, choices and n)."""
         c = self.cfg
+
+        def add(r, i, seed):
+            r.add_selfplay(env, int(obs["battle"][i]), int(obs["player"][i]), self.worlds(int(obs["n"][i])),
+                           c.reps, c.depth, seed, truth)
+
+        keys = obs["battle"].astype(np.int64) * 2 + obs["player"]
+        return self.search(add, real, keys, obs["player"], obs, logp, seed, check)
+
+    def run_client(self, client, real: CausalActor, key, obs, logp, seed=None):
+        """One search at the ladder Client's request: `obs` its one decision,
+        which the real actor ran at cache key `key`."""
+        c = self.cfg
+
+        def add(r, i, seed):
+            r.add_client(client, self.worlds(int(obs["n"][0])), c.reps, c.depth, seed)
+
+        return self.search(add, real, np.array([key], np.int64), np.array([client.viewer()]), obs, logp, seed)
+
+    @torch.no_grad()
+    def search(self, add, real, keys, players, obs, logp, seed=None, check=None):
+        """`add(rollouts, i, seed)` adds root i; `keys` [D] the roots' keys
+        in the real actor's cache, `players` [D] their sides."""
         D = len(obs["n"])
         seed = int(self.rng.integers(1 << 62)) if seed is None else seed
         r = self.r
@@ -148,8 +169,7 @@ class Search:
 
         r.clear()
         for i in range(D):
-            r.add_selfplay(env, int(obs["battle"][i]), int(obs["player"][i]), self.worlds(int(obs["n"][i])),
-                           c.reps, c.depth, seed + i, truth)
+            add(r, i, seed + i)
         lay = r.layout()
         N = r.rollouts
         lap("sample")
@@ -157,15 +177,16 @@ class Search:
         dev = self.device
         world_of = lay["world"].astype(np.int64)
         root_of = lay["root"].astype(np.int64)[world_of]
-        us = obs["player"].astype(np.int64)[root_of]
+        players = np.asarray(players, np.int64)
+        us = players[root_of]
         idx = np.arange(N, dtype=np.int64)
         ours = torch.from_numpy(idx * 2 + us).to(dev)
         foes = torch.from_numpy(idx * 2 + 1 - us).to(dev)
         # ours: the real game's cache
-        src = torch.from_numpy(obs["battle"].astype(np.int64)[root_of] * 2 + us).to(dev)
-        actor.k[:, ours] = real.k[:, src].to(actor.k.dtype)
-        actor.v[:, ours] = real.v[:, src].to(actor.v.dtype)
-        actor.t[ours] = real.t[src]
+        src = torch.from_numpy(np.asarray(keys, np.int64)[root_of]).to(real.device)
+        actor.k[:, ours] = real.k[:, src].to(dev, actor.k.dtype)
+        actor.v[:, ours] = real.v[:, src].to(dev, actor.v.dtype)
+        actor.t[ours] = real.t[src].to(dev)
         actor.game[ours] = 0
         # the foe's: each world's history, then copied to its rollouts
         _, first = np.unique(world_of, return_index=True)
@@ -181,14 +202,15 @@ class Search:
             _, root_first = np.unique(root_of, return_index=True)
             again = dict(obs)
             again["battle"] = idx[root_first].astype(np.uint32)
+            again["player"] = us[root_first].astype(np.uint8)
             again["game"] = np.zeros(D, np.uint32)
             k = torch.from_numpy(idx[root_first] * 2 + us[root_first]).to(dev)
             t = actor.t[k].clone()
             actor.t[k] = t - 1
             _, lp_again, _ = actor.act(again)
             actor.t[k] = t
-            legal = torch.arange(logp.shape[1], device=dev)[None] < torch.from_numpy(obs["n"]).to(dev)[:, None]
-            check["ours"] = float((lp_again - logp).abs().masked_fill(~legal, 0).max())
+            legal = torch.arange(logp.shape[1], device=logp.device)[None] < torch.from_numpy(obs["n"]).to(logp.device)[:, None]
+            check["ours"] = float((lp_again.to(logp.device) - logp).abs().masked_fill(~legal, 0).max())
         lap("prefill")
 
         out = r.start(seed)
@@ -198,7 +220,7 @@ class Search:
             picks, lp_r, value = actor.act(out)
             if first:
                 first = False
-                foe_rows = np.flatnonzero(out["player"] != obs["player"][out["root"]])
+                foe_rows = np.flatnonzero(out["player"] != players[out["root"]])
                 check["foe"] = []
                 for i in range(D):
                     rows = foe_rows[out["root"][foe_rows] == i]
@@ -212,10 +234,10 @@ class Search:
 
         picks = np.zeros(D, np.uint8)
         qs, lps = [], torch.empty_like(logp)
-        choices = torch.from_numpy(obs["choices"]).to(logp.device)
+        choices = torch.from_numpy(np.ascontiguousarray(obs["choices"])).to(logp.device)
         for i in range(D):
             q = r.q(i)
-            lp = update(q, logp[i], choices[i], int(obs["n"][i]), c)
+            lp = update(q, logp[i], choices[i], int(obs["n"][i]), self.cfg)
             picks[i] = torch.multinomial(lp.exp(), 1).item()
             qs.append(q)
             lps[i] = lp
