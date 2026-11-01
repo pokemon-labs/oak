@@ -83,10 +83,12 @@ class Rollouts {
   // A search at player p's decision now. `updates` and `after` are p's view
   // and Bookkeeping after each update (the sampler's), `request` and
   // `options` p's request now and its Showdown choices, `binds` the binds
-  // as p's request saw them. Returns the root's index.
+  // as p's request saw them; `fixed`, a guess every world takes (tests).
+  // Returns the root's index.
   size_t add(uint8_t p, const Bookkeeping& now, std::span<const std::vector<Obs>> updates,
              std::span<const Bookkeeping> after, const RequestData& request, std::span<const pkmn_choice> options,
-             const Binds& binds, uint32_t worlds, uint32_t reps, uint16_t depth, uint64_t seed) {
+             const Binds& binds, uint32_t worlds, uint32_t reps, uint16_t depth, uint64_t seed,
+             const Guess* fixed = nullptr) {
     assert(options.size() >= 1 && options.size() <= MAX_CHOICES);
     Root r{p, uint8_t(options.size()), {}, uint32_t(worlds_.size()), worlds, uint32_t(rollouts_.size()),
            worlds * reps * uint32_t(options.size())};
@@ -99,7 +101,7 @@ class Rollouts {
     std::vector<Guess> guesses(worlds);
     std::vector<uint64_t> seeds(worlds);
     for (uint32_t w = 0; w < worlds; w++) {
-      guesses[w] = sampler.guess(rng);
+      guesses[w] = fixed ? *fixed : sampler.guess(rng);
       seeds[w] = rng();
     }
     std::vector<Sample> samples(worlds);

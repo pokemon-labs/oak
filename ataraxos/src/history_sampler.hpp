@@ -175,6 +175,40 @@ struct Guess {
   uint32_t team = UINT32_MAX; // the pool team, when every set is one team's
 };
 
+// The foe's true sets by bookkeeping's numbering, from the real battle's
+// side `real` (for tests): each revealed Pokémon takes the set of its
+// species, the unseen ones the rest in party order.
+inline Guess true_guess(const Bookkeeping& now, const PKMN::Side& real) {
+  Guess g;
+  std::array<Set, 6> team{};
+  size_t n = 0;
+  for (const PKMN::Pokemon& p : real.pokemon) {
+    if (p.species == PKMN::Data::Species::None) continue;
+    Set& s = team[n++];
+    s.species = p.species;
+    s.level = p.level;
+    for (uint8_t i = 0; i < 4; i++) s.moves[i] = p.moves[i].id;
+  }
+  std::array<bool, 6> used{};
+  const PKMN::Side& side = now.battle.sides[1 - now.player];
+  for (uint8_t k = 0; k < 6; k++) {
+    for (size_t j = 0; j < n; j++) {
+      if (!used[j] && side.pokemon[k].species != PKMN::Data::Species::None && side.pokemon[k].species == team[j].species) {
+        g.sets[k] = team[j];
+        used[j] = true;
+        break;
+      }
+    }
+  }
+  uint8_t k = 0;
+  for (size_t j = 0; j < n; j++) {
+    if (used[j]) continue;
+    while (k < 6 && side.pokemon[k].species != PKMN::Data::Species::None) k++;
+    if (k < 6) g.sets[k++] = team[j];
+  }
+  return g;
+}
+
 // One world: the battle to roll out from, and the foe's history.
 struct Sample {
   Guess guess;

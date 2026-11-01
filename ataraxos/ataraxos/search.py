@@ -123,11 +123,16 @@ class Search:
             actor.t[k] = t + 1
 
     @torch.no_grad()
-    def run(self, env, real: CausalActor, obs, logp, seed=None):
+    def run(self, env, real: CausalActor, obs, logp, seed=None, truth=False, check=None):
         """Searches decisions `obs` (rows of `env`'s output, all ours, the
         real actor having just run on them; `logp` [D, CHOICES] its
         log-probs) and returns (picks u8 [D], q list, search log-probs [D,
-        CHOICES])."""
+        CHOICES]). `truth`: every world has the foe's true sets. `check`
+        (tests, a dict): its "foe_logp" [D, CHOICES] (NaN rows: the foe
+        doesn't decide now) is the real foe's policy now; fills in "ours",
+        the copied cache rerun on the root summary against `logp` (max
+        abs), and "foe", per root with a real foe policy (KL(real ||
+        rollout's first foe decision), whether their argmaxes agree)."""
         c = self.cfg
         D = len(obs["n"])
         seed = int(self.rng.integers(1 << 62)) if seed is None else seed
@@ -145,7 +150,7 @@ class Search:
         r.clear()
         for i in range(D):
             r.add_selfplay(env, int(obs["battle"][i]), int(obs["player"][i]), self.worlds(int(obs["n"][i])),
-                           c.reps, c.depth, seed + i)
+                           c.reps, c.depth, seed + i, truth)
         lay = r.layout()
         N = r.rollouts
         lap("sample")
@@ -172,12 +177,43 @@ class Search:
         actor.v[:, foes] = actor.v[:, fk]
         actor.t[foes] = actor.t[fk]
         actor.game[foes] = 0
+        if check is not None:
+            # the root summary again, on each root's first rollout's copy
+            _, root_first = np.unique(root_of, return_index=True)
+            again = dict(obs)
+            again["battle"] = idx[root_first].astype(np.uint32)
+            again["game"] = np.zeros(D, np.uint32)
+            k = torch.from_numpy(idx[root_first] * 2 + us[root_first]).to(dev)
+            t = actor.t[k].clone()
+            actor.t[k] = t - 1
+            _, lp_again, _ = actor.act(again)
+            actor.t[k] = t
+            legal = torch.arange(logp.shape[1], device=dev)[None] < torch.from_numpy(obs["n"]).to(dev)[:, None]
+            check["ours"] = float((lp_again - logp).abs().masked_fill(~legal, 0).max())
         lap("prefill")
 
         out = r.start(seed)
         steps = 0
+        first = check is not None
         while len(out["n"]):
-            picks, _, value = actor.act(out)
+            picks, lp_r, value = actor.act(out)
+            if first:
+                first = False
+                real_foe = check["foe_logp"]
+                foe_rows = np.flatnonzero(out["player"] != obs["player"][out["root"]])
+                kl, agree = [], []
+                for i in range(D):
+                    if torch.isnan(real_foe[i]).any():
+                        continue
+                    rows = foe_rows[out["root"][foe_rows] == i]
+                    if not len(rows):
+                        continue
+                    p = real_foe[i].exp()
+                    lq = lp_r[torch.from_numpy(rows).to(dev)].mean(0)
+                    m = p > 0
+                    kl.append(float((p[m] * (real_foe[i][m] - lq[m])).sum()))
+                    agree.append(bool(real_foe[i].argmax() == lq.argmax()))
+                check["foe"] = (kl, agree)
             out = r.step(picks, win_minus_loss(value).cpu().numpy().astype(np.float32))
             steps += 1
         assert r.done

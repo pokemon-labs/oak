@@ -343,19 +343,21 @@ PYBIND11_MODULE(ataraxos_env, m) {
            },
            py::arg("w"))
       // a search at a SelfPlay battle's decision (the env with state and
-      // set_keep_after(True)); returns the root
+      // set_keep_after(True)); returns the root. `truth`: every world has
+      // the foe's true sets (tests)
       .def("add_selfplay",
            [](ataraxos::Rollouts& r, const Env& env, size_t b, uint8_t p, uint32_t worlds, uint32_t reps,
-              uint16_t depth, uint64_t seed) {
+              uint16_t depth, uint64_t seed, bool truth) {
              const ataraxos::BattleData& d = env.battle(b);
              if (!d.track || !d.keep_after) throw std::invalid_argument("add_selfplay: the env needs state and keep_after");
              if (!d.needs_choice(p)) throw std::invalid_argument("add_selfplay: no decision there");
              py::gil_scoped_release release;
+             const ataraxos::Guess g = ataraxos::true_guess(d.bk[p], d.state().sides[1 - p]);
              return r.add(p, d.bk[p], d.history[p], d.after[p], d.request[p], {d.option[p].data(), d.n_option[p]},
-                          d.binds, worlds, reps, depth, seed);
+                          d.binds, worlds, reps, depth, seed, truth ? &g : nullptr);
            },
            py::arg("env"), py::arg("battle"), py::arg("player"), py::arg("worlds"), py::arg("reps"),
-           py::arg("depth"), py::arg("seed"))
+           py::arg("depth"), py::arg("seed"), py::arg("truth") = false)
       // each world's foe prefill: tokens i16 [T, COLUMNS], offsets i64
       // [S + 1] over summaries, request i16 [S, REQUEST_FIELDS], summaries i64 [W + 1] (world w's are
       // summaries[w]:summaries[w + 1]), t0 i64 [W], root u32 [W], source u8
