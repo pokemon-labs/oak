@@ -12,7 +12,7 @@
 //   percent, status, moves as a set; the active's moves and PP);
 // - consistency, which must be 0: in every rebuilt summary, each foe
 //   Pokémon's request HP and max HP equal the last its lines showed, and
-//   the world's foe HP the last request's;
+//   the world's foe HP the last request's (a Faint line shows 0);
 // - DRAWS pool guesses: the world gives us the real request's legal
 //   choices, is consistent as above, and plays out under random choices
 //   (200 updates) without an engine error.
@@ -62,6 +62,7 @@ size_t inconsistencies(const Sample& s, uint8_t foe) {
   for (size_t i = 0; i < s.ends.size(); i++) {
     for (; at < s.ends[i]; at++) {
       const Token& t = s.tokens[at];
+      if (ArgType(t.c[KIND]) == ArgType::Faint && side_of(t.c[ACTOR]) == 0) hp[slot_of(t.c[ACTOR])] = 0;
       if (!has_health(t.c[KIND]) || side_of(t.c[ACTOR]) != 0) continue;
       const uint8_t k = slot_of(t.c[ACTOR]);
       if (ArgType(t.c[KIND]) == ArgType::Switch) species[k] = PKMN::Data::Species(t.c[SPECIES]);
