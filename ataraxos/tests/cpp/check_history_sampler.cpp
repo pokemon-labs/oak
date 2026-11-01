@@ -84,11 +84,16 @@ size_t inconsistencies(const Sample& s, uint8_t foe) {
     }
   }
   const PKMN::Side& side = PKMN::view(s.battle).sides[foe];
-  if (!s.requests.empty()) {
+  // (when the foe decides now: a wait's lines come after its last request)
+  if (!s.requests.empty() && s.ends.back() == s.tokens.size()) {
     const RequestData& r = s.requests.back();
     for (uint8_t j = 0; j < r.size; j++) {
       for (const PKMN::Pokemon& p : side.pokemon) {
-        if (p.species == r.side[j].species) bad += p.hp != r.side[j].hp;
+        if (p.species != r.side[j].species || p.hp == r.side[j].hp) continue;
+        if (std::getenv("DEBUG") && counts["printed world"]++ < 5) {
+          std::printf("world: %s %u, request %u\n", PKMN::species_string(p.species).c_str(), p.hp, r.side[j].hp);
+        }
+        bad++;
       }
     }
   }
