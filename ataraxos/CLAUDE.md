@@ -225,6 +225,37 @@ known PP); our choices differ in 124 of 773k draws (bookkeeping's
 mismatches); the true team is always among the matches. `half` draws:
 37% a team, 51% sets, 12% random moves.
 
-Next: the rollouts (both sides' nets from their histories, our forced
-first action, depth in turns, the value head at the leaf) and the closed-
-form update `[e^q ρ^α π^β]^{1/(α+β)}`.
+The rollouts (`src/rollouts.hpp`, bound as `ataraxos_env.Rollouts`;
+`ataraxos/search.py`), the user's calls (2026-11-01):
+
+- `worlds` history samples per root and `reps` rollouts per (world, our
+  choice), worlds * reps * n in all (Pokémon is stochastic and the foe's
+  choices vary, so a world gets several); `budget` (128 to start) sets
+  worlds = budget / (reps * n) when `worlds` is 0. Defaults (Claude's): reps
+  2, depth 10 turns. Every rollout samples the foe's net and its own battle
+  seed independently (the user: just sample the foe's policy).
+- A rollout is `BattleData::resume` on the world (identity views, the
+  world's Durations as libpkmn's chance durations on its first update, as
+  oak's MCTS), our Bookkeeping and the sample's foe one. Our first choice is
+  forced (the root's actor already ran on the root summary, so our cache is
+  the real actor's, copied); the foe's cache is its rebuilt history run once
+  per world (one-choice summaries joined to the next, as training; the last
+  window - 1, at their true positions) and copied to the world's rollouts.
+  The leaf is our first decision at turn >= root turn + depth (asked even
+  with one choice); its value is P(win) - P(loss); a finished game +1/0/-1.
+- The update: `[e^q rho^alpha pi^beta]^(1/(alpha+beta))`, alpha 0.002, beta
+  0.02 (the paper's), rho the attack_switch magnet, pi the root's net.
+- `check_rollouts GAMES SEED POOL WORLDS REPS DEPTH EVERY` (uniform self-
+  play, the pool the file's first half): 100 games seed 2, 197k rollouts in
+  5 s, 0 leaves early, 0 undone, 0.17% `differs` (the world's choices for us
+  aren't the root's: bookkeeping's mismatches).
+- `python -m ataraxos.eval.search_h2h CKPT` (one checkpoint both sides, one
+  searching, the pool the first half of oak1500 and the games the second):
+  16 battles at budget 128 do ~4 searches/s next to rby1's training, nearly
+  all of it the rollouts' net steps (~185 ms a step of ~1000 rows, eager).
+  Running: `runs/search_h2h/run.sh` (ckpt1300, 4 x 64 battles), out
+  `runs/search_h2h/b128_r2_d10.out`.
+
+Not done: search in the ladder client (the Client keeps `after` and a
+root's binds aren't known there: `Binds{}`), CUDA graphs for the rollouts'
+actor.
