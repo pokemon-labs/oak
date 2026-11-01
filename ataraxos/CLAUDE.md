@@ -253,9 +253,16 @@ The rollouts (`src/rollouts.hpp`, bound as `ataraxos_env.Rollouts`;
   searching, the pool the first half of oak1500 and the games the second):
   16 battles at budget 128 do ~4 searches/s next to rby1's training, nearly
   all of it the rollouts' net steps (~185 ms a step of ~1000 rows, eager).
-  Running: `runs/search_h2h/run.sh` (ckpt1300, 4 x 64 battles), out
-  `runs/search_h2h/b128_r2_d10.out`.
+  The user: the real eval is the ladder, not h2h (stopped).
+- `tests/py/check_search.py CKPT`: our copied cache rerun on the root
+  gives the root's log-probs exactly (0.0000); with the foe's true sets,
+  its first rollout decision vs the real foe's policy (choices matched by
+  meaning: the world numbers the foe by appearance): KL mean 0.0065,
+  argmax agrees 97% (the HP estimates).
+- The ladder driver searches with `--search-pool FILE` (`Rollouts.add_client`;
+  the Client has no Binds: `Binds{}`); the jsonl keeps q and the net's
+  probs. `beanseggyum` on pkmn.bot since 2026-11-01: ckpt1100 with search
+  (budget 128, reps 2, depth 10, GPU), ~0.5-1 s a decision
+  (`~/arena/beanseggyum/run.sh` on the box).
 
-Not done: search in the ladder client (the Client keeps `after` and a
-root's binds aren't known there: `Binds{}`), CUDA graphs for the rollouts'
-actor.
+Not done: CUDA graphs for the rollouts' actor.
