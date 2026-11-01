@@ -263,6 +263,10 @@ int main(int argc, char** argv) {
           if (k < 6) truth.sets[k++] = team[j];
         }
         const Sample s = sampler.sample(truth, bd.history[p], after[p], rng());
+        if (std::getenv("DEBUG") && s.ends.size() != ends[foe].size() && counts["summaries differ"] < 3) {
+          std::printf("game %zu step %d us %d: foe request kind %d chosen %d over %d, updates %zu/%zu\n", g, step, int(p),
+                      int(bd.request[foe].kind), int(bd.chosen[foe]), int(bd.over()), bd.history[p].size(), after[p].size());
+        }
         compare(s, tokens[foe], ends[foe], requests[foe]);
         count("inconsistent (truth)", inconsistencies(s, foe));
 
