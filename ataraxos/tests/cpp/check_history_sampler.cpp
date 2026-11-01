@@ -17,8 +17,11 @@
 //   choices, is consistent as above, and plays out under random choices
 //   (200 updates) without an engine error.
 //
-//   check_history_sampler [GAMES] [SEED] [POOL] [DRAWS] [EVERY]
-// EVERY: check one decision in EVERY (default 1).
+//   check_history_sampler [GAMES] [SEED] [POOL] [DRAWS] [EVERY] [half|random]
+// EVERY: check one decision in EVERY (default 1). `half`: the sampler's pool
+// is POOL's first half and the games' teams come from its second (foes
+// outside the pool, for the fallbacks); `random`: the games' teams are
+// truly random (teams.hpp's random_team).
 
 #include <cstdio>
 #include <cstdlib>
@@ -237,16 +240,26 @@ int main(int argc, char** argv) {
   const std::string path = argc > 3 ? argv[3] : "teams/selfplay/oak1500.txt";
   const size_t draws = argc > 4 ? std::strtoul(argv[4], nullptr, 10) : 4;
   const size_t every = argc > 5 ? std::max<size_t>(1, std::strtoul(argv[5], nullptr, 10)) : 1;
+  const std::string mode = argc > 6 ? argv[6] : "";
   size_t errors = 0;
-  const Pool pool(load_teams({path}, errors));
+  std::vector<Team> all = load_teams({path}, errors);
+  std::vector<Team> games_teams = all;
+  if (mode == "half") {
+    games_teams.assign(all.begin() + long(all.size() / 2), all.end());
+    all.resize(all.size() / 2);
+  }
+  const bool outside = !mode.empty();
+  const Pool pool(all);
   std::printf("pool %zu teams, %zu distinct sets (%zu load errors)\n", pool.teams.size(), pool.sets.size(), errors);
 
   size_t decision = 0;
   for (size_t g = 0; g < games; g++) {
-    const uint32_t ti[2] = {uint32_t(rng() % pool.teams.size()), uint32_t(rng() % pool.teams.size())};
+    const uint32_t ti[2] = {uint32_t(rng() % games_teams.size()), uint32_t(rng() % games_teams.size())};
+    Team teams[2] = {games_teams[ti[0]], games_teams[ti[1]]};
+    if (mode == "random") teams[0] = random_team(rng), teams[1] = random_team(rng);
     BattleData bd;
     bd.track = true;
-    bd.reset(init_battle(rng(), pool.teams[ti[0]], pool.teams[ti[1]]));
+    bd.reset(init_battle(rng(), teams[0], teams[1]));
     std::vector<Bookkeeping> after[2];
     std::vector<Token> tokens[2];
     std::vector<uint32_t> ends[2];
@@ -265,12 +278,12 @@ int main(int argc, char** argv) {
         const uint8_t foe = 1 - p;
         Sampler sampler(pool, bd.bk[p]);
         count("decisions");
-        if (!sampler.matches(ti[foe])) count("true team not among the matches");
+        if (!outside && !sampler.matches(ti[foe])) count("true team not among the matches");
         count("matching teams", sampler.matches());
 
         // the foe's true sets, by bookkeeping's numbering
         Guess truth;
-        const Team& team = pool.teams[ti[foe]];
+        const Team& team = teams[foe];
         std::vector<bool> used(team.size());
         const PKMN::Side& side = bd.bk[p].battle.sides[foe];
         for (uint8_t k = 0; k < 6; k++) {
