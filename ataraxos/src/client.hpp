@@ -265,6 +265,11 @@ class Client {
     return out;
   }
   const Names& names() const { return names_; }
+  // For the history sampler: the bookkeeping now, each update's messages and
+  // the bookkeeping after it.
+  const Bookkeeping& bookkeeping() const { return bk_; }
+  const std::vector<std::vector<Obs>>& history() const { return history_; }
+  const std::vector<Bookkeeping>& after() const { return after_; }
 
   // The tokens since the driver last took them: every update parsed since.
   std::vector<Token> tokens;
@@ -287,6 +292,7 @@ class Client {
   std::array<uint8_t, 2> teamsize_{6, 6};
   Bookkeeping bk_;
   std::vector<std::vector<Obs>> history_;
+  std::vector<Bookkeeping> after_;
   // Our side's max HP by party position, for "0 fnt".
   std::array<uint16_t, 6> max_hp_{};
   // The last request's Pokémon's party positions, by request position.
@@ -389,6 +395,7 @@ class Client {
       }
       bk_.update(obs, history_);
       history_.push_back(std::move(obs));
+      after_.push_back(bk_);
     }
     pending_.clear();
   }

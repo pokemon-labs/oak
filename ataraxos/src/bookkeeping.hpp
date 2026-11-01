@@ -70,6 +70,19 @@ inline constexpr uint8_t TOX = 0b10001000, REST = 0b10000010;
 
 inline bool is_sleep(uint8_t s) { return s & 7; }
 
+// The HP of a Pokémon of `m` max HP shown as `hp` of `max` (a percent of
+// 100), `est` the estimate so far: kept when it still shows that percent,
+// else the middle of the HP that show as it (ceil), 99 being any HP short of
+// full.
+inline uint16_t hp_from_percent(uint16_t est, uint16_t m, uint16_t hp, uint16_t max) {
+  if (hp == 0) return 0;
+  if (view_percent(est, m) == hp) return est;
+  if (hp >= max) return m;
+  const uint32_t lo = uint32_t(m) * (hp - 1) / max + 1;
+  const uint32_t hi = hp == max - 1 ? m - 1u : uint32_t(m) * hp / max;
+  return uint16_t((lo + std::max(lo, hi)) / 2);
+}
+
 inline D::MoveData data(Move m) {
   if (m == Move::None) return D::MoveData{};
   return D::move_data(m);
@@ -247,15 +260,7 @@ struct Bookkeeping {
   // the other (kept when the estimate still shows that percent).
   uint16_t hp_of(uint8_t s, const PKMN::Pokemon& p, uint16_t hp, uint16_t max) const {
     if (s == player || max == 0) return hp;
-    if (hp == 0) return 0;
-    if (view_percent(p.hp, p.stats.hp) == hp) return p.hp;
-    // the middle of the HP that show as this (ceil) percent, 99 being any
-    // HP short of full
-    const uint32_t m = p.stats.hp;
-    if (hp >= max) return uint16_t(m);
-    const uint32_t lo = m * (hp - 1) / max + 1;
-    const uint32_t hi = hp == max - 1 ? m - 1 : m * hp / max;
-    return uint16_t((lo + std::max(lo, hi)) / 2);
+    return bk::hp_from_percent(p.hp, p.stats.hp, hp, max);
   }
 
   // Mechanics.interrupt
