@@ -459,11 +459,13 @@ class Sampler {
     return last;
   }
 
-  // Each foe Pokémon seen so far gets its running estimate.
+  // Each foe Pokémon seen so far gets its running estimate; a fainted one
+  // no status (libpkmn clears it, bookkeeping keeps it).
   static void set_hp(PKMN::Side& side, const std::array<uint16_t, 7>& est) {
     for (uint8_t k = 1; k <= 6; k++) {
       PKMN::Pokemon& p = side.pokemon[k - 1];
       if (p.species != PKMN::Data::Species::None && (est[k] || p.hp == 0)) p.hp = est[k];
+      if (p.hp == 0) p.status = PKMN::Data::Status(0);
     }
   }
 
