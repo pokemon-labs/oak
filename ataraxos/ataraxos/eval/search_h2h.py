@@ -37,6 +37,10 @@ def split_teams(path, out_dir):
     return out
 
 
+def fmt(times):
+    return {k: round(v, 1) for k, v in times.items()}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("ckpt")
@@ -52,6 +56,7 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--max_turns", type=int, default=300)
+    ap.add_argument("--max_searches", type=int, default=0, help="stop after this many (0: play out)")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -75,7 +80,7 @@ def main():
         for bt, g, r in zip(obs["end_battle"], obs["end_game"], obs["end_result"]):
             if g == 0:
                 result[bt] = r if bt % 2 == 0 else -r
-        if (result != -2).all():
+        if (result != -2).all() or (args.max_searches and searched >= args.max_searches):
             break
         mine = (obs["battle"] % 2) == obs["player"]
         picks = np.zeros(len(obs["n"]), np.uint8)
@@ -99,11 +104,11 @@ def main():
         if searched and searched % 200 < len(rows):
             el = time.time() - t_start
             print(f"{el:7.0f}s  {searched} searches ({searched / el:.2f}/s), {done}/{B} games, "
-                  f"stats {search.stats}", flush=True)
+                  f"stats {search.stats}, times {fmt(search.times)}", flush=True)
     w, t, l = int((result == 1).sum()), int((result == 0).sum()), int((result == -1).sum())
     el = time.time() - t_start
     print(f"search vs net: {w} W {t} T {l} L of {B}, score {(w + t / 2) / B:.3f}; {searched} searches in {el:.0f}s, "
-          f"{moved} not the net's argmax; stats {search.stats}")
+          f"{moved} not the net's argmax; stats {search.stats}, times {fmt(search.times)}")
 
 
 if __name__ == "__main__":

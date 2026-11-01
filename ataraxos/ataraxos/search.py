@@ -19,6 +19,7 @@ rollouts. Many roots search together: every decision of the rollouts is
 one batch per step.
 """
 
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -71,6 +72,7 @@ class Search:
         self.actor = None
         self.rng = np.random.default_rng(seed)
         self.stats = {"roots": 0, "rollouts": 0, "steps": 0, "differs": 0}
+        self.times = {"sample": 0.0, "prefill": 0.0, "rollouts": 0.0, "update": 0.0}
 
     def worlds(self, n):
         c = self.cfg
@@ -130,12 +132,23 @@ class Search:
         D = len(obs["n"])
         seed = int(self.rng.integers(1 << 62)) if seed is None else seed
         r = self.r
+        tic = time.perf_counter()
+
+        def lap(what):
+            nonlocal tic
+            if self.device.type == "cuda":
+                torch.cuda.synchronize()
+            now = time.perf_counter()
+            self.times[what] += now - tic
+            tic = now
+
         r.clear()
         for i in range(D):
             r.add_selfplay(env, int(obs["battle"][i]), int(obs["player"][i]), self.worlds(int(obs["n"][i])),
                            c.reps, c.depth, seed + i)
         lay = r.layout()
         N = r.rollouts
+        lap("sample")
         actor = self._actor(N)
         dev = self.device
         world_of = lay["world"].astype(np.int64)
@@ -159,6 +172,7 @@ class Search:
         actor.v[:, foes] = actor.v[:, fk]
         actor.t[foes] = actor.t[fk]
         actor.game[foes] = 0
+        lap("prefill")
 
         out = r.start(seed)
         steps = 0
@@ -167,6 +181,7 @@ class Search:
             out = r.step(picks, win_minus_loss(value).cpu().numpy().astype(np.float32))
             steps += 1
         assert r.done
+        lap("rollouts")
 
         picks = np.zeros(D, np.uint8)
         qs, lps = [], torch.empty_like(logp)
@@ -177,6 +192,7 @@ class Search:
             picks[i] = torch.multinomial(lp.exp(), 1).item()
             qs.append(q)
             lps[i] = lp
+        lap("update")
         s = self.stats
         s["roots"] += D
         s["rollouts"] += N
