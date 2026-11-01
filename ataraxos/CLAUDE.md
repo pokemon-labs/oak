@@ -181,3 +181,50 @@ client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
   stopped birch's cs2b for it. Then: the real ladder when the user says.
 
 `box/hf_sync.sh` targets `opencover/ataraxos-runs` (the user's OK).
+
+## Phase 4: search (started 2026-11-01)
+
+The history sampler (`src/history_sampler.hpp`, the user's design): a
+world for an Ataraxos rollout, no replay. The user's calls:
+
+- The world is our Bookkeeping with the foe's unrevealed species and moves
+  filled in (DVs and stat experience maxed, so a set is species, level,
+  moves). Party order doesn't matter.
+- The guess, safari's TeamPredictor: pool teams that fit what's revealed
+  (Kuhn matching, birch's), drawn by the prior; else safari's SetDict (set
+  weights from the prior, Species Clause); else random OU moves (oak's
+  move pool) for a Pokémon no pool set fits. The guesses assume a strong
+  foe. Prior: rank decay over teams1500's peak-rating order (`Pool(teams,
+  ratio)`, 0.1 by default, Claude's pick), or `set_prior` (Exp3's
+  `q_avg` once `rby1` has run long: it's near uniform early).
+- The foe's history is divorced from Showdown: our view's bytes tokenized
+  with viewer = the foe. HP must be consistent (the user): the foe's own
+  HP is a running estimate from our percent (`bk::hp_from_percent`,
+  bookkeeping's rule, factored out) out of its max HP, ours a percent; a
+  Faint line zeroes it (Explosion's user has no Damage line). Its request
+  after each update is `request_data` on our bookkeeping after that update
+  (`Client::after()`) with the same guess and those HPs; a fainted foe
+  Pokémon has no status (libpkmn clears it, bookkeeping keeps it).
+- Our numbering (ours by party, the foe's by appearance) on both sides of
+  the history and the world; a rollout's Views start as `identity_view`.
+  The world's hidden counters are oak's `randomize_hidden_variables` on
+  bookkeeping's Durations, a fresh seed each.
+
+`check_history_sampler GAMES SEED POOL DRAWS EVERY [half|random]`
+(self-play, every decision): with the foe's true sets the rebuilt history
+equals the real one (summaries, tokens, requests; the foe's own HP to its
+percent), its lines, requests and world agree on the foe's HP (0
+inconsistent, the user's worry), and pool draws give our real legal
+choices and play out without an engine error. `half`: the pool is the
+file's first half, games from the second; `random`: random teams
+(distinct species). 1000 games, seed 2 (~90 s): 0 inconsistent in every
+mode; the summaries, tokens and requests all equal but `locked` in 423 of
+193k requests (the foe's Bind, maybeLocked / Fight, is left default:
+`Binds` reads libpkmn's hidden bind counter) and ~40 PP (bookkeeping's
+known PP); our choices differ in 124 of 773k draws (bookkeeping's
+mismatches); the true team is always among the matches. `half` draws:
+37% a team, 51% sets, 12% random moves.
+
+Next: the rollouts (both sides' nets from their histories, our forced
+first action, depth in turns, the value head at the leaf) and the closed-
+form update `[e^q ρ^α π^β]^{1/(α+β)}`.
