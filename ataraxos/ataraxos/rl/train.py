@@ -45,7 +45,9 @@ advantage filter, one epoch, an EMA of the weights. The differences:
 
 Every Config field is a flag (`--gae_lambda 0.5`); a list takes several
 comma-separated values (`--anchors random,runs/a/ckpt100.pt`), so the
-team files can follow as positional arguments. The run directory gets
+team files can follow as positional arguments. An anchor with `{it}` in it
+(`--anchors /root/anchors/rby1_{it}.pt`) is the checkpoint at the eval's
+iteration, skipped where that file doesn't exist; its stats keep the `{it}`. The run directory gets
 config.json (the flags, and under "code" the oak commit),
 log.jsonl (one line per iteration), ckpt{it}.pt and, with a
 pool, teams{it}.npz (Exp3's log-weights, p and q_avg, the draw counts, the names,
@@ -633,7 +635,8 @@ def main(argv=None):
     if ck is not None:
         log.write(json.dumps({"resume": learner.it}) + "\n")
         log.flush()
-    anchors = {a: make_agent(a, cfg.device, cfg.seed, cfg.amp) for a in cfg.anchors}
+    # the fixed anchors once; the "{it}" ones at each eval
+    anchors = {a: make_agent(a, cfg.device, cfg.seed, cfg.amp) for a in cfg.anchors if "{it}" not in a}
     start_gpu_log(cfg)
     env_before = env.stats
 
@@ -696,11 +699,15 @@ def main(argv=None):
             stats.update(teams.summary(exp3, team_counts))
         t3 = time.perf_counter()
         if learner.it % cfg.eval_every == 0:
+            opps = dict(anchors)
+            for a in cfg.anchors:
+                if "{it}" in a and os.path.exists(a.format(it=learner.it)):
+                    opps[a] = make_agent(a.format(it=learner.it), cfg.device, cfg.seed, cfg.amp)
             # the EMA as eval/, the current weights as eval_net/, on the same battles
             for prefix, net in (("eval", learner.ema), ("eval_net", learner.net)):
                 net.eval()
                 ours = NetAgent(net, cfg.device, cfg.amp)
-                for name, opp in anchors.items():
+                for name, opp in opps.items():
                     w, t, l = match(eval_env, ours, opp, cfg.eval_battles)
                     score = (w + t / 2) / max(1, w + t + l)
                     stats[f"{prefix}/{os.path.basename(name)}"] = score

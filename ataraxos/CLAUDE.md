@@ -139,10 +139,12 @@ client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
   Showdown writes no [of] on Recoil (the parser takes the other active, as
   libpkmn does). Run: `../node/bin/node tests/showdown/play.cjs 1000 1
   teams/selfplay/oak1500.txt > dump.txt && build/check_showdown dump.txt`.
-- Open (for the user): Showdown's Sleep Clause and Freeze Clause, which
-  libpkmn doesn't have. On Showdown a blocked sleep move is the move line,
-  a -message and a -hint (read past), so the parsed bytes show a move that
-  did nothing; self-play training has no clause at all.
+- Sleep Clause and Freeze Clause are in libpkmn: `-Dshowdown` (dev/libpkmn)
+  sets `options.mod` (`src/lib/common/options.zig`), which gates both
+  (`gen1/mechanics.zig`, "Sleep Clause Mod", "Freeze Clause Mod"), so
+  self-play has them. On Showdown a blocked sleep move is the move line, a
+  -message and a -hint (read past), so the parsed bytes show a move that
+  did nothing.
 - The client (`src/client.hpp`, birch's; `src/json.hpp` is hoenn's JSON
   reader): our side's Bookkeeping from the first request's sets through
   libpkmn's Init (the user's call), so a rejoin's state is off.
@@ -181,6 +183,38 @@ client (`client.hpp`), the ladder driver (`birch/play/showdown.py`,
   stopped birch's cs2b for it. Then: the real ladder when the user says.
 
 `box/hf_sync.sh` targets `opencover/ataraxos-runs` (the user's OK).
+
+- `runs/rby2` (2026-11-01 19:39): rby1's flags but `--minibatch 12288`.
+  Per battle it trails rby1 vs maxdamage early (5-9 points to 0.6M
+  battles), level by ~0.8M; ~1.4x rby1's games/s. H2h, 2048 games, EMA:
+  matched by battles (rby2_250 vs rby1_250) 0.382 [0.361, 0.403]; by
+  gradient steps (rby2_300, 5195 steps, vs rby1_150, 5631) 0.629 [0.608,
+  0.649] (`runs/h2h/`). Stopped (SIGTERM) at it 313 for rby3; resume from
+  ckpt300 (copied to `/root/anchors/rby2_{250,300}.pt`).
+- `runs/rby3` (started 2026-11-01 ~22:50, the user's calls, for RBY's
+  variance): rby2's command line (8192 games an iteration, minibatch
+  12288: the user kept rby2's) with the changes below. The lower filter
+  rate keeps twice the decisions, so ~2x rby2's gradient steps an
+  iteration (rby1's). Not yet: `--games_per_iter 16384 --minibatch 6144`.
+  - `--td_lambda 0.6` (from 0.8: `value_ev_outcome` ~0.30, the outcome is
+    mostly luck, so less of it in the targets);
+  - `--ema_decay 0.98` (from 0.961; rby1's EMA beat its net late);
+  - `--adv_filt_rate 0.5` (from 0.75; worth a try: the top-|A| quarter is
+    likely the crit / full para / freeze turns, since A carries the next
+    turn's TD error. The user isn't sure a lower threshold is the right
+    fix: a chance-aware filter or advantage may be);
+  - `--lr_coef 0.003 --lr_decay 0.6` (Claude's; in rby3 on "start 3".
+    rby1's lr sat at the 3e-4 ceiling all run: `0.5 / (step+1)^1.1`, step
+    = decisions / 5e6, falls under it only at ~4.2B decisions. This one
+    (`power_schedule`): 3e-4 to ~0.23B decisions, 2.5e-4 at 0.3B, 1.2e-4
+    at 1B, 8e-5 at 2B, 5e-5 at 5B. The schedule counts decisions, so at
+    16384 games an iteration (~2M decisions) it moves twice as fast per
+    iteration as rby1's).
+  - Evals (the user's, 2026-11-01): only against rby1 at the same
+    iteration, `--anchors /root/anchors/rby1_{it}.pt` (no random or
+    maxdamage), so only at its 150, 200, 250, 500, 1000, 1300, 1450, 1500,
+    the rby1 checkpoints left (hf_sync keeps N % 500 == 0). Resumed from
+    ckpt50 with it.
 
 ## Phase 4: search (started 2026-11-01)
 
