@@ -41,6 +41,7 @@ PYBIND11_MODULE(ataraxos_client, m) {
       .def("choose", &Client::choose, py::arg("i"))
       .def("revealed", &Client::revealed, py::arg("i"))
       .def_property_readonly("n", [](const Client& c) { return int(c.n); })
+      .def("viewer", &Client::viewer)
       .def("unknown",
            [](Client& c) {
              std::vector<std::string> out = std::move(c.unknown);
