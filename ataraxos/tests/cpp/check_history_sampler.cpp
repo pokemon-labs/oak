@@ -21,7 +21,7 @@
 // EVERY: check one decision in EVERY (default 1). `half`: the sampler's pool
 // is POOL's first half and the games' teams come from its second (foes
 // outside the pool, for the fallbacks); `random`: the games' teams are
-// truly random (teams.hpp's random_team).
+// truly random (teams.hpp's random_team, distinct species).
 
 #include <cstdio>
 #include <cstdlib>
@@ -256,7 +256,16 @@ int main(int argc, char** argv) {
   for (size_t g = 0; g < games; g++) {
     const uint32_t ti[2] = {uint32_t(rng() % games_teams.size()), uint32_t(rng() % games_teams.size())};
     Team teams[2] = {games_teams[ti[0]], games_teams[ti[1]]};
-    if (mode == "random") teams[0] = random_team(rng), teams[1] = random_team(rng);
+    for (uint8_t p = 0; p < 2 && mode == "random"; p++) {
+      // distinct species (Species Clause; the checks match by species)
+      for (;;) {
+        teams[p] = random_team(rng);
+        std::vector<PKMN::Data::Species> sp;
+        for (const Set& x : teams[p]) sp.push_back(x.species);
+        std::sort(sp.begin(), sp.end());
+        if (std::adjacent_find(sp.begin(), sp.end()) == sp.end()) break;
+      }
+    }
     BattleData bd;
     bd.track = true;
     bd.reset(init_battle(rng(), teams[0], teams[1]));
@@ -291,6 +300,7 @@ int main(int argc, char** argv) {
             if (!used[j] && side.pokemon[k].species == team[j].species) {
               truth.sets[k] = team[j];
               used[j] = true;
+              break;
             }
           }
         }
