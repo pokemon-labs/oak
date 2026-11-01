@@ -530,7 +530,9 @@ class Battle:
                                    "cmd": cmd, "choices": p["labels"],
                                    "probs": None if p["logp"] is None else [round(float(np.exp(x)), 4) for x in p["logp"]],
                                    "used": None if p["used"] is None else [round(x, 4) for x in p["used"]],
-                                   "p_win": p["p_win"], "tokens": p["tokens"]}) + "\n")
+                                   "p_win": p["p_win"], "tokens": p["tokens"],
+                                   **({"net_probs": [round(float(np.exp(x)), 4) for x in p["net_logp"]], "q": p["q"],
+                                       "search_s": p["search_s"]} if p.get("q") is not None else {})}) + "\n")
         self.out.flush()
         if "log" not in p:  # never offered: its lines are still in `recent`
             self.take_recent()
