@@ -406,11 +406,11 @@ void print_status(const ProgramArgs &args, bool final) {
     std::cout << "score: " << score << " over " << games << " games."
               << std::endl;
   } else {
-    std::cout << "score: " << score << " over " << games
-              << " games; Elo diff: "
+    std::cout << "score: " << score << " over " << games << " games; Elo diff: "
               << inverse_sigmoid(score) * elo_conversion_factor << std::endl;
   }
-  std::cout << "W D L:\n" << wdl[2] << ' ' << wdl[1] << ' ' << wdl[0] << std::endl;
+  std::cout << "W D L:\n"
+            << wdl[2] << ' ' << wdl[1] << ' ' << wdl[0] << std::endl;
 
   std::cout << "search stats (iterations mean/stdev, duration mean/stdev):"
             << std::endl;
@@ -435,8 +435,8 @@ void print_status(const ProgramArgs &args, bool final) {
             << (st.use_pairs ? "pair" : "game") << std::endl;
   std::cout << std::setprecision(1);
   std::cout << "sprt: Elo " << elo << " [" << elo_lo << ", " << elo_hi
-            << "] (95%) over " << samples << (st.use_pairs ? " pairs" : " games")
-            << std::endl;
+            << "] (95%) over " << samples
+            << (st.use_pairs ? " pairs" : " games") << std::endl;
   std::cout << std::defaultfloat << std::setprecision(6);
   if (st.use_pairs) {
     std::cout << "sprt: penta [0 1/4 1/2 3/4 1]: " << penta[0] << ' '

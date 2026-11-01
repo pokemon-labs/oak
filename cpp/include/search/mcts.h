@@ -11,9 +11,9 @@
 
 #include <chrono>
 #include <cmath>
-#include <span>
 #include <iostream>
 #include <random>
+#include <span>
 #include <type_traits>
 #include <unordered_map>
 #include <variant>
@@ -141,7 +141,8 @@ template <typename strategy_type = float> struct MatrixUCBStats {
         }
         return 0;
       } else {
-        return device.sample_pdf(std::span<const strategy_type>{policy.data(), k});
+        return device.sample_pdf(
+            std::span<const strategy_type>{policy.data(), k});
       }
     }
   };

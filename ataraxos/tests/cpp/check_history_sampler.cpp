@@ -90,6 +90,13 @@ void compare(const Sample& s, const std::vector<Token>& tokens, const std::vecto
              const std::vector<RequestData>& requests) {
   if (s.ends.size() != ends.size()) {
     count("summaries differ");
+    if (std::getenv("DEBUG") && counts["summaries differ"] <= 3) {
+      std::printf("rebuilt %zu summaries, real %zu\n  rebuilt:", s.ends.size(), ends.size());
+      for (size_t i = 0; i < s.ends.size(); i++) std::printf(" %u/%d", s.ends[i], int(s.requests[i].kind));
+      std::printf("\n  real:   ");
+      for (size_t i = 0; i < ends.size(); i++) std::printf(" %u/%d", ends[i], int(requests[i].kind));
+      std::printf("\n");
+    }
     return;
   }
   count("summaries", ends.size());
