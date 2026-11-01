@@ -27,6 +27,8 @@
 #include <string>
 #include <vector>
 
+#include <libpkmn/strings.h>
+
 #include "battle_data.hpp"
 #include "history_sampler.hpp"
 #include "teams.hpp"
@@ -66,11 +68,17 @@ size_t inconsistencies(const Sample& s, uint8_t foe) {
       hp[k] = uint16_t(t.c[HP]);
       max[k] = uint16_t(t.c[MAX_HP]);
     }
+    if (i + 1 < s.ends.size()) continue; // the newest only, as `compare`
     const RequestData& r = s.requests[i];
     for (uint8_t j = 0; j < r.size; j++) {
       for (uint8_t k = 1; k <= 6; k++) {
         if (species[k] != r.side[j].species) continue;
-        bad += hp[k] != r.side[j].hp || max[k] != r.side[j].max_hp;
+        const bool off = hp[k] != r.side[j].hp || max[k] != r.side[j].max_hp;
+        if (off && std::getenv("DEBUG") && counts["printed inconsistent"]++ < 5) {
+          std::printf("inconsistent: %s lines %u/%u, request %u/%u\n", PKMN::species_string(r.side[j].species).c_str(),
+                      hp[k], max[k], r.side[j].hp, r.side[j].max_hp);
+        }
+        bad += off;
       }
     }
   }
@@ -100,7 +108,9 @@ void compare(const Sample& s, const std::vector<Token>& tokens, const std::vecto
     return;
   }
   count("summaries", ends.size());
-  for (size_t i = 0; i < ends.size(); i++) {
+  // the newest summary only: the earlier ones were checked at their own
+  // decisions
+  for (size_t i = ends.empty() ? 0 : ends.size() - 1; i < ends.size(); i++) {
     const uint32_t a = i ? s.ends[i - 1] : 0, b = i ? ends[i - 1] : 0;
     if (s.ends[i] - a != ends[i] - b) {
       count("summary lengths differ");
@@ -130,6 +140,9 @@ void compare(const Sample& s, const std::vector<Token>& tokens, const std::vecto
     count("requests");
     if (x.kind != y.kind || x.size != y.size) {
       count("request kind/size differs");
+      if (std::getenv("DEBUG") && counts["printed kind"]++ < 5) {
+        std::printf("kind/size: rebuilt %d/%d, real %d/%d\n", int(x.kind), int(x.size), int(y.kind), int(y.size));
+      }
       continue;
     }
     for (uint8_t j = 0; j < y.size; j++) {
@@ -145,6 +158,12 @@ void compare(const Sample& s, const std::vector<Token>& tokens, const std::vecto
       if (p->level != q.level || p->max_hp != q.max_hp) count("request level/max hp differs");
       if (view_percent(p->hp, p->max_hp) != view_percent(q.hp, q.max_hp)) count("request hp percent differs");
       if (p->status != q.status) count("request status differs");
+      if ((p->status != q.status || view_percent(p->hp, p->max_hp) != view_percent(q.hp, q.max_hp)) &&
+          std::getenv("DEBUG") && counts["printed request"]++ < 8) {
+        std::printf("request %s: rebuilt hp %u/%u status %d active %d, real %u/%u status %d active %d\n",
+                    PKMN::species_string(q.species).c_str(), p->hp, p->max_hp, int(p->status), int(p->active), q.hp,
+                    q.max_hp, int(q.status), int(q.active));
+      }
       if (p->active != q.active) count("request active differs");
       std::vector<PKMN::Data::Move> m1(p->moves, p->moves + 4), m2(q.moves, q.moves + 4);
       std::sort(m1.begin(), m1.end());
