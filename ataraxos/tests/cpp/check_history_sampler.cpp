@@ -280,7 +280,8 @@ int main(int argc, char** argv) {
       }
       for (uint8_t p = 0; p < 2; p++) {
         if (!bd.needs_choice(p)) continue;
-        bd.choose(p, bd.option[p][rng() % bd.n_option[p]]);
+        // one update per step, so each is recorded above
+        if (bd.choose(p, bd.option[p][rng() % bd.n_option[p]]) != BattleData::Held) break;
       }
     }
   }
