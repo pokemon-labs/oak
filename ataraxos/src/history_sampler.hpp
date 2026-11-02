@@ -164,8 +164,14 @@ struct Seen {
       }
     }
     if (side.order[0] && !side.active.volatiles.transform()) {
-      for (PKMN::MoveSlot& m : side.active.moves) {
-        if (!sampler::has(used[side.order[0]], m.id)) m = PKMN::MoveSlot{};
+      // a Mimic slot's move was seen copied when Mimic was used
+      const auto& u = used[side.order[0]];
+      const PKMN::Pokemon& p = side.stored();
+      for (uint8_t i = 0; i < 4; i++) {
+        PKMN::MoveSlot& m = side.active.moves[i];
+        if (!sampler::has(u, m.id) && !(p.moves[i].id != sampler::D::None && sampler::has(u, p.moves[i].id))) {
+          m = PKMN::MoveSlot{};
+        }
       }
     }
   }
