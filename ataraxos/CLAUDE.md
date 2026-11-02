@@ -301,7 +301,7 @@ The rollouts (`src/rollouts.hpp`, bound as `ataraxos_env.Rollouts`;
 
 Not done: CUDA graphs for the rollouts' actor.
 
-### Joint search (planned 2026-11-02, in progress)
+### Joint search (2026-11-02: built, checked, not on the ladder)
 
 Why: the vanilla search best-responds to the foe's net policy (q(a) is a
 mean over rollouts where the foe samples its net), so it can exploit a
@@ -387,3 +387,34 @@ Plan:
 3. Checks, kept quick: with A = A0 and B = the true foe team, the caches
    equal today's; MMD converges on random matrices; with the foe fixed it
    gives our closed form; per_type == per_pair with one type a side.
+
+Status (2026-11-02): steps 1-3 done (`SearchConfig(joint=True)`,
+`joint_mode`, `types_a/b`, `joint_budget`, `rounds`, `floor`, `shrink`,
+`foe_beta`; `Rollouts.add_joint_selfplay/add_joint_client`, `schedule`,
+`joint_layout`, `joint_values`; `search.run_client` takes it too).
+
+- MMD is extragradient (mirror-prox) by default (`extra`, Claude's): plain
+  MMD cycles in the zero-sum game at any step that converges in reasonable
+  time (it needs eta <= lam / L^2, lam = 0.022: >20k iterations);
+  extragradient with eta 1 reaches the same fixed point in ~430 iterations
+  (~40 ms numpy, 3x3 types, 9 choices), ~330 warm-started in the search.
+- A cell with no rollout reads the mean of its row's and column's means in
+  its (A, B) block; every cell is shrunk to that by `shrink` (1)
+  pseudo-counts (Claude's). Round sampling: P(A) P(B) ((1 - floor) p1 p2 +
+  floor uniform), floor 0.25, 4 rounds.
+- `check_history_sampler` now also checks our side as the foe sees it:
+  with our true sets `own_side` gives our real side back and `own` our real
+  summaries. 1000 games seed 2: our true team always among the matches;
+  side differs 20 of 195k decisions (meme moves; Mimic's slot fixed, the
+  rest left: the user's call, no crash); locked / PP as the foe's.
+- `tests/py/check_joint.py [CKPT SEARCHES BATTLES BUDGET MODE]`: MMD
+  converges on random games; with the foe fixed it is the closed form
+  (1e-6); per_type == per_pair with one type a side. With ckpt1100, the
+  foe types' root policies with the true sets vs the real foe actor's: KL
+  0.0007-0.01, argmax 100% (its root request has the real binds now); 0
+  `differs`. Budget 512: ~1.1 s a root (per_type and per_pair alike, 2
+  roots batched, next to rby3), mostly the 4 rounds' rollouts; MMD ~0.2 s.
+
+Not done: the ladder (the user: later), budget-allocation experiments,
+type weights from the foe's belief, MMD on the GPU or in C++ if 0.2 s
+matters.
