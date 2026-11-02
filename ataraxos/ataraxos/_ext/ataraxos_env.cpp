@@ -182,6 +182,46 @@ py::dict observe_rollouts(const ataraxos::Rollouts& r) {
   return out;
 }
 
+// Prefill summaries of worlds `ws` (World's layout): tokens i16 [T,
+// COLUMNS], offsets i64 [S + 1] over summaries, request i16 [S,
+// REQUEST_FIELDS], summaries i64 [W + 1] (world w's are summaries[w]:
+// summaries[w + 1]), t0 i64 [W], root u32 [W], source u8 [W] (0 a team, 1
+// sets, 2 random).
+py::dict layout_worlds(const std::vector<const ataraxos::World*>& ws) {
+  size_t T = 0, S = 0;
+  for (const auto* w : ws) T += w->tokens.size(), S += w->ends.size();
+  auto tokens = array<int16_t>({py::ssize_t(T), py::ssize_t(ataraxos::COLUMNS)});
+  auto offsets = array<int64_t>({py::ssize_t(S + 1)});
+  auto request = array<int16_t>({py::ssize_t(S), py::ssize_t(ataraxos::REQUEST_FIELDS)});
+  auto summaries = array<int64_t>({py::ssize_t(ws.size() + 1)});
+  auto t0 = array<int64_t>({py::ssize_t(ws.size())});
+  auto root = array<uint32_t>({py::ssize_t(ws.size())});
+  auto source = array<uint8_t>({py::ssize_t(ws.size())});
+  size_t t = 0, s = 0;
+  for (size_t i = 0; i < ws.size(); i++) {
+    const auto& w = *ws[i];
+    std::memcpy(tokens.mutable_data() + t * ataraxos::COLUMNS, w.tokens.data(), w.tokens.size() * sizeof(ataraxos::Token));
+    summaries.mutable_data()[i] = int64_t(s);
+    std::memcpy(request.mutable_data() + s * ataraxos::REQUEST_FIELDS, w.requests.data(), w.requests.size() * 2);
+    for (const uint32_t e : w.ends) offsets.mutable_data()[++s] = int64_t(t + e);
+    t += w.tokens.size();
+    t0.mutable_data()[i] = w.t0;
+    root.mutable_data()[i] = w.root;
+    source.mutable_data()[i] = uint8_t(w.source);
+  }
+  offsets.mutable_data()[0] = 0;
+  summaries.mutable_data()[ws.size()] = int64_t(s);
+  py::dict out;
+  out["tokens"] = tokens;
+  out["offsets"] = offsets;
+  out["request"] = request;
+  out["summaries"] = summaries;
+  out["t0"] = t0;
+  out["root"] = root;
+  out["source"] = source;
+  return out;
+}
+
 py::dict game_data() {
   namespace D = PKMN::Data;
   constexpr size_t MOVES = ataraxos::MOVE_COUNT, SPECIES = ataraxos::SPECIES_COUNT, TYPES = 15;
@@ -370,37 +410,13 @@ PYBIND11_MODULE(ataraxos_env, m) {
                           ataraxos::Binds{}, worlds, reps, depth, seed);
            },
            py::arg("client"), py::arg("worlds"), py::arg("reps"), py::arg("depth"), py::arg("seed"))
-      // each world's foe prefill: tokens i16 [T, COLUMNS], offsets i64
-      // [S + 1] over summaries, request i16 [S, REQUEST_FIELDS], summaries i64 [W + 1] (world w's are
-      // summaries[w]:summaries[w + 1]), t0 i64 [W], root u32 [W], source u8
-      // [W] (0 a team, 1 sets, 2 random); and each rollout's world u32 [N],
-      // action u8 [N], differs u8 [N]
+      // each world's foe prefill (layout_worlds) and each rollout's world
+      // u32 [N], action u8 [N], differs u8 [N]
       .def("layout",
            [](const ataraxos::Rollouts& r) {
-             const auto& ws = r.worlds();
-             size_t T = 0, S = 0;
-             for (const auto& w : ws) T += w.tokens.size(), S += w.ends.size();
-             auto tokens = array<int16_t>({py::ssize_t(T), py::ssize_t(ataraxos::COLUMNS)});
-             auto offsets = array<int64_t>({py::ssize_t(S + 1)});
-             auto request = array<int16_t>({py::ssize_t(S), py::ssize_t(ataraxos::REQUEST_FIELDS)});
-             auto summaries = array<int64_t>({py::ssize_t(ws.size() + 1)});
-             auto t0 = array<int64_t>({py::ssize_t(ws.size())});
-             auto root = array<uint32_t>({py::ssize_t(ws.size())});
-             auto source = array<uint8_t>({py::ssize_t(ws.size())});
-             size_t t = 0, s = 0;
-             for (size_t i = 0; i < ws.size(); i++) {
-               const auto& w = ws[i];
-               std::memcpy(tokens.mutable_data() + t * ataraxos::COLUMNS, w.tokens.data(), w.tokens.size() * sizeof(ataraxos::Token));
-               summaries.mutable_data()[i] = int64_t(s);
-               std::memcpy(request.mutable_data() + s * ataraxos::REQUEST_FIELDS, w.requests.data(), w.requests.size() * 2);
-               for (const uint32_t e : w.ends) offsets.mutable_data()[++s] = int64_t(t + e);
-               t += w.tokens.size();
-               t0.mutable_data()[i] = w.t0;
-               root.mutable_data()[i] = w.root;
-               source.mutable_data()[i] = uint8_t(w.source);
-             }
-             offsets.mutable_data()[0] = 0;
-             summaries.mutable_data()[ws.size()] = int64_t(s);
+             std::vector<const ataraxos::World*> ws;
+             for (const auto& w : r.worlds()) ws.push_back(&w);
+             py::dict out = layout_worlds(ws);
              const auto& rs = r.rollouts();
              auto world = array<uint32_t>({py::ssize_t(rs.size())});
              auto action = array<uint8_t>({py::ssize_t(rs.size())});
@@ -410,17 +426,162 @@ PYBIND11_MODULE(ataraxos_env, m) {
                action.mutable_data()[i] = rs[i].action;
                differs.mutable_data()[i] = rs[i].differs;
              }
-             py::dict out;
-             out["tokens"] = tokens;
-             out["offsets"] = offsets;
-             out["request"] = request;
-             out["summaries"] = summaries;
-             out["t0"] = t0;
-             out["root"] = root;
-             out["source"] = source;
              out["world"] = world;
              out["action"] = action;
              out["differs"] = differs;
+             return out;
+           })
+      // a joint root at a SelfPlay battle's decision (add_selfplay's env),
+      // `a` of our types and `b` of the foe's; returns the joint root.
+      // `truth`: the foe's types all take its true sets (tests)
+      .def("add_joint_selfplay",
+           [](ataraxos::Rollouts& r, const Env& env, size_t b, uint8_t p, uint8_t types_a, uint8_t types_b,
+              uint16_t depth, uint64_t seed, bool truth) {
+             const ataraxos::BattleData& d = env.battle(b);
+             if (!d.track || !d.keep_after) throw std::invalid_argument("add_joint_selfplay: the env needs state and keep_after");
+             if (!d.needs_choice(p)) throw std::invalid_argument("add_joint_selfplay: no decision there");
+             if (!types_a || !types_b) throw std::invalid_argument("add_joint_selfplay: a type a side at least");
+             py::gil_scoped_release release;
+             const ataraxos::Guess g = ataraxos::true_guess(d.bk[p], d.state().sides[1 - p]);
+             return r.add_joint(p, d.bk[p], d.history[p], d.after[p], d.request[p],
+                                {d.option[p].data(), d.n_option[p]}, d.binds, types_a, types_b, depth, seed,
+                                truth ? &g : nullptr);
+           },
+           py::arg("env"), py::arg("battle"), py::arg("player"), py::arg("a"), py::arg("b"), py::arg("depth"),
+           py::arg("seed"), py::arg("truth") = false)
+      // a joint root at the ladder Client's request now (Binds{})
+      .def("add_joint_client",
+           [](ataraxos::Rollouts& r, const ataraxos::Client& c, uint8_t types_a, uint8_t types_b, uint16_t depth,
+              uint64_t seed) {
+             if (c.req.kind == ataraxos::RequestData::Wait || c.n == 0) throw std::invalid_argument("add_joint_client: no decision");
+             if (!types_a || !types_b) throw std::invalid_argument("add_joint_client: a type a side at least");
+             py::gil_scoped_release release;
+             return r.add_joint(c.viewer(), c.bookkeeping(), c.history(), c.after(), c.req, {c.options.data(), c.n},
+                                ataraxos::Binds{}, types_a, types_b, depth, seed);
+           },
+           py::arg("client"), py::arg("a"), py::arg("b"), py::arg("depth"), py::arg("seed"))
+      .def("clear_rollouts", &ataraxos::Rollouts::clear_rollouts)
+      // this round's joint rollouts: cells i64 [K, 6], each (root, a, b, i,
+      // j, count)
+      .def("schedule",
+           [](ataraxos::Rollouts& r, py::array_t<int64_t, py::array::c_style | py::array::forcecast> cells) {
+             if (cells.ndim() != 2 || cells.shape(1) != 6) throw std::invalid_argument("schedule: cells [K, 6]");
+             const int64_t* c = cells.data();
+             for (py::ssize_t k = 0; k < cells.shape(0); k++, c += 6) {
+               const auto& js = r.joints();
+               if (c[0] < 0 || size_t(c[0]) >= js.size()) throw std::invalid_argument("schedule: no such root");
+               const auto& J = js[size_t(c[0])];
+               if (c[1] < 0 || c[1] >= J.a || c[2] < 0 || c[2] >= J.b || c[5] < 0) throw std::invalid_argument("schedule: bad cell");
+               if (c[3] < 0 || c[3] >= r.types()[J.first + c[1]].n || c[4] < 0 || c[4] >= r.types()[J.first + J.a + c[2]].n) {
+                 throw std::invalid_argument("schedule: bad choice");
+               }
+               r.schedule(size_t(c[0]), uint8_t(c[1]), uint8_t(c[2]), uint8_t(c[3]), uint8_t(c[4]), uint32_t(c[5]));
+             }
+           },
+           py::arg("cells"))
+      // the joint roots' types, in order (root r's are first[r]:first[r] +
+      // a[r] ours, A0 first, then b[r] the foe's): layout()'s prefill arrays
+      // over types (each type's summaries before its root decision; none
+      // for A0) and per type side u8, real u8, n u8, choices u8 [Y,
+      // MAX_CHOICES], decides u8, source u8; the root decisions, one row a
+      // type (run where decides): dec_tokens i16, dec_offsets i64 [Y + 1],
+      // dec_request i16 [Y, REQUEST_FIELDS], dec_state i16 [Y,
+      // STATE_FIELDS] (with state); per joint root first u32, a u8, b u8,
+      // player u8
+      .def("joint_layout",
+           [](const ataraxos::Rollouts& r) {
+             const auto& ts = r.types();
+             const size_t Y = ts.size();
+             std::vector<const ataraxos::World*> ws;
+             size_t T = 0;
+             for (const auto& t : ts) ws.push_back(&t.prefill), T += t.chunk.size();
+             py::dict out = layout_worlds(ws);
+             auto side = array<uint8_t>({py::ssize_t(Y)});
+             auto real = array<uint8_t>({py::ssize_t(Y)});
+             auto n = array<uint8_t>({py::ssize_t(Y)});
+             auto decides = array<uint8_t>({py::ssize_t(Y)});
+             auto choices = array<uint8_t>({py::ssize_t(Y), py::ssize_t(ataraxos::MAX_CHOICES)});
+             auto tokens = array<int16_t>({py::ssize_t(T), py::ssize_t(ataraxos::COLUMNS)});
+             auto offsets = array<int64_t>({py::ssize_t(Y + 1)});
+             auto request = array<int16_t>({py::ssize_t(Y), py::ssize_t(ataraxos::REQUEST_FIELDS)});
+             auto state = array<int16_t>({py::ssize_t(r.state() ? Y : 0), py::ssize_t(ataraxos::STATE_FIELDS)});
+             size_t at = 0;
+             for (size_t y = 0; y < Y; y++) {
+               const auto& t = ts[y];
+               side.mutable_data()[y] = t.side;
+               real.mutable_data()[y] = t.real;
+               n.mutable_data()[y] = t.n;
+               decides.mutable_data()[y] = t.decides;
+               for (size_t c = 0; c < ataraxos::MAX_CHOICES; c++) {
+                 choices.mutable_data()[y * ataraxos::MAX_CHOICES + c] = c < t.n ? t.options[c] : 0;
+               }
+               offsets.mutable_data()[y] = int64_t(at);
+               std::memcpy(tokens.mutable_data() + at * ataraxos::COLUMNS, t.chunk.data(), t.chunk.size() * sizeof(ataraxos::Token));
+               at += t.chunk.size();
+               ataraxos::encode(t.request, request.mutable_data() + y * ataraxos::REQUEST_FIELDS);
+               if (r.state()) ataraxos::encode_state(t.bk, state.mutable_data() + y * ataraxos::STATE_FIELDS);
+             }
+             offsets.mutable_data()[Y] = int64_t(at);
+             const auto& js = r.joints();
+             auto first = array<uint32_t>({py::ssize_t(js.size())});
+             auto ja = array<uint8_t>({py::ssize_t(js.size())});
+             auto jb = array<uint8_t>({py::ssize_t(js.size())});
+             auto player = array<uint8_t>({py::ssize_t(js.size())});
+             for (size_t i = 0; i < js.size(); i++) {
+               first.mutable_data()[i] = js[i].first;
+               ja.mutable_data()[i] = js[i].a;
+               jb.mutable_data()[i] = js[i].b;
+               player.mutable_data()[i] = js[i].player;
+             }
+             out["side"] = side;
+             out["real"] = real;
+             out["n"] = n;
+             out["choices"] = choices;
+             out["decides"] = decides;
+             out["dec_tokens"] = tokens;
+             out["dec_offsets"] = offsets;
+             out["dec_request"] = request;
+             if (r.state()) out["dec_state"] = state;
+             out["first"] = first;
+             out["a"] = ja;
+             out["b"] = jb;
+             out["player"] = player;
+             return out;
+           })
+      // each rollout's root u32, a u8, b u8, action u8, foe_action u8,
+      // value f32 (ours), differs u8, done u8 (joint ones after a round)
+      .def("joint_values",
+           [](const ataraxos::Rollouts& r) {
+             const auto& rs = r.rollouts();
+             const py::ssize_t N = py::ssize_t(rs.size());
+             auto root = array<uint32_t>({N});
+             auto a = array<uint8_t>({N});
+             auto b = array<uint8_t>({N});
+             auto action = array<uint8_t>({N});
+             auto foe_action = array<uint8_t>({N});
+             auto value = array<float>({N});
+             auto differs = array<uint8_t>({N});
+             auto done = array<uint8_t>({N});
+             for (size_t i = 0; i < rs.size(); i++) {
+               const auto& x = rs[i];
+               root.mutable_data()[i] = x.root;
+               a.mutable_data()[i] = x.a;
+               b.mutable_data()[i] = x.b;
+               action.mutable_data()[i] = x.action;
+               foe_action.mutable_data()[i] = x.foe_action;
+               value.mutable_data()[i] = x.value;
+               differs.mutable_data()[i] = x.differs;
+               done.mutable_data()[i] = x.done;
+             }
+             py::dict out;
+             out["root"] = root;
+             out["a"] = a;
+             out["b"] = b;
+             out["action"] = action;
+             out["foe_action"] = foe_action;
+             out["value"] = value;
+             out["differs"] = differs;
+             out["done"] = done;
              return out;
            })
       .def("start",

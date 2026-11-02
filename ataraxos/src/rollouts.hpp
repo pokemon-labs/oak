@@ -19,6 +19,18 @@
 //
 // The rollouts are split into fixed shards, each with its own RNG, run on
 // any thread.
+//
+// Joint roots (`add_joint`, CLAUDE.md "Joint search"): a Bayesian game over
+// types, `a` of ours (A0 our real team, the rest guessed from what the foe
+// has seen of us: Seen, Sampler::own_side) and `b` of the foe's (the
+// sampler's guesses). Each type has its own history (ours as type A:
+// Sampler::own; A0 is the real actor's cache) and, when it has a choice at
+// the root, its root decision, which the caller runs on that type's cache
+// for its policy. Rollouts come in rounds: `schedule` puts `count` in cell
+// (A, B, i, j), world (A, B) is B's world with our side as A's (hidden
+// counters and battle seed fresh per rollout), and both sides' root
+// choices, i of A's and j of B's, are forced. The caller keeps each cell's
+// values (`clear_rollouts` between rounds keeps the types).
 
 #pragma once
 
@@ -62,7 +74,49 @@ struct Rollout {
   bool done = false;
   bool differs = false; // the world's choices for us aren't the root's
   float value = 0;
+  // joint: `root` a joint root, the cell's types and the foe's root choice
+  bool joint = false;
+  uint8_t a = 0, b = 0, foe_action = 0;
 };
+
+// One type of one side at a joint root.
+struct JointType {
+  uint32_t root;
+  uint8_t side; // 0 ours, 1 the foe's
+  bool real = false; // A0: our real team, the real actor's cache
+  Guess guess;
+  // its summaries before the root decision (none for A0)
+  World prefill;
+  // its choices at the root (1 when it waits)
+  uint8_t n = 1;
+  std::array<pkmn_choice, MAX_CHOICES> options{};
+  // n >= 2: the root decision, run on its cache (not for A0): its tokens and
+  // request; else its tokens join its first rollout decision (`first`)
+  bool decides = false;
+  std::vector<Token> chunk, first;
+  RequestData request{};
+  // the rollouts': its Bookkeeping (ours: our real one with our side as
+  // this type's); ours, our side; the foe's, its world (hidden counters
+  // as bookkeeping's), durations and request kind
+  Bookkeeping bk;
+  PKMN::Side ours{};
+  PKMN::Battle world{};
+  PKMN::Durations durations{};
+  pkmn_choice_kind kind = PKMN_CHOICE_PASS;
+};
+
+struct JointRoot {
+  uint8_t player;
+  uint8_t a, b;
+  uint32_t first; // types [first, first + a) ours, the next b the foe's
+  pkmn_choice_kind kind; // ours
+  Binds binds;
+  uint16_t turn, depth;
+};
+
+inline pkmn_choice_kind choice_kind(const RequestData& r) {
+  return r.kind == RequestData::Move_ ? PKMN_CHOICE_MOVE : r.kind == RequestData::Switch ? PKMN_CHOICE_SWITCH : PKMN_CHOICE_PASS;
+}
 
 class Rollouts {
  public:
@@ -77,8 +131,13 @@ class Rollouts {
     worlds_.clear();
     rollouts_.clear();
     nows_.clear();
+    joints_.clear();
+    types_.clear();
     release();
   }
+
+  // The rollouts only (between joint rounds).
+  void clear_rollouts() { rollouts_.clear(); }
 
   // A search at player p's decision now. `updates` and `after` are p's view
   // and Bookkeeping after each update (the sampler's), `request` and
@@ -109,9 +168,7 @@ class Rollouts {
     for (uint32_t w = 0; w < worlds; w++) samples[w] = sampler.sample(guesses[w], updates, after, seeds[w]);
 
     const uint8_t foe = 1 - p;
-    const pkmn_choice_kind ours = request.kind == RequestData::Move_    ? PKMN_CHOICE_MOVE
-                                  : request.kind == RequestData::Switch ? PKMN_CHOICE_SWITCH
-                                                                        : PKMN_CHOICE_PASS;
+    const pkmn_choice_kind ours = choice_kind(request);
     const uint16_t turn = now.battle.turn;
     for (uint32_t w = 0; w < worlds; w++) {
       Sample& s = samples[w];
@@ -122,7 +179,8 @@ class Rollouts {
       x.foe_kind = b.sides[foe].stored().hp == 0 ? PKMN_CHOICE_SWITCH
                    : b.sides[p].stored().hp == 0 ? PKMN_CHOICE_PASS
                                                  : PKMN_CHOICE_MOVE;
-      prefill(s, x, first_chunk_.emplace_back());
+      prefill(s, s.ends.size() - (x.foe_kind != PKMN_CHOICE_PASS && !s.ends.empty() ? 1 : 0), x,
+              first_chunk_.emplace_back());
       samples_.push_back(std::move(s));
       for (uint8_t a = 0; a < r.n; a++) {
         for (uint32_t k = 0; k < reps; k++) rollouts_.push_back({uint32_t(root), uint32_t(worlds_.size() - 1), a, uint16_t(turn + depth)});
@@ -131,6 +189,107 @@ class Rollouts {
       binds_.push_back(binds);
     }
     return root;
+  }
+
+  // A joint root at player p's decision now (add's arguments), with `a` of
+  // our types and `b` of the foe's. `fixed`: the foe's types all take it
+  // (tests). Returns the joint root's index.
+  size_t add_joint(uint8_t p, const Bookkeeping& now, std::span<const std::vector<Obs>> updates,
+                   std::span<const Bookkeeping> after, const RequestData& request,
+                   std::span<const pkmn_choice> options, const Binds& binds, uint8_t a, uint8_t b, uint16_t depth,
+                   uint64_t seed, const Guess* fixed = nullptr) {
+    assert(a >= 1 && b >= 1 && options.size() >= 1 && options.size() <= MAX_CHOICES);
+    const uint8_t foe = 1 - p;
+    const size_t root = joints_.size();
+    joints_.push_back({p, a, b, uint32_t(types_.size()), choice_kind(request), binds, now.battle.turn, depth});
+    std::mt19937_64 rng(seed);
+    Sampler foes(pool_, now);
+    std::vector<Guess> gb(b);
+    std::vector<uint64_t> seeds(b);
+    for (uint8_t k = 0; k < b; k++) {
+      gb[k] = fixed ? *fixed : foes.guess(rng);
+      seeds[k] = rng();
+    }
+    std::vector<Sample> samples(b);
+#pragma omp parallel for schedule(dynamic) num_threads(threads_)
+    for (uint8_t k = 0; k < b; k++) samples[k] = foes.sample(gb[k], updates, after, seeds[k], false);
+    // our side as the foe has seen it is the same in every world
+    Sampler ours(pool_, samples[0].foe);
+    const Seen& seen = samples[0].seen;
+    std::vector<Guess> ga(a);
+    for (uint8_t k = 1; k < a; k++) ga[k] = ours.guess(rng);
+    std::vector<History> histories(a);
+#pragma omp parallel for schedule(dynamic) num_threads(threads_)
+    for (uint8_t k = 1; k < a; k++) histories[k] = ours.own(ga[k], seen, updates, after);
+
+    const PKMN::Battle& w0 = PKMN::view(samples[0].battle);
+    for (uint8_t k = 0; k < a; k++) {
+      JointType& t = types_.emplace_back();
+      t.root = uint32_t(root);
+      t.side = 0;
+      t.real = k == 0;
+      t.guess = ga[k];
+      t.ours = k == 0 ? now.battle.sides[p] : ours.own_side(now.battle.sides[p], seen, ga[k]);
+      t.bk = now;
+      t.bk.battle.sides[p] = t.ours;
+      t.kind = joints_[root].kind;
+      t.prefill.root = uint32_t(root);
+      t.prefill.source = t.guess.source;
+      t.prefill.foe_kind = t.kind;
+      if (k == 0) {
+        t.request = request;
+        t.n = uint8_t(options.size());
+        std::copy(options.begin(), options.end(), t.options.begin());
+        continue;
+      }
+      PKMN::Battle w = w0;
+      w.sides[p] = t.ours;
+      t.request = request_data(w, p, t.kind, binds.of(w, p));
+      t.n = showdown_choices(t.request, t.options.data());
+      t.decides = t.n >= 2;
+      const History& h = histories[k];
+      prefill(h, h.ends.size() - (t.decides && !h.ends.empty() ? 1 : 0), t.prefill, t.decides ? t.chunk : t.first);
+    }
+    for (uint8_t k = 0; k < b; k++) {
+      Sample& s = samples[k];
+      JointType& t = types_.emplace_back();
+      t.root = uint32_t(root);
+      t.side = 1;
+      t.guess = s.guess;
+      t.world = PKMN::view(s.battle);
+      t.durations = s.durations;
+      t.bk = s.foe;
+      const PKMN::Battle& w = t.world;
+      t.kind = w.sides[foe].stored().hp == 0 ? PKMN_CHOICE_SWITCH
+               : w.sides[p].stored().hp == 0 ? PKMN_CHOICE_PASS
+                                             : PKMN_CHOICE_MOVE;
+      t.prefill.root = uint32_t(root);
+      t.prefill.source = t.guess.source;
+      t.prefill.foe_kind = t.kind;
+      if (t.kind != PKMN_CHOICE_PASS) {
+        t.request = request_data(w, foe, t.kind, binds.of(w, foe));
+        t.n = showdown_choices(t.request, t.options.data());
+      } else {
+        t.request.kind = RequestData::Wait;
+      }
+      t.decides = t.n >= 2;
+      prefill(s, s.ends.size() - (t.kind != PKMN_CHOICE_PASS && !s.ends.empty() ? 1 : 0), t.prefill,
+              t.decides ? t.chunk : t.first);
+    }
+    return root;
+  }
+
+  // `count` rollouts in cell (a, b, i, j) of joint root `root`: our type a's
+  // choice i and the foe's type b's choice j.
+  void schedule(size_t root, uint8_t a, uint8_t b, uint8_t i, uint8_t j, uint32_t count) {
+    const JointRoot& J = joints_[root];
+    assert(a < J.a && b < J.b && i < types_[J.first + a].n && j < types_[J.first + J.a + b].n);
+    Rollout r{uint32_t(root), 0, i, uint16_t(J.turn + J.depth)};
+    r.joint = true;
+    r.a = a;
+    r.b = b;
+    r.foe_action = j;
+    rollouts_.insert(rollouts_.end(), count, r);
   }
 
   // Resumes every rollout from its world, plays our forced choice and
@@ -153,6 +312,10 @@ class Rollouts {
       Shard& sh = shards_v_[s];
       for (size_t i = sh.begin; i < sh.end; i++) {
         Rollout& r = rollouts_[i];
+        if (r.joint) {
+          start_joint(i, seed);
+          continue;
+        }
         const Root& root = roots_[r.root];
         const Sample& w = samples_[r.world];
         BattleData& d = battles_[i];
@@ -227,6 +390,8 @@ class Rollouts {
   const std::vector<Root>& roots() const { return roots_; }
   const std::vector<World>& worlds() const { return worlds_; }
   const std::vector<Rollout>& rollouts() const { return rollouts_; }
+  const std::vector<JointRoot>& joints() const { return joints_; }
+  const std::vector<JointType>& types() const { return types_; }
   const std::vector<Shard>& shards() const { return shards_v_; }
   const std::vector<std::vector<uint8_t>>& leaves() const { return leaf_; }
   const BattleData& battle(size_t i) const { return battles_[i]; }
@@ -256,6 +421,8 @@ class Rollouts {
   std::vector<std::array<pkmn_choice_kind, 2>> kinds_;
   std::vector<Binds> binds_;
   std::vector<Bookkeeping> nows_; // per root, until `clear`
+  std::vector<JointRoot> joints_;
+  std::vector<JointType> types_;
   std::unique_ptr<BattleData[]> battles_;
   size_t battles_size_ = 0;
   std::vector<Shard> shards_v_;
@@ -263,11 +430,44 @@ class Rollouts {
 
   const Bookkeeping& now_of(const Rollout& r) const { return nows_[r.root]; }
 
-  // The foe's summaries before its first rollout decision, one-choice ones
-  // joined to the next, the last `keep_` (into x), and its first chunk.
-  void prefill(const Sample& s, World& x, std::vector<Token>& first) const {
-    const bool deciding = x.foe_kind != PKMN_CHOICE_PASS;
-    const size_t m = s.ends.size() - (deciding && !s.ends.empty() ? 1 : 0);
+  uint8_t us_of(const Rollout& r) const { return r.joint ? joints_[r.root].player : roots_[r.root].player; }
+
+  // Joint rollout i: world (A, B), both root choices forced.
+  void start_joint(size_t i, uint64_t seed) {
+    Rollout& r = rollouts_[i];
+    const JointRoot& J = joints_[r.root];
+    const JointType& A = types_[J.first + r.a];
+    const JointType& B = types_[J.first + J.a + r.b];
+    const uint8_t p = J.player, foe = 1 - p;
+    BattleData& d = battles_[i];
+    d.track = state_;
+    PKMN::Battle w = B.world;
+    w.sides[p] = A.ours;
+    w.rng = B.world.rng + (seed * 0x100000001B3ull + i) * 0x9E3779B97F4A7C15ull;
+    pkmn_gen1_battle b = std::bit_cast<pkmn_gen1_battle>(w);
+    auto durations = std::bit_cast<pkmn_gen1_chance_durations>(B.durations);
+    MCTS::randomize_hidden_variables(b, durations);
+    const Bookkeeping bks[2] = {p == 0 ? A.bk : B.bk, p == 0 ? B.bk : A.bk};
+    std::array<pkmn_choice_kind, 2> kinds;
+    kinds[p] = J.kind;
+    kinds[foe] = B.kind;
+    d.resume(b, durations, kinds, J.binds, bks);
+    d.chunk[p] = A.first;
+    d.chunk[foe] = B.first;
+    const auto same = [&](const JointType& t, uint8_t q) {
+      if (!d.needs_choice(q)) return t.kind == PKMN_CHOICE_PASS;
+      return d.n_option[q] == t.n && std::equal(t.options.begin(), t.options.begin() + t.n, d.option[q].begin());
+    };
+    r.differs = !same(A, p) || !same(B, foe);
+    assert(d.needs_choice(p));
+    answer(r, d, p, d.option[p][std::min<uint8_t>(r.action, d.n_option[p] - 1)]);
+    if (!r.done && d.needs_choice(foe)) answer(r, d, foe, d.option[foe][std::min<uint8_t>(r.foe_action, d.n_option[foe] - 1)]);
+  }
+
+  // A player's summaries before its first rollout decision (the first `m`
+  // of s), one-choice ones joined to the next, the last `keep_` (into x),
+  // and the tokens after them (its first chunk).
+  void prefill(const History& s, size_t m, World& x, std::vector<Token>& first) const {
     struct Merged {
       uint32_t begin, end; // tokens
       size_t request;
@@ -294,7 +494,7 @@ class Rollouts {
 
   void answer(Rollout& r, BattleData& d, uint8_t p, pkmn_choice c) {
     if (d.choose(p, c) == BattleData::Ended) {
-      const uint8_t us = roots_[r.root].player;
+      const uint8_t us = us_of(r);
       const pkmn_result_kind t = pkmn_result_type(d.result);
       r.value = t == PKMN_RESULT_WIN ? (us == 0 ? 1.f : -1.f) : t == PKMN_RESULT_LOSE ? (us == 0 ? -1.f : 1.f) : 0.f;
       r.done = true;
@@ -314,7 +514,7 @@ class Rollouts {
     for (size_t i = sh.begin; i < sh.end; i++) {
       Rollout& r = rollouts_[i];
       BattleData& d = battles_[i];
-      const uint8_t us = roots_[r.root].player;
+      const uint8_t us = us_of(r);
       for (bool again = true; again && !r.done;) {
         again = false;
         for (uint8_t p = 0; p < 2; p++) {

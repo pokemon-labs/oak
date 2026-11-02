@@ -300,3 +300,90 @@ The rollouts (`src/rollouts.hpp`, bound as `ataraxos_env.Rollouts`;
   (`~/arena/beanseggyum/run.sh` on the box).
 
 Not done: CUDA graphs for the rollouts' actor.
+
+### Joint search (planned 2026-11-02, in progress)
+
+Why: the vanilla search best-responds to the foe's net policy (q(a) is a
+mean over rollouts where the foe samples its net), so it can exploit a
+predicted switch that doesn't come (beanseggyum spamming Sing into a
+paralyzed Tauros). The idea is from the ~/agent Oak fork's "Ataxaros" (see
+the agent-fork-ataxaros memory: `~/agent/oak-positions/cpp/include/search/
+mcts.h`, `~/agent/hypotheses.md` H19/H19i/H19j/H21). Its single update is
+one-sided like ours; only its iterated mode lets the foe react, and with no
+magnet that over-sharpened with budget and collapsed the foe to one action.
+So we use MMD (with the magnet) on both players. Its last iterate converges
+to the KL-regularized equilibrium; our closed form is the one-player case.
+
+The user's calls (2026-11-02):
+
+- A Bayesian game over types: 3 guessed teams per side ("3x3"). Our types:
+  A0 = our real team plus A1, A2 guessed from what the foe has seen of us.
+  The foe's types: B0-B2 from the existing sampler. The type weights are
+  uniform for now (ideally the foe's belief over our team).
+- Two modes behind an option:
+  - `per_type` (default, Claude's proposal): one policy per player per own
+    type. q1_A(i) = sum_B P(B) sum_j Q_AB(i,j) p2_B(j), and
+    q2_B(j) = -sum_A P(A) sum_i Q_AB(i,j) p1_A(i). A rollout in world
+    (A, B) feeds p1_A and p2_B (the "plus sign" in the type matrix). We
+    play p1_A0, with no mixing step.
+  - `per_pair` (the user's first idea): an independent joint MMD per
+    (A, B), then play sum_B P(B) p1_{A0,B}.
+- Each type's magnet is its net policy (pi_A or pi_B) plus rho, as now.
+  The foe gets its own beta (option), defaulting to ours.
+- Both sides' root choices are forced in the rollouts (the user: OK). Store
+  the cell means Q_AB(i,j) and recompute q at every solve, never
+  accumulate q, because the other side's policy is non-stationary.
+- The budget allocation is to be experimented with. Start: rounds of
+  sample, then MMD to the fixed point on the current Q, then reallocate by
+  the current policies with a floor so thin cells get samples. Budget ~512
+  to start (128 is thin for 9 * m * n cells); check the time per decision.
+- Keep vanilla search as is (beanseggyum runs it; the ladder needs a
+  baseline). Joint is a new mode in `search.py`, on main2. Not the ladder
+  yet (the user: don't worry about it). No Sing replay or offline eval (the
+  user: skip it).
+
+Implementation notes (Claude's reading of the code):
+
+- Our-side guesses: `Sampler` guesses for `1 - now.player`, and
+  `Sample::foe` is the foe's Bookkeeping (our side cut to what it has
+  seen). So a second `Sampler` on that Bookkeeping fills our unrevealed
+  Pokémon and moves (`guess`, `fill`). This part is reuse.
+- Our history for type A is new work. Our requests all game list our team,
+  so for A1/A2 they must show A's sets. Rebuild it with our view's tokens
+  unchanged (no HP rewrite) and the requests regenerated from A, as a
+  variant of `sample()`'s foe-history rebuild; `prefill` takes it from
+  there. A0 keeps the real actor's cache copy.
+- Caches are per type, not per pair. The foe's history depends only on B
+  (what it has seen of us is the same in every A), ours only on A. So
+  prefill 3 + 3, and world (A, B) pairs our cache A with the foe's cache B.
+
+Confirmed (the user, 2026-11-02, Claude's proposals):
+
+- A1/A2 keep our real exact HP and everything the foe has seen; only our
+  unseen Pokémon and our seen Pokémon's unused moves (the active's too, so
+  our root choices can differ by type) are swapped (`Sampler::own_side`).
+- Our history as A1/A2: our view's tokens as they are, the requests from
+  our bookkeeping after each update with A's sets, `Bind{}` as the foe's
+  (`Sampler::own`). A0 keeps the real actor's cache.
+- The foe's root choice is forced, so each type's prefill runs its root
+  decision too: that gives pi_A / pi_B, the magnets. A type that waits or
+  has one choice at the root has m = 1 (its tokens join its first rollout
+  decision).
+- Types are independent sampler draws, no dedupe (a repeat counts double).
+- C++ shape: `add_joint` once per root (3 + 3 samples, 5 prefills),
+  `schedule(root, cells)` per round then the usual start/step, each
+  rollout carries (A, B, i, j), Python keeps the cell sums; type caches
+  prefilled once and copied to the rollouts each round; world (A, B) is
+  B's world with our side as A's, hidden counters and seed fresh per
+  rollout.
+- `Sampler` takes seen slots with gaps (our side keeps party slots).
+
+Plan:
+1. C++ (`history_sampler.hpp`, `rollouts.hpp`, binding): our-side guesses,
+   our history for type A, worlds from (A, B), both root choices forced,
+   cell Q per (A, B, i, j).
+2. `search.py`: `joint` mode with `per_type` / `per_pair`, the rounds
+   schedule, uniform type weights, the foe's beta.
+3. Checks, kept quick: with A = A0 and B = the true foe team, the caches
+   equal today's; MMD converges on random matrices; with the foe fixed it
+   gives our closed form; per_type == per_pair with one type a side.

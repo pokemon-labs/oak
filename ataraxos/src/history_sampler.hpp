@@ -123,6 +123,63 @@ template <class RNG> void fill_random(PKMN::Data::Species species, std::array<D,
 
 } // namespace sampler
 
+// What the foe has seen of player `us`'s side, from us's view: the Pokémon
+// that came in (by party slot) and the moves they used.
+struct Seen {
+  uint8_t us;
+  std::array<bool, 7> pokemon{};
+  std::array<std::array<sampler::D, 4>, 7> used{};
+
+  explicit Seen(uint8_t p) : us(p) {}
+
+  void note(const Obs& x) {
+    const uint8_t id = x.data[0];
+    if ((x.type != ArgType::Switch && x.type != ArgType::Move) || !id || ident_player(id) != us) return;
+    const uint8_t s = ident_slot(id);
+    pokemon[s] = true;
+    if (x.type != ArgType::Move) return;
+    const auto m = sampler::D(x.data[1]);
+    auto& u = used[s];
+    if (sampler::has(u, m)) return;
+    for (auto& slot : u) {
+      if (slot == sampler::D::None) {
+        slot = m;
+        break;
+      }
+    }
+  }
+
+  // `side` (us's) cut to what the foe has seen: the unseen Pokémon gone
+  // (out of the order too), the moves not used gone from their slots.
+  void hide(PKMN::Side& side) const {
+    for (uint8_t s = 1; s <= 6; s++) {
+      PKMN::Pokemon& p = side.pokemon[s - 1];
+      if (!pokemon[s]) {
+        p = PKMN::Pokemon{};
+        for (uint8_t& o : side.order) o = o == s ? 0 : o;
+        continue;
+      }
+      for (PKMN::MoveSlot& m : p.moves) {
+        if (!sampler::has(used[s], m.id)) m = PKMN::MoveSlot{};
+      }
+    }
+    if (side.order[0] && !side.active.volatiles.transform()) {
+      for (PKMN::MoveSlot& m : side.active.moves) {
+        if (!sampler::has(used[side.order[0]], m.id)) m = PKMN::MoveSlot{};
+      }
+    }
+  }
+};
+
+// A player's summaries: summary i is tokens [ends[i - 1], ends[i]) (from 0)
+// and requests[i]. The last is the decision now unless the player waits;
+// tokens past the last end then join its next one.
+struct History {
+  std::vector<Token> tokens;
+  std::vector<uint32_t> ends;
+  std::vector<RequestData> requests;
+};
+
 // The pool and its prior.
 struct Pool {
   std::vector<Team> teams;
@@ -210,7 +267,7 @@ inline Guess true_guess(const Bookkeeping& now, const PKMN::Side& real) {
 }
 
 // One world: the battle to roll out from, and the foe's history.
-struct Sample {
+struct Sample : History {
   Guess guess;
   pkmn_gen1_battle battle;
   PKMN::Durations durations;
@@ -218,12 +275,8 @@ struct Sample {
   // cut to what the foe has seen (our Pokémon that came in, the moves they
   // used) and our HP as its estimate from our percent.
   Bookkeeping foe;
-  // The foe's summaries: summary i is tokens [ends[i - 1], ends[i]) (from 0)
-  // and requests[i]. The last is the foe's decision now unless it waits;
-  // tokens past the last end then join its next one.
-  std::vector<Token> tokens;
-  std::vector<uint32_t> ends;
-  std::vector<RequestData> requests;
+  // What the foe has seen of us.
+  Seen seen{0};
 };
 
 // The guesses at one decision: the pool teams that fit what bookkeeping has
@@ -234,18 +287,20 @@ class Sampler {
     const PKMN::Side& side = now.battle.sides[foe_];
     teamsize_ = now.teamsize[foe_];
     for (uint8_t k = 0; k < 6; k++) {
-      if (side.pokemon[k].species != PKMN::Data::Species::None) revealed_ = uint8_t(k + 1);
+      if (side.pokemon[k].species != PKMN::Data::Species::None) seen_ |= uint8_t(1 << k);
     }
     for (uint32_t t = 0; t < pool.teams.size(); t++) {
       const Team& team = pool.teams[t];
       const size_t n = std::min<size_t>(team.size(), 6);
       std::array<uint8_t, 6> fit{};
-      for (uint8_t k = 0; k < revealed_; k++) {
+      for (uint8_t k = 0; k < 6; k++) {
+        if (!seen(k)) continue;
         for (uint8_t j = 0; j < n; j++) fit[k] |= uint8_t(sampler::fits(team[j], side.pokemon[k]) << j);
       }
       std::array<int8_t, 6> owner{-1, -1, -1, -1, -1, -1};
       bool all = true;
-      for (uint8_t k = 0; k < revealed_ && all; k++) {
+      for (uint8_t k = 0; k < 6 && all; k++) {
+        if (!seen(k)) continue;
         uint8_t tried = 0;
         all = fit[k] && sampler::augment(k, fit, tried, owner);
       }
@@ -270,7 +325,8 @@ class Sampler {
     }
     g.source = Guess::FromSets;
     const PKMN::Side& side = now_.battle.sides[foe_];
-    for (uint8_t k = 0; k < revealed_; k++) {
+    for (uint8_t k = 0; k < 6; k++) {
+      if (!seen(k)) continue;
       const PKMN::Pokemon& p = side.pokemon[k];
       const int j = draw_set(rng, [&](const Set& s) { return sampler::fits(s, p); });
       if (j >= 0) {
@@ -284,15 +340,17 @@ class Sampler {
       for (uint8_t i = 0; i < 4; i++) s.moves[i] = p.moves[i].id == sampler::D::Struggle ? sampler::D::None : p.moves[i].id;
       sampler::fill_random(s.species, s.moves, rng);
     }
-    fill_unseen(g, revealed_, rng);
+    fill_unseen(g, rng);
     return g;
   }
 
   // The world and the foe's history for guess `g`. `updates` are our view's
   // updates and `after` our Bookkeeping after each (before the request that
-  // follows it), from the game's start; `seed` the world's RNG.
+  // follows it), from the game's start; `seed` the world's RNG. With
+  // `randomize` off, the world's hidden counters are left as bookkeeping's
+  // (to be randomized per rollout).
   Sample sample(const Guess& g, std::span<const std::vector<Obs>> updates, std::span<const Bookkeeping> after,
-                uint64_t seed) const {
+                uint64_t seed, bool randomize = true) const {
     assert(updates.size() == after.size());
     const uint8_t us = now_.player, foe = foe_;
     Sample out;
@@ -308,8 +366,7 @@ class Sampler {
     }
     // the running estimates (0: not seen yet), by ident slot
     std::array<std::array<uint16_t, 7>, 2> est{};
-    std::array<bool, 7> seen{};
-    std::array<std::array<sampler::D, 4>, 7> used{};
+    Seen seen(us);
 
     std::vector<uint8_t> bytes;
     for (size_t t = 0; t < updates.size(); t++) {
@@ -319,23 +376,7 @@ class Sampler {
         Obs x = o;
         rewrite(x, max, est);
         over |= x.type == ArgType::Win || x.type == ArgType::Tie;
-        const uint8_t id = x.data[0];
-        if ((x.type == ArgType::Switch || x.type == ArgType::Move) && id && ident_player(id) == us) {
-          const uint8_t s = ident_slot(id);
-          seen[s] = true;
-          if (x.type == ArgType::Move) {
-            const auto m = sampler::D(x.data[1]);
-            auto& u = used[s];
-            if (!sampler::has(u, m)) {
-              for (auto& slot : u) {
-                if (slot == sampler::D::None) {
-                  slot = m;
-                  break;
-                }
-              }
-            }
-          }
-        }
+        seen.note(x);
         bytes.push_back(uint8_t(x.type));
         bytes.insert(bytes.end(), x.data, x.data + x.size());
       }
@@ -362,28 +403,62 @@ class Sampler {
     out.foe.battle = world;
     out.foe.durations = now_.durations;
     PKMN::Side& ours = out.foe.battle.sides[us];
+    seen.hide(ours);
     for (uint8_t s = 1; s <= 6; s++) {
       PKMN::Pokemon& p = ours.pokemon[s - 1];
-      if (!seen[s]) {
-        p = PKMN::Pokemon{};
-        for (uint8_t& o : ours.order) o = o == s ? 0 : o;
-        continue;
-      }
-      if (est[us][s] || p.hp == 0) p.hp = est[us][s];
-      for (PKMN::MoveSlot& m : p.moves) {
-        if (!sampler::has(used[s], m.id)) m = PKMN::MoveSlot{};
-      }
+      if (seen.pokemon[s] && (est[us][s] || p.hp == 0)) p.hp = est[us][s];
     }
-    if (ours.order[0] && !ours.active.volatiles.transform()) {
-      for (PKMN::MoveSlot& m : ours.active.moves) {
-        if (!sampler::has(used[ours.order[0]], m.id)) m = PKMN::MoveSlot{};
-      }
-    }
+    out.seen = seen;
 
     world.rng = seed;
     out.battle = std::bit_cast<pkmn_gen1_battle>(world);
     auto durations = std::bit_cast<pkmn_gen1_chance_durations>(out.durations);
-    MCTS::randomize_hidden_variables(out.battle, durations);
+    if (randomize) MCTS::randomize_hidden_variables(out.battle, durations);
+    return out;
+  }
+
+  // For a Sampler that guesses our own side (`now` the foe's Bookkeeping,
+  // Sample::foe): our side `real` (our Bookkeeping's) with what the foe
+  // hasn't seen (`seen`) swapped for g's: our exact HP and everything seen
+  // kept, the unseen Pokémon and the moves not used from g.
+  PKMN::Side own_side(const PKMN::Side& real, const Seen& seen, const Guess& g) const {
+    PKMN::Battle b = now_.battle;
+    b.sides[foe_] = real;
+    seen.hide(b.sides[foe_]);
+    fill(b, g);
+    return b.sides[foe_];
+  }
+
+  // Our own history as type g (a Sampler as own_side's): our view's tokens
+  // as they are, each request from our Bookkeeping after that update with
+  // our side as own_side makes it (Bind{}, as the foe's).
+  History own(const Guess& g, const Seen& seen, std::span<const std::vector<Obs>> updates,
+              std::span<const Bookkeeping> after) const {
+    assert(updates.size() == after.size());
+    const uint8_t us = foe_, foe = now_.player;
+    History out;
+    std::vector<uint8_t> bytes;
+    for (size_t t = 0; t < updates.size(); t++) {
+      bytes.clear();
+      bool over = false;
+      for (const Obs& x : updates[t]) {
+        over |= x.type == ArgType::Win || x.type == ArgType::Tie;
+        bytes.push_back(uint8_t(x.type));
+        bytes.insert(bytes.end(), x.data, x.data + x.size());
+      }
+      bytes.push_back(0);
+      tokenize(bytes, us, out.tokens);
+      if (over) break;
+
+      PKMN::Battle b = after[t].battle;
+      b.sides[us] = own_side(b.sides[us], seen, g);
+      const pkmn_choice_kind kind = b.sides[us].stored().hp == 0    ? PKMN_CHOICE_SWITCH
+                                    : b.sides[foe].stored().hp == 0 ? PKMN_CHOICE_PASS
+                                                                    : PKMN_CHOICE_MOVE;
+      if (kind == PKMN_CHOICE_PASS) continue;
+      out.requests.push_back(request_data(b, us, kind, Bind{}));
+      out.ends.push_back(uint32_t(out.tokens.size()));
+    }
     return out;
   }
 
@@ -434,7 +509,9 @@ class Sampler {
   const Bookkeeping& now_;
   uint8_t foe_;
   uint8_t teamsize_ = 6;
-  uint8_t revealed_ = 0;
+  uint8_t seen_ = 0; // the slots with a Pokémon seen
+
+  bool seen(uint8_t k) const { return seen_ >> k & 1; }
   std::vector<Match> matches_;
   std::vector<double> cdf_;
 
@@ -446,21 +523,26 @@ class Sampler {
     for (uint8_t j = 0; j < n; j++) {
       if (m.owner[j] >= 0) g.sets[size_t(m.owner[j])] = team[j];
     }
-    uint8_t k = revealed_;
-    for (uint8_t j = 0; j < n && k < teamsize_; j++) {
-      if (m.owner[j] < 0) g.sets[k++] = team[j];
+    uint8_t k = 0;
+    for (uint8_t j = 0; j < n; j++) {
+      if (m.owner[j] >= 0) continue;
+      while (k < teamsize_ && seen(k)) k++;
+      if (k == teamsize_) break;
+      g.sets[k++] = team[j];
     }
+    while (k < teamsize_ && seen(k)) k++;
     if (k < teamsize_) {
       g.source = Guess::FromSets;
       g.team = UINT32_MAX;
-      fill_unseen(g, k, rng);
+      fill_unseen(g, rng);
     }
     return g;
   }
 
-  // Sets for the unseen Pokémon from `k` on, species not used yet.
-  template <class RNG> void fill_unseen(Guess& g, uint8_t k, RNG& rng) const {
-    for (; k < teamsize_; k++) {
+  // Sets for the unseen slots still empty, species not used yet.
+  template <class RNG> void fill_unseen(Guess& g, RNG& rng) const {
+    for (uint8_t k = 0; k < teamsize_; k++) {
+      if (seen(k) || g.sets[k].species != PKMN::Data::Species::None) continue;
       const int j = draw_set(rng, [&](const Set& s) {
         return std::none_of(g.sets.begin(), g.sets.end(), [&](const Set& t) { return t.species == s.species; });
       });

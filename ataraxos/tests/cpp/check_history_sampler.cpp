@@ -13,6 +13,10 @@
 // - consistency, which must be 0: in every rebuilt summary, each foe
 //   Pokémon's request HP and max HP equal the last its lines showed, and
 //   the world's foe HP the last request's (a Faint line shows 0);
+// - our side as the foe sees it (Sample::foe, a Sampler for our side on it,
+//   the joint search's): our true team is among the teams that fit;
+//   with our true sets, own_side gives our real side back byte for byte and
+//   own our real summaries (as the foe's above, under "own: ");
 // - DRAWS pool guesses: the world gives us the real request's legal
 //   choices, is consistent as above, and plays out under random choices
 //   (200 updates) without an engine error.
@@ -25,6 +29,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <map>
 #include <random>
 #include <string>
@@ -41,7 +46,8 @@ using namespace ataraxos;
 namespace {
 
 std::map<std::string, size_t> counts;
-void count(const std::string& what, size_t n = 1) { counts[what] += n; }
+std::string prefix; // the checks of our own history: "own: "
+void count(const std::string& what, size_t n = 1) { counts[prefix + what] += n; }
 
 uint8_t side_of(int16_t ident) { return ident ? uint8_t((ident - 1) >> 3) : 2; }
 uint8_t slot_of(int16_t ident) { return uint8_t((ident - 1) & 7); }
@@ -103,7 +109,7 @@ size_t inconsistencies(const Sample& s, uint8_t foe) {
   return bad;
 }
 
-void compare(const Sample& s, const std::vector<Token>& tokens, const std::vector<uint32_t>& ends,
+void compare(const History& s, const std::vector<Token>& tokens, const std::vector<uint32_t>& ends,
              const std::vector<RequestData>& requests) {
   if (s.ends.size() != ends.size()) {
     count("summaries differ");
@@ -317,6 +323,19 @@ int main(int argc, char** argv) {
         }
         compare(s, tokens[foe], ends[foe], requests[foe]);
         count("inconsistent (truth)", inconsistencies(s, foe));
+
+        // our side as the foe has seen it, and our true sets by party slot
+        Sampler ours(pool, s.foe);
+        if (!outside && !ours.matches(ti[p])) count("own: true team not among the matches");
+        count("own: matching teams", ours.matches());
+        Guess mine;
+        for (size_t j = 0; j < teams[p].size() && j < 6; j++) mine.sets[j] = teams[p][j];
+        const PKMN::Side& real = bd.bk[p].battle.sides[p];
+        const PKMN::Side back = ours.own_side(real, s.seen, mine);
+        if (std::memcmp(&back, &real, sizeof(PKMN::Side))) count("own: side differs");
+        prefix = "own: ";
+        compare(ours.own(mine, s.seen, bd.history[p], after[p]), tokens[p], ends[p], requests[p]);
+        prefix.clear();
 
         for (size_t d = 0; d < draws; d++) {
           const Guess guess = sampler.guess(rng);

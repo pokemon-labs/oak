@@ -17,9 +17,28 @@ decision of ours is forced and not run again); the foe's is its rebuilt
 history, run once per world (`prefill`) and copied to that world's
 rollouts. Many roots search together: every decision of the rollouts is
 one batch per step.
+
+The joint search (`joint=True`; ataraxos/CLAUDE.md "Joint search", the
+user's design 2026-11-02): a Bayesian game over `types_a` of our types (A0
+our real team, the rest guessed from what the foe has seen of us) and
+`types_b` of the foe's, uniform weights. Each type's cache is its own
+history run once, its root decision included (that gives its policy pi,
+the magnet with rho; A0's is the real actor's). Rollouts force both root
+choices, cell (A, B, i, j), and come in `rounds`: sample the cells by the
+current policies (with a `floor` of uniform), keep each cell's mean
+Q_AB(i, j), and solve by MMD on both sides to its fixed point, the
+KL-regularized equilibrium (alpha + beta the regularization, the magnet
+rho^alpha pi^beta; the foe's beta `foe_beta`). With the foe fixed it is the
+closed form above. `per_type`: one policy a type, q1_A(i) = sum_B P(B)
+sum_j Q_AB(i, j) p2_B(j), q2_B(j) = -sum_A P(A) sum_i Q_AB(i, j) p1_A(i);
+we play p1_A0. `per_pair`: an independent game per (A, B); we play sum_B
+P(B) p1_{A0,B}. A cell with no rollout yet reads its row and column means
+(its block's mean, else 0), and a thin cell is shrunk to that by `shrink`
+pseudo-counts.
 """
 
 import time
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -41,6 +60,19 @@ class SearchConfig:
     alpha: float = 0.002  # the magnet's coefficient
     beta: float = 0.02    # the net policy's
     magnet: str = "attack_switch"
+    # the joint search
+    joint: bool = False
+    joint_mode: str = "per_type"  # or "per_pair"
+    types_a: int = 3       # ours, A0 our real team
+    types_b: int = 3       # the foe's
+    joint_budget: int = 512  # rollouts per root over all rounds
+    rounds: int = 4
+    floor: float = 0.25    # the uniform share of each round's cell sampling
+    shrink: float = 1.0    # pseudo-counts toward a cell's row and column means
+    foe_beta: float = -1.0  # the foe's beta; < 0: ours
+    eta: float = 0.0       # MMD's step; 0: 1 / (alpha + beta)
+    mmd_iters: int = 2000
+    mmd_tol: float = 1e-4
 
 
 def win_minus_loss(value_logits: torch.Tensor) -> torch.Tensor:
@@ -58,6 +90,73 @@ def update(q, logp, choices, n, cfg: SearchConfig):
     qq[:n] = torch.as_tensor(q, dtype=logp.dtype, device=logp.device)
     x = (qq + cfg.alpha * rho + cfg.beta * logp.masked_fill(~legal, 0)) / (cfg.alpha + cfg.beta)
     return torch.log_softmax(x.masked_fill(~legal, -1e9), -1)
+
+
+def mmd(Q, w1, w2, m1, m2, lam1, lam2, legal1, legal2, l1=None, l2=None, eta=None, iters=2000, tol=1e-4):
+    """MMD on both sides of G Bayesian games to the fixed point: Q [G, a, b,
+    N, M] (ours, means), type weights w1 [a], w2 [b], magnets' log-probs m1
+    [G, a, N], m2 [G, b, M] (rho^alpha pi^beta over lam), regularization
+    lam1, lam2, legal masks like m1, m2. Starts from log-policies l1, l2
+    (default the magnets). Returns (l1, l2, q1, q2, iterations): q1 [G, a,
+    N] = sum_B w2 sum_j Q p2, q2 [G, b, M] = -sum_A w1 sum_i Q p1. Each step
+    l <- (l + eta q + eta lam m) / (1 + eta lam), normalized."""
+    neg = -1e9
+
+    def norm(l, legal):
+        l = np.where(legal, l, neg)
+        return l - np.logaddexp.reduce(l, -1, keepdims=True)
+
+    m1, m2 = norm(m1, legal1), norm(m2, legal2)
+    l1 = m1.copy() if l1 is None else norm(l1, legal1)
+    l2 = m2.copy() if l2 is None else norm(l2, legal2)
+    eta = 1.0 / max(lam1, lam2) if not eta else eta
+    Qw1 = Q * w1[None, :, None, None, None]
+    Qw2 = Q * w2[None, None, :, None, None]
+    it = 0
+    for it in range(1, iters + 1):
+        p1, p2 = np.exp(l1), np.exp(l2)
+        q1 = np.einsum("gabij,gbj->gai", Qw2, p2)
+        q2 = -np.einsum("gabij,gai->gbj", Qw1, p1)
+        n1 = norm((l1 + eta * q1 + eta * lam1 * m1) / (1 + eta * lam1), legal1)
+        n2 = norm((l2 + eta * q2 + eta * lam2 * m2) / (1 + eta * lam2), legal2)
+        d = max(np.abs(np.exp(n1) - p1).max(), np.abs(np.exp(n2) - p2).max())
+        l1, l2 = n1, n2
+        if d < tol:
+            break
+    p1, p2 = np.exp(l1), np.exp(l2)
+    q1 = np.einsum("gabij,gbj->gai", Qw2, p2)
+    q2 = -np.einsum("gabij,gai->gbj", Qw1, p1)
+    return l1, l2, q1, q2, it
+
+
+def cell_means(total, count, legal, shrink):
+    """Q [a, b, N, M] from the cells' value sums and counts: an empty cell
+    reads the mean of its row's and its column's means in its (A, B) block
+    (one of them if the other is empty, else the block's, else 0), and
+    every cell is shrunk toward that by `shrink` pseudo-counts."""
+    with np.errstate(invalid="ignore", divide="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # nanmean of two NaNs
+        rs, rc = total.sum(3, keepdims=True), count.sum(3, keepdims=True)
+        cs, cc = total.sum(2, keepdims=True), count.sum(2, keepdims=True)
+        bs, bc = total.sum((2, 3), keepdims=True), count.sum((2, 3), keepdims=True)
+        block = np.where(bc > 0, bs / bc, 0.0)
+        row = np.where(rc > 0, rs / rc, np.nan)
+        col = np.where(cc > 0, cs / cc, np.nan)
+        prior = np.nanmean(np.stack(np.broadcast_arrays(row, col)), 0)
+        prior = np.where(np.isnan(prior), block, prior)
+        q = (total + shrink * prior) / (count + shrink) if shrink > 0 else np.where(count > 0, total / count, prior)
+    return np.where(legal, q, 0.0)
+
+
+def gather_rows(obs, rows, keys=("request", "state", "choices", "n")):
+    """Rows `rows` of a decisions dict (tokens by offsets)."""
+    off = obs["offsets"]
+    parts = [obs["tokens"][off[r]:off[r + 1]] for r in rows]
+    lens = np.array([len(x) for x in parts], np.int64)
+    out = {k: obs[k][rows] for k in keys if k in obs}
+    out["tokens"] = np.concatenate(parts) if len(parts) else obs["tokens"][:0]
+    out["offsets"] = np.r_[0, np.cumsum(lens)].astype(np.int64)
+    return out
 
 
 class Search:
@@ -132,23 +231,35 @@ class Search:
         rollouts start with a foe decision: (root, the mean of their first
         foe log-probs, that decision's request, choices and n)."""
         c = self.cfg
+        keys = obs["battle"].astype(np.int64) * 2 + obs["player"]
+        if c.joint:
+            def add_joint(r, i, seed):
+                r.add_joint_selfplay(env, int(obs["battle"][i]), int(obs["player"][i]), c.types_a, c.types_b,
+                                     c.depth, seed, truth)
+
+            return self.search_joint(add_joint, real, keys, obs["player"], obs, logp, seed, check)
 
         def add(r, i, seed):
             r.add_selfplay(env, int(obs["battle"][i]), int(obs["player"][i]), self.worlds(int(obs["n"][i])),
                            c.reps, c.depth, seed, truth)
 
-        keys = obs["battle"].astype(np.int64) * 2 + obs["player"]
         return self.search(add, real, keys, obs["player"], obs, logp, seed, check)
 
     def run_client(self, client, real: CausalActor, key, obs, logp, seed=None):
         """One search at the ladder Client's request: `obs` its one decision,
         which the real actor ran at cache key `key`."""
         c = self.cfg
+        keys, players = np.array([key], np.int64), np.array([client.viewer()])
+        if c.joint:
+            def add_joint(r, i, seed):
+                r.add_joint_client(client, c.types_a, c.types_b, c.depth, seed)
+
+            return self.search_joint(add_joint, real, keys, players, obs, logp, seed)
 
         def add(r, i, seed):
             r.add_client(client, self.worlds(int(obs["n"][0])), c.reps, c.depth, seed)
 
-        return self.search(add, real, np.array([key], np.int64), np.array([client.viewer()]), obs, logp, seed)
+        return self.search(add, real, keys, players, obs, logp, seed)
 
     @torch.no_grad()
     def search(self, add, real, keys, players, obs, logp, seed=None, check=None):
@@ -248,3 +359,213 @@ class Search:
         s["steps"] += steps
         s["differs"] += int(lay["differs"].sum())
         return picks, qs, lps
+
+    def _rollout_loop(self, actor, r, seed):
+        """Runs the rollouts started from `r.start(seed)` to their leaves;
+        returns the steps."""
+        out = r.start(seed)
+        steps = 0
+        while len(out["n"]):
+            picks, _, value = actor.act(out)
+            out = r.step(picks, win_minus_loss(value).cpu().numpy().astype(np.float32))
+            steps += 1
+        assert r.done
+        return steps
+
+    @torch.no_grad()
+    def search_joint(self, add_joint, real, keys, players, obs, logp, seed=None, check=None):
+        """The joint search (the module's docstring) of roots `obs`, as
+        `search`: `add_joint(rollouts, i, seed)` adds joint root i. Returns
+        (picks, q list (q1 of A0), search log-probs [D, CHOICES]). `check`
+        (tests, a dict) gets "types" (each type's root log-probs), "layout"
+        (joint_layout's), "Q" and
+        "count" per root, "iters" (MMD's, per round) and "pol" ((l1, l2) per
+        root)."""
+        c = self.cfg
+        D = len(obs["n"])
+        seed = int(self.rng.integers(1 << 62)) if seed is None else seed
+        r, dev = self.r, self.device
+        C = logp.shape[1]
+        tic = time.perf_counter()
+
+        def lap(what):
+            nonlocal tic
+            if dev.type == "cuda":
+                torch.cuda.synchronize()
+            now = time.perf_counter()
+            self.times[what] = self.times.get(what, 0.0) + now - tic
+            tic = now
+
+        r.clear()
+        for i in range(D):
+            add_joint(r, i, seed + i)
+        lay = r.joint_layout()
+        lap("sample")
+
+        Y = len(lay["n"])
+        per_round = max(1, c.joint_budget // c.rounds)
+        rmax = D * per_round
+        # rollout i's keys are 2i, 2i + 1; type y's 2 rmax + y
+        actor = self._actor(rmax + (Y + 1) // 2)
+        tkeys = 2 * rmax + np.arange(Y, dtype=np.int64)
+        players = np.asarray(players, np.int64)
+        first, na, nb = lay["first"].astype(np.int64), lay["a"].astype(np.int64), lay["b"].astype(np.int64)
+
+        # the types' caches: their histories, then A0's the real actor's
+        self.prefill(actor, tkeys, lay)
+        real_y = np.flatnonzero(lay["real"])
+        src = torch.from_numpy(np.asarray(keys, np.int64)[lay["root"][real_y].astype(np.int64)]).to(real.device)
+        k = torch.from_numpy(tkeys[real_y]).to(dev)
+        actor.k[:, k] = real.k[:, src].to(dev, actor.k.dtype)
+        actor.v[:, k] = real.v[:, src].to(dev, actor.v.dtype)
+        actor.t[k] = real.t[src].to(dev)
+        actor.game[k] = 0
+        # each type's policy at the root: A0's the real one's, a deciding
+        # type's from its root decision, else its one choice
+        choices = torch.from_numpy(np.ascontiguousarray(lay["choices"])).to(dev)
+        n_t = torch.from_numpy(lay["n"].astype(np.int64)).to(dev)
+        legal_t = torch.arange(C, device=dev)[None] < n_t[:, None]
+        lp_t = torch.where(legal_t, 0.0, -1e9).to(torch.float32)
+        lp_t[:, 0] = 0.0
+        lp_t = torch.log_softmax(lp_t, -1)
+        dec = np.flatnonzero((lay["decides"] > 0) & (lay["real"] == 0))
+        if len(dec):
+            sub = {"tokens": lay["dec_tokens"], "offsets": lay["dec_offsets"], "request": lay["dec_request"],
+                   "choices": lay["choices"], "n": lay["n"]}
+            if "dec_state" in lay:
+                sub["state"] = lay["dec_state"]
+            sub = gather_rows(sub, dec)
+            sub["battle"] = (rmax + dec // 2).astype(np.uint32)
+            sub["player"] = (dec % 2).astype(np.uint8)
+            sub["game"] = np.zeros(len(dec), np.uint32)
+            _, lp, _ = actor.act(sub)
+            lp_t[torch.from_numpy(dec).to(dev)] = lp.float()
+        lp_t[torch.from_numpy(real_y).to(dev)] = logp[lay["root"][real_y].astype(np.int64)].to(dev).float()
+        rho = magnet(choices.long(), legal_t, c.magnet)
+        lp_np = lp_t.cpu().numpy().astype(np.float64)
+        rho_np = rho.float().cpu().numpy().astype(np.float64)
+        legal_np = legal_t.cpu().numpy()
+        lap("prefill")
+
+        beta2 = c.beta if c.foe_beta < 0 else c.foe_beta
+        lam1, lam2 = c.alpha + c.beta, c.alpha + beta2
+        # per root: the types' magnets and legal masks, the cells' sums
+        roots = []
+        for i in range(D):
+            A, B = int(na[i]), int(nb[i])
+            ya, yb = first[i] + np.arange(A), first[i] + A + np.arange(B)
+            mag1 = (c.alpha * rho_np[ya] + c.beta * lp_np[ya]) / lam1
+            mag2 = (c.alpha * rho_np[yb] + beta2 * lp_np[yb]) / lam2
+            roots.append(dict(A=A, B=B, ya=ya, yb=yb, m1=mag1, m2=mag2, g1=legal_np[ya], g2=legal_np[yb],
+                              total=np.zeros((A, B, C, C)), count=np.zeros((A, B, C, C)),
+                              l1=None, l2=None))
+        iters = []
+        steps = 0
+        rng = np.random.default_rng(seed)
+        for rd in range(c.rounds):
+            # sample this round's cells by the current policies
+            cells = []
+            for i, x in enumerate(roots):
+                p1 = np.exp(self._marginal(x, "l1", "m1", "g1"))  # [A, C]
+                p2 = np.exp(self._marginal(x, "l2", "m2", "g2"))  # [B, C]
+                u1 = x["g1"] / x["g1"].sum(-1, keepdims=True)
+                u2 = x["g2"] / x["g2"].sum(-1, keepdims=True)
+                s1 = (1 - c.floor) * p1 + c.floor * u1
+                s2 = (1 - c.floor) * p2 + c.floor * u2
+                prob = (s1[:, None, :, None] * s2[None, :, None, :]) / (x["A"] * x["B"])
+                counts = rng.multinomial(per_round, prob.reshape(-1) / prob.sum()).reshape(prob.shape)
+                for a, b, ci, cj in zip(*np.nonzero(counts)):
+                    cells.append((i, a, b, ci, cj, counts[a, b, ci, cj]))
+            r.clear_rollouts()
+            r.schedule(np.array(cells, np.int64).reshape(-1, 6))
+            vals = r.joint_values()
+            N = len(vals["root"])
+            # the rollouts' caches from their types'
+            root_of = vals["root"].astype(np.int64)
+            us = players[root_of]
+            idx = np.arange(N, dtype=np.int64)
+            ours = torch.from_numpy(idx * 2 + us).to(dev)
+            foes = torch.from_numpy(idx * 2 + 1 - us).to(dev)
+            ka = torch.from_numpy(tkeys[first[root_of] + vals["a"]]).to(dev)
+            kb = torch.from_numpy(tkeys[first[root_of] + na[root_of] + vals["b"]]).to(dev)
+            for dst, sk in ((ours, ka), (foes, kb)):
+                actor.k[:, dst] = actor.k[:, sk]
+                actor.v[:, dst] = actor.v[:, sk]
+                actor.t[dst] = actor.t[sk]
+                actor.game[dst] = 0
+            lap("prefill")
+            steps += self._rollout_loop(actor, r, seed + 1 + rd)
+            lap("rollouts")
+            vals = r.joint_values()
+            self.stats["differs"] += int(vals["differs"].sum())
+            self.stats["rollouts"] += N
+            for i, x in enumerate(roots):
+                m = vals["root"] == i
+                at = (vals["a"][m], vals["b"][m], vals["action"][m], vals["foe_action"][m])
+                np.add.at(x["total"], at, vals["value"][m])
+                np.add.at(x["count"], at, 1)
+                it = self._solve(x, lam1, lam2)
+                iters.append(it)
+            lap("update")
+
+        picks = np.zeros(D, np.uint8)
+        qs, lps = [], torch.empty_like(logp)
+        for i, x in enumerate(roots):
+            l1 = self._marginal(x, "l1", "m1", "g1")[0]  # A0
+            n = int(obs["n"][i])
+            lp = torch.from_numpy(l1).to(logp.device, logp.dtype)
+            lp = torch.log_softmax(lp.masked_fill(torch.arange(C, device=logp.device) >= n, -1e9), -1)
+            picks[i] = torch.multinomial(lp.exp(), 1).item()
+            qs.append(x["q1"][:n])
+            lps[i] = lp
+        self.stats["roots"] += D
+        self.stats["steps"] += steps
+        if check is not None:
+            check["types"] = lp_np
+            check["layout"] = lay
+            check["Q"] = [cell_means(x["total"], x["count"], x["g1"][:, None, :, None] & x["g2"][None, :, None, :],
+                                     c.shrink) for x in roots]
+            check["count"] = [x["count"] for x in roots]
+            check["iters"] = iters
+            check["pol"] = [(x["l1"], x["l2"]) for x in roots]
+        lap("update")
+        return picks, qs, lps
+
+    def _marginal(self, x, l, m, g):
+        """A root's current log-policy a type [types, C] (per_pair: our A's
+        is sum_B P(B) p1_AB, the foe's B's sum_A P(A) p2_AB); the magnet
+        before any solve."""
+        if x[l] is None:
+            return np.where(x[g], x[m] - np.logaddexp.reduce(np.where(x[g], x[m], -1e9), -1, keepdims=True), -1e9)
+        if self.cfg.joint_mode == "per_type":
+            return x[l][0]
+        A, B = x["A"], x["B"]
+        p = np.exp(x[l]).reshape(A, B, -1)  # [A * B, 1, C] per pair
+        p = p.mean(1) if l == "l1" else p.mean(0)
+        return np.log(np.maximum(p, 1e-300))
+
+    def _solve(self, x, lam1, lam2):
+        """MMD on a root's current Q (warm-started); keeps l1, l2 and q1
+        (A0's: per_pair, sum_B P(B) of its pairs')."""
+        c = self.cfg
+        A, B = x["A"], x["B"]
+        legal = x["g1"][:, None, :, None] & x["g2"][None, :, None, :]
+        Q = cell_means(x["total"], x["count"], legal, c.shrink)
+        if c.joint_mode == "per_type":
+            l1, l2, q1, _, it = mmd(Q[None], np.full(A, 1 / A), np.full(B, 1 / B), x["m1"][None], x["m2"][None],
+                                   lam1, lam2, x["g1"][None], x["g2"][None], x["l1"], x["l2"], c.eta, c.mmd_iters,
+                                   c.mmd_tol)
+            x["q1"] = q1[0, 0]
+        elif c.joint_mode == "per_pair":
+            G = A * B
+            m1 = np.repeat(x["m1"], B, 0)[:, None]  # pair (a, b) = a * B + b
+            m2 = np.tile(x["m2"], (A, 1))[:, None]
+            g1 = np.repeat(x["g1"], B, 0)[:, None]
+            g2 = np.tile(x["g2"], (A, 1))[:, None]
+            l1, l2, q1, _, it = mmd(Q.reshape(G, 1, 1, *Q.shape[2:]), np.ones(1), np.ones(1), m1, m2, lam1, lam2,
+                                   g1, g2, x["l1"], x["l2"], c.eta, c.mmd_iters, c.mmd_tol)
+            x["q1"] = q1[:B, 0].mean(0)
+        else:
+            raise ValueError(c.joint_mode)
+        x["l1"], x["l2"] = l1, l2
+        return it
