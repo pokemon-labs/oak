@@ -10,7 +10,8 @@
 #
 #   nohup box/joint_sweep.sh > runs/joint_sweep/sweep.out 2>&1 &
 #
-# CKPT, SEEDS, BATTLES, JOBS override.
+# CKPT, SEEDS, BATTLES, JOBS, BUDGET (every arm's, joint and vanilla), DEPTH
+# override; OUT the results' directory.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 PY=${PY:-/venv/main/bin/python}
@@ -18,15 +19,17 @@ CKPT=${CKPT:-/root/arena/beanseggyum/ckpt1100.pt}
 SEEDS=${SEEDS:-8}
 BATTLES=${BATTLES:-16}
 JOBS=${JOBS:-3}
-OUT=runs/joint_sweep
+BUDGET=${BUDGET:-512}
+DEPTH=${DEPTH:-10}
+OUT=${OUT:-runs/joint_sweep}
 mkdir -p "$OUT"
 
 declare -A ARMS=(
-  [default]="--joint"
-  [per_pair]="--joint --joint_mode per_pair"
-  [types1x1]="--joint --types_a 1 --types_b 1"
-  [foe_beta0.2]="--joint --foe_beta 0.2"
-  [vanilla]="--budget 512 --reps 2"
+  [default]="--joint --joint_budget $BUDGET"
+  [per_pair]="--joint --joint_budget $BUDGET --joint_mode per_pair"
+  [types1x1]="--joint --joint_budget $BUDGET --types_a 1 --types_b 1"
+  [foe_beta0.2]="--joint --joint_budget $BUDGET --foe_beta 0.2"
+  [vanilla]="--budget $BUDGET --reps 2"
 )
 ORDER="default per_pair types1x1 foe_beta0.2 vanilla"
 
@@ -39,7 +42,7 @@ done | xargs -P "$JOBS" -L 1 bash -c '
   log='"$OUT"'/$arm.$seed.log
   echo "$(date +%T) start $arm seed $seed"
   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True nice -n 10 '"$PY"' -m ataraxos.eval.search_h2h '"$CKPT"' \
-    --battles '"$BATTLES"' --seed $seed --threads 4 --mem_frac 0.09 --out '"$OUT"'/results.jsonl --tag $arm "$@" \
+    --battles '"$BATTLES"' --depth '"$DEPTH"' --seed $seed --threads 4 --mem_frac 0.09 --out '"$OUT"'/results.jsonl --tag $arm "$@" \
     > $log 2>&1
   echo "$(date +%T) done $arm seed $seed (exit $?): $(tail -1 $log | cut -c1-120)"
 '
