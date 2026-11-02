@@ -7,9 +7,16 @@ battle's first game counts (agents.match's rules).
 
     python -m ataraxos.eval.search_h2h CKPT [--battles 32] [--reps 2]
         [--depth 10] [--budget 128] [--worlds 0] [--teams FILE]
+        [--joint [--joint_mode per_type] [--types_a 3] [--types_b 3]
+         [--joint_budget 512] [--rounds 4] [--floor 0.25] [--foe_beta -1]]
+        [--mem_frac F] [--out FILE.jsonl] [--tag NAME]
+
+`--mem_frac` caps this process's share of the GPU (an OOM here, not in a
+training run beside it); `--out` appends the result as a JSON line.
 """
 
 import argparse
+import json
 import os
 import tempfile
 import time
@@ -57,15 +64,30 @@ def main():
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--max_turns", type=int, default=300)
     ap.add_argument("--max_searches", type=int, default=0, help="stop after this many (0: play out)")
+    ap.add_argument("--joint", action="store_true")
+    ap.add_argument("--joint_mode", default="per_type")
+    ap.add_argument("--types_a", type=int, default=3)
+    ap.add_argument("--types_b", type=int, default=3)
+    ap.add_argument("--joint_budget", type=int, default=512)
+    ap.add_argument("--rounds", type=int, default=4)
+    ap.add_argument("--floor", type=float, default=0.25)
+    ap.add_argument("--foe_beta", type=float, default=-1.0)
+    ap.add_argument("--mem_frac", type=float, default=0.0)
+    ap.add_argument("--out", default="")
+    ap.add_argument("--tag", default="")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
     dev = torch.device(args.device)
+    if args.mem_frac and dev.type == "cuda":
+        torch.cuda.set_per_process_memory_fraction(args.mem_frac, dev)
     net = load_policy(args.ckpt, dev)
     tmp = tempfile.mkdtemp(prefix="search_h2h_")
     pool, games = split_teams(args.teams, tmp)
     cfg = SearchConfig(worlds=args.worlds, reps=args.reps, depth=args.depth, budget=args.budget,
-                       alpha=args.alpha, beta=args.beta)
+                       alpha=args.alpha, beta=args.beta, joint=args.joint, joint_mode=args.joint_mode,
+                       types_a=args.types_a, types_b=args.types_b, joint_budget=args.joint_budget,
+                       rounds=args.rounds, floor=args.floor, foe_beta=args.foe_beta)
     search = Search(net, [pool], dev, cfg, threads=args.threads, seed=args.seed)
     B = args.battles
     env = ataraxos_env.SelfPlay(B, seed=args.seed, teams=[games], max_turns=args.max_turns,
@@ -107,8 +129,15 @@ def main():
                   f"stats {search.stats}, times {fmt(search.times)}", flush=True)
     w, t, l = int((result == 1).sum()), int((result == 0).sum()), int((result == -1).sum())
     el = time.time() - t_start
+    peak = torch.cuda.max_memory_allocated(dev) / 2**30 if dev.type == "cuda" else 0.0
     print(f"search vs net: {w} W {t} T {l} L of {B}, score {(w + t / 2) / B:.3f}; {searched} searches in {el:.0f}s, "
-          f"{moved} not the net's argmax; stats {search.stats}, times {fmt(search.times)}")
+          f"{moved} not the net's argmax; stats {search.stats}, times {fmt(search.times)}, peak {peak:.2f} GiB")
+    if args.out:
+        with open(args.out, "a") as f:
+            f.write(json.dumps({"tag": args.tag, "args": vars(args), "w": w, "t": t, "l": l, "battles": B,
+                                "score": (w + t / 2) / B, "searches": searched, "seconds": el, "moved": moved,
+                                "stats": search.stats, "times": search.times, "peak_gib": peak,
+                                "result": result.tolist()}) + "\n")
 
 
 if __name__ == "__main__":
