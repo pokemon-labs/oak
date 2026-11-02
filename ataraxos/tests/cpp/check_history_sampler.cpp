@@ -332,7 +332,23 @@ int main(int argc, char** argv) {
         for (size_t j = 0; j < teams[p].size() && j < 6; j++) mine.sets[j] = teams[p][j];
         const PKMN::Side& real = bd.bk[p].battle.sides[p];
         const PKMN::Side back = ours.own_side(real, s.seen, mine);
-        if (std::memcmp(&back, &real, sizeof(PKMN::Side))) count("own: side differs");
+        if (std::memcmp(&back, &real, sizeof(PKMN::Side))) {
+          count("own: side differs");
+          if (std::getenv("DEBUG") && counts["printed own side"]++ < 5) {
+            for (uint8_t k = 0; k < 6; k++) {
+              const PKMN::Pokemon &x = back.pokemon[k], &y = real.pokemon[k];
+              if (!std::memcmp(&x, &y, sizeof(x))) continue;
+              std::printf("own side: slot %d %s seen %d: moves", k + 1, PKMN::species_string(y.species).c_str(), int(s.seen.pokemon[k + 1]));
+              for (uint8_t i = 0; i < 4; i++) std::printf(" %d/%d", int(x.moves[i].id), int(y.moves[i].id));
+              std::printf(" pp");
+              for (uint8_t i = 0; i < 4; i++) std::printf(" %d/%d", int(x.moves[i].pp), int(y.moves[i].pp));
+              std::printf(" order %d%d%d%d%d%d / %d%d%d%d%d%d\n", back.order[0], back.order[1], back.order[2], back.order[3],
+                          back.order[4], back.order[5], real.order[0], real.order[1], real.order[2], real.order[3],
+                          real.order[4], real.order[5]);
+            }
+            if (std::memcmp(&back.active, &real.active, sizeof(back.active))) std::printf("own side: active differs\n");
+          }
+        }
         prefix = "own: ";
         compare(ours.own(mine, s.seen, bd.history[p], after[p]), tokens[p], ends[p], requests[p]);
         prefix.clear();
