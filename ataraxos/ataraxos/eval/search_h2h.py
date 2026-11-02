@@ -80,7 +80,7 @@ def main():
     torch.manual_seed(args.seed)
     dev = torch.device(args.device)
     if args.mem_frac and dev.type == "cuda":
-        torch.cuda.set_per_process_memory_fraction(args.mem_frac, dev)
+        torch.cuda.set_per_process_memory_fraction(args.mem_frac, dev.index or 0)
     net = load_policy(args.ckpt, dev)
     tmp = tempfile.mkdtemp(prefix="search_h2h_")
     pool, games = split_teams(args.teams, tmp)
@@ -129,7 +129,7 @@ def main():
                   f"stats {search.stats}, times {fmt(search.times)}", flush=True)
     w, t, l = int((result == 1).sum()), int((result == 0).sum()), int((result == -1).sum())
     el = time.time() - t_start
-    peak = torch.cuda.max_memory_allocated(dev) / 2**30 if dev.type == "cuda" else 0.0
+    peak = torch.cuda.max_memory_allocated(dev.index or 0) / 2**30 if dev.type == "cuda" else 0.0
     print(f"search vs net: {w} W {t} T {l} L of {B}, score {(w + t / 2) / B:.3f}; {searched} searches in {el:.0f}s, "
           f"{moved} not the net's argmax; stats {search.stats}, times {fmt(search.times)}, peak {peak:.2f} GiB")
     if args.out:
