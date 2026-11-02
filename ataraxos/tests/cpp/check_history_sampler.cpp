@@ -346,7 +346,13 @@ int main(int argc, char** argv) {
                           back.order[4], back.order[5], real.order[0], real.order[1], real.order[2], real.order[3],
                           real.order[4], real.order[5]);
             }
-            if (std::memcmp(&back.active, &real.active, sizeof(back.active))) std::printf("own side: active differs\n");
+            if (std::memcmp(&back.active, &real.active, sizeof(back.active))) {
+              std::printf("own side: active %s differs: moves", PKMN::species_string(real.stored().species).c_str());
+              for (uint8_t i = 0; i < 4; i++) std::printf(" %s/%s", PKMN::move_string(back.active.moves[i].id).c_str(), PKMN::move_string(real.active.moves[i].id).c_str());
+              std::printf(" stored");
+              for (uint8_t i = 0; i < 4; i++) std::printf(" %s", PKMN::move_string(real.stored().moves[i].id).c_str());
+              std::printf(" transform %d\n", int(real.active.volatiles.transform()));
+            }
           }
         }
         prefix = "own: ";
