@@ -70,10 +70,10 @@ class SearchConfig:
     floor: float = 0.25    # the uniform share of each round's cell sampling
     shrink: float = 1.0    # pseudo-counts toward a cell's row and column means
     foe_beta: float = -1.0  # the foe's beta; < 0: ours
-    eta: float = 0.0       # MMD's step; 0: 0.5 (extragradient), else lam / 4
+    eta: float = 0.0       # MMD's step; 0: 1 (extragradient), else lam / 4
     extra: bool = True     # extragradient MMD (plain MMD cycles at big steps)
     mmd_iters: int = 2000
-    mmd_tol: float = 1e-4
+    mmd_tol: float = 1e-5
 
 
 def win_minus_loss(value_logits: torch.Tensor) -> torch.Tensor:
@@ -115,7 +115,7 @@ def mmd(Q, w1, w2, m1, m2, lam1, lam2, legal1, legal2, l1=None, l2=None, eta=Non
     m1, m2 = norm(m1, legal1), norm(m2, legal2)
     l1 = m1.copy() if l1 is None else norm(l1, legal1)
     l2 = m2.copy() if l2 is None else norm(l2, legal2)
-    eta = (0.5 if extra else min(lam1, lam2) / 4) if not eta else eta
+    eta = (1.0 if extra else min(lam1, lam2) / 4) if not eta else eta
     Qw1 = Q * w1[None, :, None, None, None]
     Qw2 = Q * w2[None, None, :, None, None]
 
