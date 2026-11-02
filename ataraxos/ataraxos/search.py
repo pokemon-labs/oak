@@ -45,6 +45,7 @@ import numpy as np
 import torch
 
 from ataraxos._ext import ataraxos_env
+from ataraxos.eval.agents import subset
 from ataraxos.nets.causal_actor import CausalActor
 from ataraxos.nets.causal_net import summarize_grouped
 from ataraxos.nets.policy import pad_chunks
@@ -74,6 +75,17 @@ class SearchConfig:
     extra: bool = True     # extragradient MMD (plain MMD cycles at big steps)
     mmd_iters: int = 2000
     mmd_tol: float = 1e-5
+    act_rows: int = 1024   # the rollouts' decisions per net call (the activations' memory)
+
+
+def act_chunked(actor, obs, rows):
+    """actor.act on `obs` in chunks of at most `rows` decisions (each key's
+    cache is written once, so the result is act's)."""
+    D = len(obs["n"])
+    if D <= rows:
+        return actor.act(obs)
+    parts = [actor.act(subset(obs, np.arange(i, min(i + rows, D)))) for i in range(0, D, rows)]
+    return (np.concatenate([p[0] for p in parts]), torch.cat([p[1] for p in parts]), torch.cat([p[2] for p in parts]))
 
 
 def win_minus_loss(value_logits: torch.Tensor) -> torch.Tensor:
@@ -340,7 +352,7 @@ class Search:
         steps = 0
         first = check is not None
         while len(out["n"]):
-            picks, lp_r, value = actor.act(out)
+            picks, lp_r, value = act_chunked(actor, out, self.cfg.act_rows)
             if first:
                 first = False
                 foe_rows = np.flatnonzero(out["player"] != players[out["root"]])
@@ -378,7 +390,7 @@ class Search:
         out = r.start(seed)
         steps = 0
         while len(out["n"]):
-            picks, _, value = actor.act(out)
+            picks, _, value = act_chunked(actor, out, self.cfg.act_rows)
             out = r.step(picks, win_minus_loss(value).cpu().numpy().astype(np.float32))
             steps += 1
         assert r.done
