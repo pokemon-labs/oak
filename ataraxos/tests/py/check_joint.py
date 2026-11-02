@@ -11,7 +11,7 @@ quick:
   foe actor's at the same moment (KL by choice labels, as check_search),
   `differs`, MMD's iterations, and the time per search.
 
-    python tests/py/check_joint.py [CKPT] [SEARCHES] [BATTLES] [BUDGET]
+    python tests/py/check_joint.py [CKPT] [SEARCHES] [BATTLES] [BUDGET] [per_type|per_pair]
 """
 
 import sys
@@ -104,7 +104,7 @@ def check_modes(c):
 
 
 
-def check_selfplay(ckpt, searches, B, budget):
+def check_selfplay(ckpt, searches, B, budget, mode="per_type"):
     from ataraxos._ext import ataraxos_env
     from ataraxos.eval.agents import load_policy, subset
     from ataraxos.eval.search_h2h import split_teams
@@ -115,7 +115,7 @@ def check_selfplay(ckpt, searches, B, budget):
     torch.manual_seed(1)
     net = load_policy(ckpt, dev)
     pool, games = split_teams("teams/selfplay/oak1500.txt", tempfile.mkdtemp(prefix="check_joint_"))
-    cfg = SearchConfig(joint=True, joint_budget=budget, depth=10)
+    cfg = SearchConfig(joint=True, joint_mode=mode, joint_budget=budget, depth=10)
     search = Search(net, [pool], dev, cfg, threads=4)
     env = ataraxos_env.SelfPlay(B, seed=3, teams=[games], max_turns=300, shards=min(B, 16), threads=4,
                                 state=net.c.state)
@@ -166,7 +166,7 @@ def check_selfplay(ckpt, searches, B, budget):
             done += len(rows)
         obs = env.step(picks)
     st = search.stats
-    print(f"{done} searches, budget {budget}: {np.mean(secs):.2f} s a search; differs {st['differs']} of "
+    print(f"{done} searches, {mode}, budget {budget}: {np.mean(secs):.2f} s a search; differs {st['differs']} of "
           f"{st['rollouts']} rollouts; MMD iterations median {int(np.median(iters))} max {max(iters)} "
           f"(cap {cfg.mmd_iters}); times {', '.join(f'{k} {v:.1f}s' for k, v in search.times.items())}")
     for truth in (True, False):
@@ -186,7 +186,8 @@ def main():
     check_modes(c)
     if len(sys.argv) > 1:
         check_selfplay(sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else 40,
-                       int(sys.argv[3]) if len(sys.argv) > 3 else 4, int(sys.argv[4]) if len(sys.argv) > 4 else 512)
+                       int(sys.argv[3]) if len(sys.argv) > 3 else 4, int(sys.argv[4]) if len(sys.argv) > 4 else 512,
+                       sys.argv[5] if len(sys.argv) > 5 else "per_type")
 
 
 if __name__ == "__main__":
