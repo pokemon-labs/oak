@@ -45,17 +45,17 @@ def check_mmd(c):
     rng = np.random.default_rng(1)
     lam = c.alpha + c.beta
     games = [random_game(rng) for _ in range(20)]
-    for scale in (1.0, 0.5, 0.2):
+    for extra, eta in ((True, 1.0), (True, 0.5), (True, 0.25), (False, lam / 4)):
         its, res, secs = [], [], []
         for Q, g1, g2, m1, m2 in games:
             a, b = g1.shape[0], g2.shape[0]
             tic = time.perf_counter()
             l1, l2, q1, q2, it = mmd(Q, np.full(a, 1 / a), np.full(b, 1 / b), m1[None], m2[None], lam, lam,
-                                     g1[None], g2[None], eta=scale / lam, iters=20000, tol=1e-6)
+                                     g1[None], g2[None], eta=eta, iters=20000, tol=1e-6, extra=extra)
             secs.append(time.perf_counter() - tic)
             its.append(it)
             res.append(max(residual(l1[0], q1[0], lam, m1, g1), residual(l2[0], q2[0], lam, m2, g2)))
-        print(f"mmd eta {scale}/lam: iterations median {int(np.median(its))} max {max(its)} "
+        print(f"mmd {'extragradient' if extra else 'plain'} eta {eta:.4g}: iterations median {int(np.median(its))} max {max(its)} "
               f"(20000 = not converged), {np.mean(secs) * 1e3:.1f} ms a solve, residual max {max(res):.2e}")
 
 

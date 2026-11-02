@@ -70,7 +70,8 @@ class SearchConfig:
     floor: float = 0.25    # the uniform share of each round's cell sampling
     shrink: float = 1.0    # pseudo-counts toward a cell's row and column means
     foe_beta: float = -1.0  # the foe's beta; < 0: ours
-    eta: float = 0.0       # MMD's step; 0: 1 / (alpha + beta)
+    eta: float = 0.0       # MMD's step; 0: 0.5 (extragradient), else lam / 4
+    extra: bool = True     # extragradient MMD (plain MMD cycles at big steps)
     mmd_iters: int = 2000
     mmd_tol: float = 1e-4
 
@@ -92,14 +93,19 @@ def update(q, logp, choices, n, cfg: SearchConfig):
     return torch.log_softmax(x.masked_fill(~legal, -1e9), -1)
 
 
-def mmd(Q, w1, w2, m1, m2, lam1, lam2, legal1, legal2, l1=None, l2=None, eta=None, iters=2000, tol=1e-4):
+def mmd(Q, w1, w2, m1, m2, lam1, lam2, legal1, legal2, l1=None, l2=None, eta=None, iters=2000, tol=1e-4,
+        extra=True):
     """MMD on both sides of G Bayesian games to the fixed point: Q [G, a, b,
     N, M] (ours, means), type weights w1 [a], w2 [b], magnets' log-probs m1
     [G, a, N], m2 [G, b, M] (rho^alpha pi^beta over lam), regularization
     lam1, lam2, legal masks like m1, m2. Starts from log-policies l1, l2
     (default the magnets). Returns (l1, l2, q1, q2, iterations): q1 [G, a,
     N] = sum_B w2 sum_j Q p2, q2 [G, b, M] = -sum_A w1 sum_i Q p1. Each step
-    l <- (l + eta q + eta lam m) / (1 + eta lam), normalized."""
+    l <- (l + eta q + eta lam m) / (1 + eta lam), normalized. `extra`
+    (default): extragradient (mirror-prox) steps, q read at a half step:
+    plain MMD needs eta <= lam / L^2 to settle in a zero-sum game (it
+    cycles at larger steps), extragradient only eta < 1 / L (L ~ max |Q|),
+    with the same fixed point."""
     neg = -1e9
 
     def norm(l, legal):
@@ -109,16 +115,22 @@ def mmd(Q, w1, w2, m1, m2, lam1, lam2, legal1, legal2, l1=None, l2=None, eta=Non
     m1, m2 = norm(m1, legal1), norm(m2, legal2)
     l1 = m1.copy() if l1 is None else norm(l1, legal1)
     l2 = m2.copy() if l2 is None else norm(l2, legal2)
-    eta = 1.0 / max(lam1, lam2) if not eta else eta
+    eta = (0.5 if extra else min(lam1, lam2) / 4) if not eta else eta
     Qw1 = Q * w1[None, :, None, None, None]
     Qw2 = Q * w2[None, None, :, None, None]
+
+    def step(a1, a2, at1, at2):
+        """MMD's step from (a1, a2) with q read at (at1, at2)."""
+        q1 = np.einsum("gabij,gbj->gai", Qw2, np.exp(at2))
+        q2 = -np.einsum("gabij,gai->gbj", Qw1, np.exp(at1))
+        return (norm((a1 + eta * q1 + eta * lam1 * m1) / (1 + eta * lam1), legal1),
+                norm((a2 + eta * q2 + eta * lam2 * m2) / (1 + eta * lam2), legal2))
+
     it = 0
     for it in range(1, iters + 1):
         p1, p2 = np.exp(l1), np.exp(l2)
-        q1 = np.einsum("gabij,gbj->gai", Qw2, p2)
-        q2 = -np.einsum("gabij,gai->gbj", Qw1, p1)
-        n1 = norm((l1 + eta * q1 + eta * lam1 * m1) / (1 + eta * lam1), legal1)
-        n2 = norm((l2 + eta * q2 + eta * lam2 * m2) / (1 + eta * lam2), legal2)
+        h1, h2 = step(l1, l2, l1, l2)
+        n1, n2 = step(l1, l2, h1, h2) if extra else (h1, h2)
         d = max(np.abs(np.exp(n1) - p1).max(), np.abs(np.exp(n2) - p2).max())
         l1, l2 = n1, n2
         if d < tol:
@@ -554,7 +566,7 @@ class Search:
         if c.joint_mode == "per_type":
             l1, l2, q1, _, it = mmd(Q[None], np.full(A, 1 / A), np.full(B, 1 / B), x["m1"][None], x["m2"][None],
                                    lam1, lam2, x["g1"][None], x["g2"][None], x["l1"], x["l2"], c.eta, c.mmd_iters,
-                                   c.mmd_tol)
+                                   c.mmd_tol, c.extra)
             x["q1"] = q1[0, 0]
         elif c.joint_mode == "per_pair":
             G = A * B
@@ -563,7 +575,7 @@ class Search:
             g1 = np.repeat(x["g1"], B, 0)[:, None]
             g2 = np.tile(x["g2"], (A, 1))[:, None]
             l1, l2, q1, _, it = mmd(Q.reshape(G, 1, 1, *Q.shape[2:]), np.ones(1), np.ones(1), m1, m2, lam1, lam2,
-                                   g1, g2, x["l1"], x["l2"], c.eta, c.mmd_iters, c.mmd_tol)
+                                   g1, g2, x["l1"], x["l2"], c.eta, c.mmd_iters, c.mmd_tol, c.extra)
             x["q1"] = q1[:B, 0].mean(0)
         else:
             raise ValueError(c.joint_mode)
