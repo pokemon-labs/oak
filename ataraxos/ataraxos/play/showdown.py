@@ -46,7 +46,9 @@ rollouts, `--search-reps` per world and choice, `--search-depth` turns, the
 history sampler's pool from that Showdown export file, on
 `--search-device`) and the pick is drawn from the search's policy; the
 jsonl keeps the net's log-probs and q too. A failed search plays the net's
-pick.
+pick. `--search-joint per_type|per_pair` (2026-11-02) makes it the joint
+search (search.py's docstring), `--search-budget` rollouts over
+`--search-rounds` rounds, `--search-types` types a side.
 
 Schedule (2026-10-28, the user's ask, for a bot-vs-bot match):
 `--schedule FILE --challenge USER` challenges USER to one game at a time,
@@ -559,7 +561,10 @@ class Bot:
         self.policy = load_policy(args.ckpt, "cpu", args.weights)
         self.search = None
         if args.search_pool:
-            cfg = SearchConfig(budget=args.search_budget, reps=args.search_reps, depth=args.search_depth)
+            cfg = SearchConfig(budget=args.search_budget, reps=args.search_reps, depth=args.search_depth,
+                               joint=bool(args.search_joint), joint_mode=args.search_joint or "per_type",
+                               types_a=args.search_types, types_b=args.search_types,
+                               joint_budget=args.search_budget, rounds=args.search_rounds)
             self.search = Search(load_policy(args.ckpt, args.search_device, args.weights), [args.search_pool],
                                  args.search_device, cfg, threads=args.threads)
         self.pool = [line.rstrip("\n").split("\t") for line in open(args.teams) if "\t" in line]
@@ -1036,6 +1041,11 @@ def main():
     ap.add_argument("--search-reps", type=int, default=2, help="rollouts per (world, choice)")
     ap.add_argument("--search-depth", type=int, default=10, help="turns before the leaf")
     ap.add_argument("--search-device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--search-joint", default="", choices=["", "per_type", "per_pair"],
+                    help="the joint search (ataraxos/search.py, its mode; none: the plain one): "
+                         "--search-budget rollouts over --search-rounds rounds, --search-types a side")
+    ap.add_argument("--search-types", type=int, default=3, help="the joint search's types a side")
+    ap.add_argument("--search-rounds", type=int, default=4, help="the joint search's rounds")
     ap.add_argument("--deadline", type=float, default=60.0,
                     help="seconds a proposed decision waits before the policy's pick goes")
     args = ap.parse_args()
