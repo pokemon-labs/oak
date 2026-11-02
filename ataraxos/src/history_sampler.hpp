@@ -452,6 +452,10 @@ class Sampler {
 
       PKMN::Battle b = after[t].battle;
       b.sides[us] = own_side(b.sides[us], seen, g);
+      // a fainted Pokémon has no status (libpkmn clears it, bookkeeping keeps it)
+      for (PKMN::Pokemon& p : b.sides[us].pokemon) {
+        if (p.species != PKMN::Data::Species::None && p.hp == 0) p.status = PKMN::Data::Status(0);
+      }
       const pkmn_choice_kind kind = b.sides[us].stored().hp == 0    ? PKMN_CHOICE_SWITCH
                                     : b.sides[foe].stored().hp == 0 ? PKMN_CHOICE_PASS
                                                                     : PKMN_CHOICE_MOVE;
