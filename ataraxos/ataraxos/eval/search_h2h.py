@@ -105,12 +105,21 @@ def main():
     flip = int(args.flip)
 
     result = np.full(B, -2, np.int64)  # the searcher's: 1 win, 0 tie, -1 loss
+    prior = [0, 0, 0]  # the W, T, L already in --out, for the running total
+    if args.out and os.path.exists(args.out):
+        for line in open(args.out):
+            r = json.loads(line)
+            prior = [prior[0] + r["w"], prior[1] + r["t"], prior[2] + r["l"]]
     obs = env.reset()
     t_start, searched, moved = time.time(), 0, 0
     while True:
         for bt, g, r in zip(obs["end_battle"], obs["end_game"], obs["end_result"]):
-            if g == 0:
+            if g == 0 and result[bt] == -2:
                 result[bt] = r if (bt + flip) % 2 == 0 else -r
+                w, t, l = (int((result == v).sum()) for v in (1, 0, -1))
+                W, T, L = prior[0] + w, prior[1] + t, prior[2] + l
+                print(f"{time.time() - t_start:7.0f}s  game {w + t + l}/{B} {'WTL'[1 - result[bt]]}: "
+                      f"this run {w}-{t}-{l}, total {W}-{T}-{L} score {(W + T / 2) / (W + T + L):.3f}", flush=True)
         if (result != -2).all() or (args.max_searches and searched >= args.max_searches):
             break
         mine = ((obs["battle"] + flip) % 2) == obs["player"]
