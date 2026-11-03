@@ -449,3 +449,23 @@ changes the policy by KL 0.06. `runs/ablate/` on the box.
   failed, Tauros vs Chansey by hand (Body Slam 419‰ max, Hyper Beam 739‰,
   crit rate 55).
 - Not done: a cs3 run (the GPU has rby3).
+
+## rby4 (2026-11-02, the user's: cs3 + Expected SARSA)
+
+- rby3 stopped (SIGTERM, the user's) at it 1057; newest `runs/rby3/ckpt1050.pt`.
+- Expected SARSA (`--expected_sarsa`, 76e39a2): a W/D/L Q head per choice,
+  targets the next decision's Q summed over the data policy
+  (`buffer.sarsa_targets`, one step), the advantage `sarsa_adv` of Q's
+  (Q at the pick less Q over pi) and the rest GAE's. Off: the net and run
+  are as before. test_causal passes on CPU; the graphed actor with Q ran in
+  rby4 but its CUDA check didn't run.
+- `runs/rby4` (box: `runs/rby4/launch.sh`): rby3's flags with `--size cs3
+  --expected_sarsa 1 --q_coef 1 --sarsa_adv 0` (Q trains first: its head
+  starts random; raise on a resume once `q_loss` settles and
+  `adv_q_gae_corr` is positive), `--init runs/rby3/ckpt1050.pt`,
+  `--lr_ceil 1.15e-4 --temperature_ceil 0.0098` (rby3's last values, so the
+  reset schedules stay flat until step ~229, where rby3 was),
+  `--anchors /root/anchors/rby3_950.pt,maxdamage`, `--microbatch 2048`
+  (4096 ran out of memory at 23 GB; 1024 took 37 s of learner per it).
+- Speed: ~48-57 s an iteration (rby3 ~43; cs3+Q at microbatch 1024 ~55),
+  learner ~30 s, peak 9.8 GB.
