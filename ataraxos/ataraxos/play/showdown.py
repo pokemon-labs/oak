@@ -1008,7 +1008,7 @@ def main():
     ap.add_argument("--login", default="", help="a file: the name, then the password (showdown)")
     ap.add_argument("--no-search", action="store_true",
                     help="arena: /cancelsearch on each login, so no battle starts until "
-                         "`botctl raw '' '/search gen1ou'` (a login clears it again)")
+                         "`botctl raw '' '/search gen1ou'` (sent again on each login)")
     ap.add_argument("--server", default="showdown", choices=["showdown", "arena", "local"],
                     help="arena: pkmn.bot, as ARENA_BOT_NAME with the token ARENA_BOT_TOKEN; "
                          "local: a local server with no login (--url, --name)")
