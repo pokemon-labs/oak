@@ -21,8 +21,13 @@ the env's bookkeeping state, in float32:
 - the gradients accumulated over micro-batches (train.split) match one
   pass's, and the magnets are distributions over the legal choices (both
   from the HistoryNet's tests/py/test_train.py, removed 2026-10-30);
+- Expected SARSA (`expected_sarsa`): off, the net has no Q parameters and
+  the others' init is the same as with it on; on, the learner gives each
+  decision the actor's Q at the pick and summed over the data policy, the
+  targets and advantages match a plain loop (truncated too), `init` goes
+  both ways between the two, and a step's Q loss is finite;
 - on CUDA, the graphed actor (fixed shapes, padding rows) gives the eager
-  actor's log-probs and values;
+  actor's log-probs and values, and Q;
 - one training iteration runs and its losses are finite.
 """
 
@@ -36,7 +41,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 from ataraxos._ext import ataraxos_env  # noqa: E402
-from ataraxos.rl.buffer import Buffer, returns_and_advantages  # noqa: E402
+from ataraxos.rl.buffer import Buffer, returns_and_advantages, sarsa_targets  # noqa: E402
 from ataraxos.nets.causal_actor import CausalActor  # noqa: E402
 from ataraxos.nets import causal_net as cn  # noqa: E402
 from ataraxos.nets.policy import CHOICES, SIZES  # noqa: E402
@@ -224,6 +229,75 @@ def check_learner(cfg, teams, games, seed):
     return decisions, worst_p, worst_v, worst_g, stats
 
 
+def plain_sarsa(data):
+    """sarsa_targets as a loop per trajectory."""
+    target, adv = np.zeros((len(data.n), 3)), np.zeros(len(data.n))
+    for g in range(len(data.length)):
+        s, L = data.start[g], data.length[g]
+        for t in range(L):
+            i = s + t
+            if t + 1 < L:
+                target[i] = data.q_exp[i + 1]
+            elif data.truncated is not None and data.truncated[g]:
+                target[i] = data.q_exp[i]
+            else:
+                target[i] = np.eye(3)[data.reward[g] + 1]
+            adv[i] = (data.q_pick[i, 2] - data.q_exp[i, 2]) - (data.q_pick[i, 0] - data.q_exp[i, 0])
+    return target, adv
+
+
+def check_sarsa(cfg, teams, games, seed):
+    """`expected_sarsa` on against off (see the top). Returns (decisions,
+    max |Q at the pick diff|, max |Q over the policy diff|, the step's stats)."""
+    on = dataclasses.replace(cfg, expected_sarsa=True)
+    torch.manual_seed(seed)
+    plain = train.Learner(cfg)
+    torch.manual_seed(seed)
+    learner = train.Learner(on)
+    a, b = plain.net.state_dict(), {k: v.clone() for k, v in learner.net.state_dict().items()}
+    assert not any(k.startswith(cn.Q_PARAMS) for k in a) and any(k.startswith(cn.Q_PARAMS) for k in b)
+    assert all(torch.equal(v, b[k]) for k, v in a.items())
+    ck = lambda l, c: dict(config=dataclasses.asdict(c), net=l.net.state_dict(), ema=l.ema.state_dict())
+    learner.init_from(ck(plain, cfg))  # off -> on: the Q head keeps its init
+    assert all(torch.equal(v, b[k]) for k, v in learner.net.state_dict().items())
+    plain.init_from(ck(learner, on))  # on -> off: the Q head is dropped
+    learner.net.eval()
+    dev = learner.dev
+    env = ataraxos_env.SelfPlay(cfg.battles, seed, teams=teams, max_turns=cfg.max_turns, state=STATE)
+    actor = CausalActor(learner.net, cfg.battles, dev, amp=False, q=True)
+    buffer = Buffer(learner.net.c.max_lines)
+    obs = env.reset()
+    while buffer.games() < games:
+        picks, logp, value = actor.act(obs)
+        assert actor.last_q.shape == (len(picks), CHOICES, 3)
+        buffer.add(obs, picks, logp, value, actor.last_q)
+        obs = env.step(picks)
+        buffer.end(obs)
+    data = buffer.take()
+    assert data.q_pick.shape == data.q_exp.shape == (len(data.n), 3)
+    keep = np.ones(len(data.n), bool)
+    dd = learner.device_data(data)
+    with torch.no_grad():
+        ids, _, logits, _, _, n, q = cn.learner_forward(learner.net, dd, np.arange(len(data.length)), keep, dev,
+                                                       False, with_q=True)
+    P = torch.softmax(q.float(), -1).cpu()
+    pi = torch.softmax(logits.float(), -1).cpu()
+    pick = torch.from_numpy(data.pick[ids].astype(np.int64))
+    worst_pick = (P[torch.arange(len(ids)), pick] - torch.from_numpy(data.q_pick[ids])).abs().max().item()
+    worst_exp = ((pi[..., None] * P).sum(1) - torch.from_numpy(data.q_exp[ids])).abs().max().item()
+    for truncated in (data.truncated, np.random.default_rng(len(data.n)).random(len(data.length)) < 0.5):
+        data.truncated = truncated
+        target, adv = sarsa_targets(data)
+        pt, pa = plain_sarsa(data)
+        assert np.allclose(target.numpy(), pt, atol=1e-6) and np.allclose(adv.numpy(), pa, atol=1e-6)
+        assert torch.allclose(target.sum(-1), torch.ones(len(target)), atol=1e-5)
+    assert worst_pick < 1e-4 and worst_exp < 1e-4, (worst_pick, worst_exp)
+    learner.net.train()
+    stats = learner.train(data, np.random.default_rng(seed))
+    assert all(np.isfinite(stats[k]) for k in ("loss", "q_loss", "value_loss", "adv_q_std", "adv_q_gae_corr"))
+    return len(ids), worst_pick, worst_exp, stats
+
+
 def check_neurd(seed):
     """neurd_loss's gradient on the logits against -A min(1 / mu(a), cap)
     (e_a - legal / n) / B, zero where PPO's clip binds or the push takes a logit beta past the
@@ -263,18 +337,22 @@ def check_graphs(teams, seed, battles=96):
     the eager actor's picks drive both)."""
     torch.manual_seed(seed)
     dev = torch.device("cuda")
-    net = cn.CausalPolicy(SIZES["cs_tiny"]).to(dev).eval()
-    eager = CausalActor(net, battles, dev, amp=False)
-    graphed = CausalActor(net, battles, dev, amp=False, graphs=True, bucket=64)
-    env = ataraxos_env.SelfPlay(battles, seed, teams=teams, max_turns=200, state=STATE)
-    obs = env.reset()
     worst = 0.0
-    for _ in range(150):
-        picks, lp, v = eager.act(obs)
-        _, lg, vg = graphed.act(obs)
-        live = torch.isfinite(lp)
-        worst = max(worst, (lp - lg).abs()[live].max().item(), (v - vg).abs().max().item())
-        obs = env.step(picks)
+    for q in (False, True):
+        net = cn.CausalPolicy(dataclasses.replace(SIZES["cs_tiny"], q_head=q)).to(dev).eval()
+        eager = CausalActor(net, battles, dev, amp=False, q=q)
+        graphed = CausalActor(net, battles, dev, amp=False, graphs=True, bucket=64, q=q)
+        env = ataraxos_env.SelfPlay(battles, seed, teams=teams, max_turns=200, state=STATE)
+        obs = env.reset()
+        for _ in range(150):
+            picks, lp, v = eager.act(obs)
+            _, lg, vg = graphed.act(obs)
+            live = torch.isfinite(lp)
+            worst = max(worst, (lp - lg).abs()[live].max().item(), (v - vg).abs().max().item())
+            assert (eager.last_q is None) == (graphed.last_q is None) == (not q)
+            if q:
+                worst = max(worst, (eager.last_q - graphed.last_q).abs().max().item())
+            obs = env.step(picks)
     assert worst < 1e-3, worst
     return worst
 
@@ -308,6 +386,11 @@ def main():
     cfg = dataclasses.replace(cfg, policy_loss="neurd")
     _, _, _, _, stats = check_learner(cfg, teams, args.games, args.seed)
     print(f"a neurd step: loss {stats['loss']:.3f}, logit_abs_max {stats['logit_abs_max']:.3f}")
+    decisions, wq, we, stats = check_sarsa(dataclasses.replace(cfg, policy_loss="ppo"), teams, args.games, args.seed)
+    print(f"expected sarsa: off has no Q and the same init; learner vs actor: {decisions} decisions, "
+          f"max |Q pick diff| {wq:.2e}, max |Q over pi diff| {we:.2e}; targets match the plain loop; "
+          f"a step: q_loss {stats['q_loss']:.3f}, adv_q_std {stats['adv_q_std']:.4f}, "
+          f"corr with GAE {stats['adv_q_gae_corr']:.3f}")
     cfg = dataclasses.replace(cfg, size="cs3_tiny", policy_loss=train.Config.policy_loss)
     decisions, wp, wv, _, stats = check_learner(cfg, teams, args.games, args.seed)
     print(f"cs3_tiny learner vs actor: {decisions} decisions, max |logp diff| {wp:.2e}, "

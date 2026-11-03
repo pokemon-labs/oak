@@ -10,6 +10,10 @@ outside it. Measured 2026-10-26 at 8192 battles: 130k decisions/s graphed,
 
 A game's cache mixes the weights of the moments it was written; the learner
 recomputes everything.
+
+With `q` (the net's `q_head`, train.py's `expected_sarsa`), `act` also keeps
+the step's Q logits [D, CHOICES, 3] in `last_q`, for the buffer; off, Q
+isn't computed and `last_q` stays None.
 """
 
 
@@ -22,8 +26,10 @@ from ataraxos.nets.policy import CHOICES, pad_chunks  # noqa: E402
 
 class CausalActor:
     def __init__(self, net: CausalPolicy, battles: int, device, dtype=torch.bfloat16, amp=True, graphs=False,
-                 bucket=4096):
+                 bucket=4096, q=False):
         self.net = net
+        self.q = q
+        self.last_q = None
         self.device = torch.device(device)
         self.dtype = dtype
         self.amp = amp and self.device.type == "cuda"
@@ -44,7 +50,7 @@ class CausalActor:
 
     def _step(self, lines, request, state, choices, n, t, kc, vc):
         """The net on one padded batch: (logits, value logits, new keys
-        [layers, B, d], new values)."""
+        [layers, B, d], new values), and with `q` Q's logits last."""
         net = self.net
         with torch.autocast(self.device.type, dtype=self.dtype, enabled=self.amp):
             x = net.summarize(lines, request)
@@ -55,8 +61,8 @@ class CausalActor:
                 x, k, v = layer.step(x, kc[l], vc[l], valid)
                 ks.append(k)
                 vs.append(v)
-            logits, value = net.decide(net.out_norm(x), request, choices, n, state)
-        return logits.float(), value.float(), torch.stack(ks), torch.stack(vs)
+            out = net.decide(net.out_norm(x), request, choices, n, state, with_q=self.q)
+        return (out[0].float(), out[1].float(), torch.stack(ks), torch.stack(vs), *(q.float() for q in out[2:]))
 
     @torch.no_grad()
     def act(self, obs, greedy=False):
@@ -65,6 +71,7 @@ class CausalActor:
         D = len(obs["n"])
         dev, net = self.device, self.net
         if D == 0:
+            self.last_q = torch.zeros(0, CHOICES, 3, device=dev) if self.q else None
             return np.zeros(0, np.uint8), torch.zeros(0, CHOICES, device=dev), torch.zeros(0, 3, device=dev)
         to = lambda x: torch.from_numpy(np.ascontiguousarray(x)).to(dev, non_blocking=True)
         B = -(-D // self.bucket) * self.bucket if self.graphs else D
@@ -99,9 +106,10 @@ class CausalActor:
         if self.graphs:
             lines = torch.zeros(B, net.c.max_lines, chunks.shape[2], dtype=chunks.dtype)
             lines[:D, :chunks.shape[1]] = chunks
-            logits, value, k, v = self.fn(lines.to(dev, non_blocking=True), request, st, choices, n, t,
-                                          self.k[:, key], self.v[:, key])
+            logits, value, k, v, *q = self.fn(lines.to(dev, non_blocking=True), request, st, choices, n, t,
+                                              self.k[:, key], self.v[:, key])
             logits, value = logits[:D].clone(), value[:D].clone()  # the graph's outputs are reused
+            q = [x[:D].clone() for x in q]
         else:
             with torch.autocast(dev.type, dtype=self.dtype, enabled=self.amp):
                 x = summarize_grouped(net, chunks, lengths, request, self.k.dtype)
@@ -113,16 +121,17 @@ class CausalActor:
                     ks.append(kl)
                     vs.append(vl)
                 k, v = torch.stack(ks), torch.stack(vs)
-                logits, value = net.decide(net.out_norm(x), request, choices, n, st)
-            logits, value = logits.float(), value.float()
+                logits, value, *q = net.decide(net.out_norm(x), request, choices, n, st, with_q=self.q)
+            logits, value, q = logits.float(), value.float(), [x.float() for x in q]
         slot = t % self.R
         self.k[:, key, slot] = k.to(self.k.dtype)
         self.v[:, key, slot] = v.to(self.v.dtype)
         self.t[key] = t + 1
+        self.last_q = q[0][:D] if q else None
         logp = torch.log_softmax(logits[:D], -1)
         picks = logp.argmax(-1) if greedy else torch.multinomial(logp.exp(), 1)[:, 0]
         return picks.to(torch.uint8).cpu().numpy(), logp, value[:D]
 
 
-def make_actor(net, battles, device, amp=True, graphs=False):
-    return CausalActor(net, battles, device, amp=amp, graphs=graphs)
+def make_actor(net, battles, device, amp=True, graphs=False, q=False):
+    return CausalActor(net, battles, device, amp=amp, graphs=graphs, q=q)

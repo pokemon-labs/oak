@@ -15,7 +15,9 @@ no result, its last decision's target its own value.
 
 A decision's value is three logits, (loss, draw, win) (the causal net's,
 2026-10-27); with the env's `state` on, each decision's bookkeeping state is
-kept too.
+kept too. With the actor's Q (Expected SARSA, train.py's `expected_sarsa`),
+each decision keeps Q's (loss, draw, win) at its pick and summed over the
+data policy, for `sarsa_targets`.
 """
 
 from dataclasses import dataclass
@@ -25,6 +27,7 @@ import torch
 import torch.nn.functional as F
 
 COLUMNS_SAVED = ("request", "choices", "n", "pick", "logp", "value")
+COLUMNS_OPTIONAL = ("state", "q_pick", "q_exp")
 
 
 @dataclass
@@ -45,6 +48,8 @@ class Data:
     player: np.ndarray    # [G] 0 P1, 1 P2
     state: np.ndarray = None  # [N, STATE_FIELDS], with the env's `state`
     truncated: np.ndarray = None  # [G] bool: capped under "bootstrap", `reward` unused
+    q_pick: np.ndarray = None  # [N, 3] the actor's Q at the pick, probabilities (loss, draw, win)
+    q_exp: np.ndarray = None   # [N, 3] the actor's Q summed over the data policy, probabilities
 
 
 AT_CAP = ("drop", "draw", "bootstrap")
@@ -63,7 +68,7 @@ class Buffer:
         self.size = 0            # decisions stored
         self.open = {}           # (battle, player) -> (game, [ids])
         self.done = []           # (ids, reward, player, truncated)
-        self.columns = COLUMNS_SAVED  # plus "state" once a decision has one
+        self.columns = COLUMNS_SAVED  # plus COLUMNS_OPTIONAL's a decision has
 
     def end(self, obs):
         """Closes the games that ended in this env call. Call before `add`.
@@ -76,7 +81,8 @@ class Buffer:
                 if t is not None and t[0] == g and t[1] and not (c and self.at_cap == "drop"):
                     self.done.append((t[1], sign * r, p, bool(c) and self.at_cap == "bootstrap"))
 
-    def add(self, obs, pick, logp, value):
+    def add(self, obs, pick, logp, value, q=None):
+        """`q` the actor's Q logits [D, CHOICES, 3] (its `last_q`), or None."""
         D = len(obs["n"])
         if D == 0:
             return
@@ -88,7 +94,12 @@ class Buffer:
                     n=obs["n"], pick=pick, logp=logp.cpu().numpy(), value=value.cpu().numpy())
         if "state" in obs:
             part["state"] = obs["state"]
-            self.columns = COLUMNS_SAVED + ("state",)
+        if q is not None:
+            P = torch.softmax(q.float(), -1)
+            part["q_exp"] = (logp.exp()[..., None] * P).sum(1).cpu().numpy()
+            pk = torch.from_numpy(np.asarray(pick).astype(np.int64)).to(P.device)
+            part["q_pick"] = P[torch.arange(D, device=P.device), pk].cpu().numpy()
+        self.columns = COLUMNS_SAVED + tuple(c for c in COLUMNS_OPTIONAL if c in part)
         self.parts.append(part)
         ids = range(self.size, self.size + D)
         for i, b, p, g in zip(ids, obs["battle"].tolist(), obs["player"].tolist(), obs["game"].tolist()):
@@ -129,7 +140,8 @@ class Buffer:
         data = Data(tokens=g["tokens"], offsets=np.r_[0, np.cumsum(g["lengths"])].astype(np.int64),
                     request=g["request"], choices=g["choices"], n=g["n"], pick=g["pick"], logp=g["logp"],
                     value=g["value"], start=np.r_[0, np.cumsum(length)[:-1]].astype(np.int64),
-                    length=length, reward=reward, player=player, state=g.get("state"), truncated=truncated)
+                    length=length, reward=reward, player=player, state=g.get("state"), truncated=truncated,
+                    q_pick=g.get("q_pick"), q_exp=g.get("q_exp"))
         # Compact: renumber the open trajectories' decisions from 0.
         keep = np.array([i for _, t in self.open.values() for i in t], dtype=np.int64)
         if len(keep):
@@ -188,6 +200,30 @@ def returns_and_advantages(data: Data, td_lambda: float, gae_lambda: float):
         adv[:, t] = sacc
     ret = ret + V[:, :-1]
     return ret[row, pos], adv[row, pos]
+
+
+@torch.no_grad()
+def sarsa_targets(data: Data):
+    """Expected SARSA (the user's, 2026-11-02), per trajectory, over (loss,
+    draw, win) distributions, one step, gamma 1: Q(s, a)'s target is the
+    next decision's Q summed over the data policy, sum_a' pi(a' | s')
+    Q(s', a'), or the result's one-hot at the last decision (a truncated
+    trajectory's own sum there, as `_bootstrap`'s). The advantage is Q at the
+    pick less Q summed over the policy, in P(win) - P(loss), the scale of
+    returns_and_advantages'. Returns (targets [N, 3], advantages [N])."""
+    q_exp = torch.from_numpy(data.q_exp).float()
+    q_pick = torch.from_numpy(data.q_pick).float()
+    N = len(data.n)
+    last = torch.from_numpy(data.start + data.length - 1)
+    target = torch.empty(N, 3)
+    target[:-1] = q_exp[1:]  # the next decision, right but at each trajectory's last
+    end = F.one_hot(torch.from_numpy(data.reward + 1), 3).float()
+    if data.truncated is not None:
+        u = torch.from_numpy(data.truncated)
+        end[u] = q_exp[last[u]]
+    target[last] = end
+    d = q_pick - q_exp
+    return target, d[:, 2] - d[:, 0]
 
 
 def minibatches(data: Data, keep: np.ndarray, size: int, rng):

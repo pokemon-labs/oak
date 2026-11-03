@@ -32,12 +32,18 @@ the user's idea).
   5. Value: W/D/L logits, (loss, draw, win) (the user's, 2026-10-27: draws
      happen in stall against stall), by cross-entropy against TD(lambda)
      returns over the distribution (ataraxos/rl/buffer.py).
+  6. With `q_head` (Expected SARSA, 2026-11-02, the user's): W/D/L logits
+     per choice, Q(s, a), from the value token's output and the choice's
+     key input, by cross-entropy against the next decision's sum over the
+     data policy of Q (ataraxos/rl/buffer.py's sarsa_targets). Off, the net
+     has no such parameters, so it is the net it was.
 
 Measured on the 4090 (2026-10-26, D's data, 2048 games): the learner 2.4 s
 an iteration against the HistoryNet's 8.2 s; the actor 130k decisions/s
 CUDA-graphed at 8192 battles against 26k.
 """
 
+import dataclasses
 from dataclasses import dataclass
 
 import numpy as np
@@ -84,6 +90,7 @@ class CausalConfig(PolicyConfig):
     max_pos: int = 256      # decision index in the game, clamped
     state: bool = True
     features: bool = False  # cs3's matchup features (needs `state`)
+    q_head: bool = False    # Expected SARSA's Q(s, a), W/D/L per choice (train.py's `expected_sarsa`)
 
 
 class CausalLayer(nn.Module):
@@ -146,6 +153,8 @@ class CausalPolicy(Policy):
             self.foe_threat = zero_linear(MOVE_FEATS, d)
             self.move_feat = zero_linear(MOVE_FEATS, d)
             self.switch_feat = zero_linear(SWITCH_FEATS, d)
+        if c.q_head:  # last, so the other parameters' init draws are the same without it
+            self.q_head = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 3))
 
     def run_core(self, x):
         """x [G, T, d] a trajectory's summaries per row (right-padded) ->
@@ -231,9 +240,10 @@ class CausalPolicy(Policy):
                            self.switch_feat(mons)], 1)
         return req + extra.to(req.dtype)
 
-    def decide(self, h, request, choices, n, state=None):
+    def decide(self, h, request, choices, n, state=None, with_q=False):
         """h [B, d] the history's output at this decision. Returns (logits
-        [B, CHOICES], -inf past n; value logits [B, 3])."""
+        [B, CHOICES], -inf past n; value logits [B, 3]), and with `with_q`
+        (the net's `q_head`) Q's logits [B, CHOICES, 3] after them."""
         B = h.shape[0]
         dev = h.device
         req = self.embed_request(request)
@@ -250,9 +260,12 @@ class CausalPolicy(Policy):
         pool = torch.cat([torch.zeros_like(moves[:, :1]), moves, mons], 1)
         idx = targets(choices)
         target = pool.gather(1, idx[..., None].expand(-1, -1, pool.shape[-1]))
-        k = self.key(target + self.choice(choices.long()))
+        tc = target + self.choice(choices.long())
+        k = self.key(tc)
         logits = torch.einsum("bd,bcd->bc", q, k) / self.c.d ** 0.5
         live = torch.arange(CHOICES, device=dev)[None] < n[:, None]
+        if with_q:
+            return logits.masked_fill(~live, float("-inf")), value, self.q_head(x[:, :1] + tc)
         return logits.masked_fill(~live, float("-inf")), value
 
 
@@ -270,6 +283,15 @@ SIZES["cs3_tiny"] = CausalConfig(d=32, heads=2, ff=64, field_d=8, line_ff=32, wi
 
 # cs3's additions, which a cs2 checkpoint lacks (`init` from one starts them at 0)
 FEATURE_PARAMS = ("active_extra", "side_extra", "foe_threat", "move_feat", "switch_feat")
+# `q_head`'s, which a checkpoint without it lacks (`init` from one starts them fresh)
+Q_PARAMS = ("q_head",)
+
+
+def net_config(config: dict) -> CausalConfig:
+    """The net a checkpoint's (train.py's) config dict describes: its size,
+    with the Q head under `expected_sarsa`."""
+    c = SIZES[config["size"]]
+    return dataclasses.replace(c, q_head=True) if config.get("expected_sarsa") else c
 
 
 def zero_linear(i, o):
@@ -319,10 +341,10 @@ class DeviceData:
     """An iteration's buffer.Data (and its returns and advantages) on the
     device, uploaded once (2026-10-27: the learner's per-pass copies, CPU
     padding and .item() calls left the GPU idle most of the step). `src`,
-    `ret` and `adv` are the objects it was built from."""
+    `ret`, `adv` and `q_target` are the objects it was built from."""
 
-    def __init__(self, data, dev, ret=None, adv=None):
-        self.src, self.ret_src, self.adv_src = data, ret, adv
+    def __init__(self, data, dev, ret=None, adv=None, q_target=None):
+        self.src, self.ret_src, self.adv_src, self.q_target_src = data, ret, adv, q_target
         self.tokens = upload(data.tokens, dev)
         self.offsets = upload(data.offsets, dev)
         self.request = upload(data.request, dev)
@@ -333,16 +355,18 @@ class DeviceData:
         self.state = upload(data.state, dev) if data.state is not None else None
         self.ret = upload(ret, dev) if ret is not None else None
         self.adv = upload(adv, dev) if adv is not None else None
+        self.q_target = upload(q_target, dev) if q_target is not None else None
 
 
-def learner_forward(net, dd, group, keep, dev, amp):
+def learner_forward(net, dd, group, keep, dev, amp, with_q=False):
     """The learner's pass over trajectories `group` of `dd` (a DeviceData):
     every decision's summary, the history over each trajectory (its length
     padded to a multiple of 16), and the decision block on the kept
     decisions. The indices are built on the CPU and uploaded in one copy;
     the lines are gathered and padded on the device, grouped by line count
     as summarize_grouped's. Returns (ids [K] numpy, ids [K] on the device,
-    logits [K, CHOICES], value logits [K, 3], choices [K, CHOICES], n [K])."""
+    logits [K, CHOICES], value logits [K, 3], choices [K, CHOICES], n [K]),
+    and with `with_q` Q's logits [K, CHOICES, 3] last."""
     data = dd.src
     start, length = data.start[group], data.length[group]
     base = np.r_[0, np.cumsum(length)[:-1]]
@@ -378,8 +402,8 @@ def learner_forward(net, dd, group, keep, dev, amp):
         hk = h[row_t[k_t], pos_t[k_t]]
         kid = ids_t[k_t]
         choices, n = dd.choices[kid], dd.n[kid]
-        logits, value = net.decide(hk, request[k_t], choices, n, dd.state[kid] if net.c.state else None)
-    return ids[k], kid, logits, value, choices, n
+        out = net.decide(hk, request[k_t], choices, n, dd.state[kid] if net.c.state else None, with_q=with_q)
+    return (ids[k], kid, *out[:2], choices, n, *out[2:])
 
 
 def check(seed=0):

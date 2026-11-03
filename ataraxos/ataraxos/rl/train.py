@@ -25,6 +25,11 @@ advantage filter, one epoch, an EMA of the weights. The differences:
   - evaluation plays both the EMA and the current weights against each
     anchor (ataraxos/eval/agents.py: "random", "maxdamage" or a checkpoint),
     the anchor on the target's teams in the exploiter run;
+  - with `expected_sarsa` (the user's, 2026-11-02), the net gets a Q head
+    (W/D/L per choice) trained by Expected SARSA on the actor's Q
+    (buffer.sarsa_targets), and the advantage is `sarsa_adv` of Q's, Q at
+    the pick less Q summed over the data policy, and the rest GAE's. Off
+    (the default), the net, the data and the losses are as before;
   - with `target` (the exploiter run, 2026-10-30), the learner plays a
     frozen checkpoint instead of itself, P1 in the even battles and P2 in
     the odd ones, and trains on its own side only. Each side draws from its
@@ -84,9 +89,10 @@ import torch
 
 from ataraxos._ext import ataraxos_env  # noqa: E402
 from ataraxos.nets.causal_actor import make_actor  # noqa: E402
-from ataraxos.nets.causal_net import FEATURE_PARAMS, CausalPolicy, DeviceData, learner_forward, make_net  # noqa: E402
+from ataraxos.nets.causal_net import (FEATURE_PARAMS, Q_PARAMS, CausalPolicy, DeviceData, learner_forward,  # noqa: E402
+                                     make_net, net_config)
 from ataraxos.eval.agents import NetAgent, load_policy, make_agent, match, subset  # noqa: E402
-from ataraxos.rl.buffer import Buffer, minibatches, returns_and_advantages, split  # noqa: E402
+from ataraxos.rl.buffer import Buffer, minibatches, returns_and_advantages, sarsa_targets, split  # noqa: E402
 from ataraxos.nets.policy import CHOICES, SIZES  # noqa: E402
 from ataraxos.rl import metrics  # noqa: E402
 from ataraxos.rl import teams  # noqa: E402
@@ -140,6 +146,12 @@ class Config:
     gae_lambda: float = 0.5
     vf_coef: float = 1.0
     policy_coef: float = 1.0
+    # Expected SARSA (see the top; the user's, 2026-11-02): the Q head and its
+    # targets, Q's loss weight, and Q's share of the advantage (1: all Q's,
+    # 0: all GAE's, Q only trained)
+    expected_sarsa: bool = False
+    q_coef: float = 1.0
+    sarsa_adv: float = 1.0
     # "ppo": the clipped surrogate above; "neurd": sampled NeuRD (neurd_loss)
     # under PPO's clip, a logit threshold and a cap on 1 / mu (the user's,
     # 2026-10-31: unclipped, cs2c's logits ran to ~18,000 in 19 iterations;
@@ -244,8 +256,8 @@ class Learner:
         if cfg.policy_loss not in ("ppo", "neurd"):
             raise ValueError(cfg.policy_loss)
         self.dev = torch.device(cfg.device)
-        self.net = make_net(SIZES[cfg.size]).to(self.dev)
-        self.ema = make_net(SIZES[cfg.size]).to(self.dev).eval()
+        self.net = make_net(net_config(vars(cfg))).to(self.dev)
+        self.ema = make_net(net_config(vars(cfg))).to(self.dev).eval()
         self.ema.load_state_dict(self.net.state_dict())
         for p in self.ema.parameters():
             p.requires_grad_(False)
@@ -254,6 +266,7 @@ class Learner:
             compile_net(self.net)
             compile_net(self.ema)
         self.dd = None  # the DeviceData for the data being trained on
+        self.q_target = None  # with `expected_sarsa`, the data's Q targets (buffer.sarsa_targets)
         self.it = 0
         self.decisions = 0  # trained, for the schedules
 
@@ -262,10 +275,11 @@ class Learner:
         return self.decisions / cfg.schedule_decisions if cfg.schedule_decisions > 0 else self.it
 
     def device_data(self, data, ret=None, adv=None):
-        """The DeviceData for (data, ret, adv), built once."""
+        """The DeviceData for (data, ret, adv, self.q_target), built once."""
         dd = self.dd
-        if dd is None or dd.src is not data or dd.ret_src is not ret or dd.adv_src is not adv:
-            self.dd = dd = DeviceData(data, self.dev, ret, adv)
+        if (dd is None or dd.src is not data or dd.ret_src is not ret or dd.adv_src is not adv
+                or dd.q_target_src is not self.q_target):
+            self.dd = dd = DeviceData(data, self.dev, ret, adv, self.q_target)
         return dd
 
     def train(self, data, rng):
@@ -273,6 +287,11 @@ class Learner:
         stats = {}
         t0 = time.perf_counter()
         ret, adv = returns_and_advantages(data, cfg.td_lambda, cfg.gae_lambda)
+        if cfg.expected_sarsa:
+            self.q_target, q_adv = sarsa_targets(data)
+            stats.update(adv_gae_std=float(adv.std()), adv_q_std=float(q_adv.std()),
+                         adv_q_gae_corr=float(torch.corrcoef(torch.stack([adv, q_adv]))[0, 1]))
+            adv = (1 - cfg.sarsa_adv) * adv + cfg.sarsa_adv * q_adv
         threshold = max(float(adv.abs().quantile(cfg.adv_filt_rate)) if len(adv) < 2**24 else
                         float(adv.abs()[torch.randperm(len(adv))[:2**24]].quantile(cfg.adv_filt_rate)),
                         cfg.adv_filt_thresh)
@@ -311,7 +330,7 @@ class Learner:
         keys = list(sums)
         *vals, delta, norm = torch.stack([torch.as_tensor(sums[k], device=dev).double() for k in keys]
                                          + [delta, norm]).tolist()
-        self.dd = None
+        self.dd = self.q_target = None
         t3 = time.perf_counter()
         stats.update({k: v if k.endswith("_max") else v / max(1, steps) for k, v in zip(keys, vals)},
                      grad_steps=steps, param_norm=math.sqrt(norm), update_ratio=math.sqrt(delta / max(norm, 1e-30)),
@@ -361,7 +380,8 @@ class Learner:
     def loss(self, data, group, keep, ret, adv, temperature):
         cfg, dev = self.cfg, self.dev
         dd = self.device_data(data, ret, adv)
-        _, idt, logits, value, choices, n = learner_forward(self.net, dd, group, keep, dev, cfg.amp)
+        out = learner_forward(self.net, dd, group, keep, dev, cfg.amp, with_q=dd.q_target is not None)
+        _, idt, logits, value, choices, n = out[:6]
         old, a, A, R = dd.logp[idt], dd.pick[idt][:, None], dd.adv[idt], dd.ret[idt]
         legal = torch.arange(CHOICES, device=dev)[None] < n[:, None]
         logp = torch.log_softmax(logits.float().masked_fill(~legal, -1e9), -1)
@@ -378,6 +398,11 @@ class Learner:
         value_loss = -(R * torch.log_softmax(value.float(), -1)).sum(-1).mean()  # against the returns' W/D/L
         loss = (cfg.policy_coef * policy_loss + temperature * kl_magnet + cfg.vf_coef * value_loss
                 + cfg.kl_coef * kl_data)
+        extra = {}
+        if dd.q_target is not None:  # Expected SARSA: Q at the pick against the next decision's sum
+            qa = out[6].float().gather(1, a[..., None].expand(-1, -1, 3))[:, 0]
+            extra["q_loss"] = -(dd.q_target[idt] * torch.log_softmax(qa, -1)).sum(-1).mean()
+            loss = loss + cfg.q_coef * extra["q_loss"]
         ent = -(p * logp).sum(-1)
         entropy = ent.mean()
         # the largest legal logit's distance from the legal mean (a diagnostic)
@@ -392,7 +417,7 @@ class Learner:
             clip_frac=((ratio - 1).abs() > cfg.clip_range).float().mean(),
             ratio_mean=ratio.mean(), ratio_max=ratio.max(), logit_abs_max=y.abs().max(),
             inv_mu_max=inv_mu.max(), inv_mu_p99=torch.quantile(inv_mu, 0.99),
-            inv_mu_capped=(inv_mu > cfg.neurd_mu_cap).float().mean()).items()}
+            inv_mu_capped=(inv_mu > cfg.neurd_mu_cap).float().mean(), **extra).items()}
 
     def save(self, path, exp3=None, rng=None, team_counts=None, pairs=None):
         """Written to a temporary file and renamed, so a sync never copies
@@ -411,6 +436,8 @@ class Learner:
     def load(self, ck):
         if ck["config"]["size"] != self.cfg.size:
             raise ValueError(f"checkpoint is size {ck['config']['size']!r}, not {self.cfg.size!r}")
+        if bool(ck["config"].get("expected_sarsa")) != self.cfg.expected_sarsa:
+            raise ValueError(f"checkpoint has expected_sarsa {bool(ck['config'].get('expected_sarsa'))}")
         self.net.load_state_dict(ck["net"])
         self.ema.load_state_dict(ck["ema"])
         self.optim.load_state_dict(ck["optim"])
@@ -423,15 +450,22 @@ class Learner:
         file (config and EMA only) gives the EMA to both and a fresh optimizer.
         A cs2 checkpoint can start a cs3 run: cs3's feature layers keep their
         zero init (so the net computes what the checkpoint did, but for the
-        history window) and the optimizer starts fresh."""
+        history window) and the optimizer starts fresh. So can a checkpoint
+        with the other `expected_sarsa`: a Q head it lacks starts fresh, one
+        it has is dropped, and the optimizer starts fresh."""
         size = ck["config"]["size"]
         if size != self.cfg.size and (size, self.cfg.size) != ("cs2", "cs3"):
             raise ValueError(f"checkpoint is size {size!r}, not {self.cfg.size!r}")
+        had_q = bool(ck["config"].get("expected_sarsa"))
+        same = size == self.cfg.size and had_q == self.cfg.expected_sarsa
+        may_miss = (FEATURE_PARAMS if size != self.cfg.size else ()) + (Q_PARAMS if not had_q else ())
+        may_add = Q_PARAMS if had_q else ()
         for net, w in ((self.net, ck.get("net", ck["ema"])), (self.ema, ck["ema"])):
-            missing, unexpected = net.load_state_dict(w, strict=size == self.cfg.size)
-            if unexpected or any(not k.startswith(FEATURE_PARAMS) for k in missing):
-                raise ValueError(f"cs2 -> cs3: missing {missing}, unexpected {unexpected}")
-        if "optim" in ck and size == self.cfg.size:
+            missing, unexpected = net.load_state_dict(w, strict=same)
+            if any(not k.startswith(may_add) for k in unexpected) or any(not k.startswith(may_miss)
+                                                                       for k in missing):
+                raise ValueError(f"{size} -> {self.cfg.size}: missing {missing}, unexpected {unexpected}")
+        if "optim" in ck and same:
             self.optim.load_state_dict(ck["optim"])
         self.decisions = 0
 
@@ -613,7 +647,7 @@ def main(argv=None):
         pairs.load(ck["pairs"])
     if exp3 is not None:
         set_weights()
-    actor = make_actor(learner.net, cfg.battles, cfg.device, amp=cfg.amp, graphs=cfg.graphs)
+    actor = make_actor(learner.net, cfg.battles, cfg.device, amp=cfg.amp, graphs=cfg.graphs, q=cfg.expected_sarsa)
     buffer = Buffer(learner.net.c.max_lines, cfg.at_cap, sides=1 if exploit else 2)
 
     def ended(obs):
@@ -662,12 +696,12 @@ def main(argv=None):
                 picks[~mine] = target_actor.act(theirs)[0]
                 picks[mine], logp, value = actor.act(ours)
                 tb = time.perf_counter()
-                buffer.add(ours, picks[mine], logp, value)
+                buffer.add(ours, picks[mine], logp, value, actor.last_q)
                 decisions += int(mine.sum())
             else:
                 picks, logp, value = actor.act(obs)  # picks come back to the CPU, so the GPU work is done
                 tb = time.perf_counter()
-                buffer.add(obs, picks, logp, value)
+                buffer.add(obs, picks, logp, value, actor.last_q)
                 decisions += len(picks)
             tc = time.perf_counter()
             obs = env.step(picks)

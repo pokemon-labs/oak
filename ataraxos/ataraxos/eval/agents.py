@@ -28,8 +28,7 @@ import torch
 
 from ataraxos._ext import ataraxos_env  # noqa: E402
 from ataraxos.nets.causal_actor import make_actor  # noqa: E402
-from ataraxos.nets.causal_net import make_net  # noqa: E402
-from ataraxos.nets.policy import SIZES  # noqa: E402
+from ataraxos.nets.causal_net import make_net, net_config  # noqa: E402
 
 # request field layout (src/tokens.hpp's encode)
 HEADER, ACTIVE_MOVE, SIDE = 7, 4, 14
@@ -189,7 +188,7 @@ class MaxDamage(Agent):
 def load_policy(path, device, weights="ema"):
     """A checkpoint's weights ("ema" or "net") as a CausalPolicy."""
     ck = torch.load(path, map_location=device, weights_only=False)
-    net = make_net(SIZES[ck["config"]["size"]]).to(device).eval()
+    net = make_net(net_config(ck["config"])).to(device).eval()
     net.load_state_dict(ck[weights])
     return net
 
