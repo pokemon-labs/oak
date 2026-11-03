@@ -84,7 +84,7 @@ import torch
 
 from ataraxos._ext import ataraxos_env  # noqa: E402
 from ataraxos.nets.causal_actor import make_actor  # noqa: E402
-from ataraxos.nets.causal_net import CausalPolicy, DeviceData, learner_forward, make_net  # noqa: E402
+from ataraxos.nets.causal_net import FEATURE_PARAMS, CausalPolicy, DeviceData, learner_forward, make_net  # noqa: E402
 from ataraxos.eval.agents import NetAgent, load_policy, make_agent, match, subset  # noqa: E402
 from ataraxos.rl.buffer import Buffer, minibatches, returns_and_advantages, split  # noqa: E402
 from ataraxos.nets.policy import CHOICES, SIZES  # noqa: E402
@@ -420,12 +420,18 @@ class Learner:
     def init_from(self, ck):
         """`init`: a checkpoint's weights, EMA and optimizer, at iteration 0
         with no trained decisions, so the schedules start at step 0. A policy
-        file (config and EMA only) gives the EMA to both and a fresh optimizer."""
-        if ck["config"]["size"] != self.cfg.size:
-            raise ValueError(f"checkpoint is size {ck['config']['size']!r}, not {self.cfg.size!r}")
-        self.net.load_state_dict(ck.get("net", ck["ema"]))
-        self.ema.load_state_dict(ck["ema"])
-        if "optim" in ck:
+        file (config and EMA only) gives the EMA to both and a fresh optimizer.
+        A cs2 checkpoint can start a cs3 run: cs3's feature layers keep their
+        zero init (so the net computes what the checkpoint did, but for the
+        history window) and the optimizer starts fresh."""
+        size = ck["config"]["size"]
+        if size != self.cfg.size and (size, self.cfg.size) != ("cs2", "cs3"):
+            raise ValueError(f"checkpoint is size {size!r}, not {self.cfg.size!r}")
+        for net, w in ((self.net, ck.get("net", ck["ema"])), (self.ema, ck["ema"])):
+            missing, unexpected = net.load_state_dict(w, strict=size == self.cfg.size)
+            if unexpected or any(not k.startswith(FEATURE_PARAMS) for k in missing):
+                raise ValueError(f"cs2 -> cs3: missing {missing}, unexpected {unexpected}")
+        if "optim" in ck and size == self.cfg.size:
             self.optim.load_state_dict(ck["optim"])
         self.decisions = 0
 

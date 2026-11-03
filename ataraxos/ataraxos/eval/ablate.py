@@ -31,7 +31,7 @@ import torch.nn.functional as F
 from ataraxos._ext import ataraxos_env  # noqa: E402
 from ataraxos.eval.agents import load_policy  # noqa: E402
 from ataraxos.nets.causal_actor import make_actor  # noqa: E402
-from ataraxos.nets.causal_net import ACTIVE_FIELDS, MON_FIELDS, LINE_EDGES, line_edge  # noqa: E402
+from ataraxos.nets.causal_net import ACTIVE_FIELDS, BASE_STATE_FIELDS, MON_FIELDS, LINE_EDGES, line_edge  # noqa: E402
 from ataraxos.nets.policy import buckets  # noqa: E402
 from ataraxos.rl.buffer import Buffer  # noqa: E402
 
@@ -155,7 +155,7 @@ def main():
                 sv = state[perm]
             if name == "foe_shuf":
                 sv = state.clone()
-                sv[:, foe:] = state[perm, foe:]
+                sv[:, foe:BASE_STATE_FIELDS] = state[perm, foe:BASE_STATE_FIELDS]
             report(name, *decide(net, data, hv, sv))
 
 

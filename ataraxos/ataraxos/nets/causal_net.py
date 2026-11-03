@@ -15,7 +15,21 @@ the user's idea).
      11 request tokens, and with `state` the 14 bookkeeping tokens
      (src/state_tokens.hpp: the two actives, both sides' 6 Pokémon)],
      then the Policy's heads.
-  4. Value: W/D/L logits, (loss, draw, win) (the user's, 2026-10-27: draws
+  4. With `features` (cs3, 2026-11-02, the user's): the state's matchup
+     features (src/features.hpp) and a few read off the state, each through
+     its own zero-initialized linear, so a cs2 checkpoint starts cs3
+     exactly where it was (`ataraxos.rl.train --init`):
+       - each active token gets its Pokémon's status, HP fraction and sleep
+         turns (the party row the active flag points at), and its side's
+         Pokémon left, total HP, unseen count, Sleep Clause (a non-Rest
+         sleeper) and Freeze Clause (a frozen one);
+       - each request move token gets its move's damage, KO, crit, hit and
+         speed-order features against the foe's active (matched by move id);
+       - each request side slot gets its Pokémon's switch-in features
+         (matched by species);
+       - the foe's active token gets its known moves' features against our
+         active, as a set.
+  5. Value: W/D/L logits, (loss, draw, win) (the user's, 2026-10-27: draws
      happen in stall against stall), by cross-entropy against TD(lambda)
      returns over the distribution (ataraxos/rl/buffer.py).
 
@@ -31,14 +45,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ataraxos.nets.policy import (ACTIVE_MOVES, CHOICES, REQUEST_TOKENS, SIZES, SLOTS, Policy,  # noqa: E402
-                                  PolicyConfig, buckets, targets)
+from ataraxos.nets.policy import (ACTIVE_MOVES, CHOICES, HEADER, MOVE_FIELDS, POKEMON_FIELDS,  # noqa: E402
+                                  REQUEST_TOKENS, SIZES, SLOTS, Policy, PolicyConfig, buckets, targets)
 
 # src/state_tokens.hpp's layout
 ACTIVE_FLAGS = 16
 ACTIVE_FIELDS = 1 + 2 + 6 + 4 + 8 + 1 + 4 + 3 + 1
 MON_FIELDS = 3 + 5 + 1 + 8
-STATE_FIELDS = 1 + 2 * ACTIVE_FIELDS + 12 * MON_FIELDS
+BASE_STATE_FIELDS = 1 + 2 * ACTIVE_FIELDS + 12 * MON_FIELDS
+# src/features.hpp's layout, after the base state
+MOVE_FEATS, SWITCH_FEATS = 9, 5
+FEATURE_FIELDS = 8 * MOVE_FEATS + 6 * SWITCH_FEATS
+STATE_FIELDS = BASE_STATE_FIELDS + FEATURE_FIELDS
+# per-mille damage, of-256 chances, effectiveness x4, who's first
+MOVE_SCALE = (1 / 1000, 1 / 1000, 1 / 1000, 1 / 256, 1 / 256, 1 / 256, 1 / 256, 1 / 4, 1)
+SWITCH_SCALE = (1 / 1000, 1 / 256, 1 / 1000, 1 / 256, 1)
+SLP, FRZ, REST_BIT = 0b111, 0b00100000, 0b10000000  # src/bookkeeping.hpp's status bytes
 STATE_TOKENS = 2 + 12
 TYPES = 16  # Gen 1's 15, + 1 (0 none)
 
@@ -61,6 +83,7 @@ class CausalConfig(PolicyConfig):
     window: int = 32        # a decision attends to itself and the 31 before
     max_pos: int = 256      # decision index in the game, clamped
     state: bool = True
+    features: bool = False  # cs3's matchup features (needs `state`)
 
 
 class CausalLayer(nn.Module):
@@ -117,6 +140,12 @@ class CausalPolicy(Policy):
             self.move_pp = nn.Sequential(nn.Linear(d + 1, d), nn.GELU())  # a move with its PP
             self.mon_state = nn.Linear(8, d)
             self.state_type = nn.Parameter(torch.randn(STATE_TOKENS, d) * c.pos_std)
+        if c.features:
+            self.active_extra = zero_linear(d + 2, d)  # status embedding, HP fraction, sleep turns
+            self.side_extra = zero_linear(5, d)
+            self.foe_threat = zero_linear(MOVE_FEATS, d)
+            self.move_feat = zero_linear(MOVE_FEATS, d)
+            self.switch_feat = zero_linear(SWITCH_FEATS, d)
 
     def run_core(self, x):
         """x [G, T, d] a trajectory's summaries per row (right-padded) ->
@@ -148,21 +177,69 @@ class CausalPolicy(Policy):
         act = (self.species(a[..., 0]) + self.type_emb(a[..., 1].clamp(0, TYPES - 1))
                + self.type_emb(a[..., 2].clamp(0, TYPES - 1)) + self.moveset(a[..., 13:17], a[..., 17:21])
                + self.disabled_move(self.move(a[..., 21])) + self.active_scalars(scalars))
-        m = s[:, 1 + 2 * ACTIVE_FIELDS:].view(B, 12, MON_FIELDS)
+        m = s[:, 1 + 2 * ACTIVE_FIELDS:BASE_STATE_FIELDS].view(B, 12, MON_FIELDS)
         hp, max_hp = m[..., 5].float(), m[..., 6].float()
         mons = (self.species(m[..., 3]) + self.status(m[..., 7] & 0xFF) + self.moveset(m[..., 9:13], m[..., 13:17])
                 + self.mon_state(torch.stack([m[..., 0].float(), m[..., 1].float(), m[..., 2].float(),
                                               m[..., 4].float() / 100, hp / max_hp.clamp(min=1),
                                               (max_hp > 0).float(), max_hp / 512, m[..., 8].float() / 7], -1)))
+        if self.c.features:
+            act = act + self.active_features(s, a, m)
         return torch.cat([act, mons], 1) + self.state_type
+
+    def active_features(self, s, a, m):
+        """cs3's additions to the two active tokens [B, 2, d]."""
+        B = s.shape[0]
+        m = m.view(B, 2, 6, MON_FIELDS)
+        exists, seen, active = m[..., 0] > 0, m[..., 1] > 0, m[..., 2].float()
+        status = m[..., 7] & 0xFF
+        hp, max_hp = m[..., 5].float(), m[..., 6].float()
+        frac = hp / max_hp.clamp(min=1)
+        row = torch.cat([self.status(status), frac[..., None], m[..., 8:9].float() / 7], -1)
+        x = self.active_extra((row * active[..., None]).sum(2))  # [B, 2, d]; no active: zeros in
+        alive = exists & (~seen | (hp > 0))
+        sides = torch.stack([alive.sum(-1).float() / 6,
+                             torch.where(seen, frac, exists.float()).sum(-1) / 6,
+                             (exists & ~seen).sum(-1).float() / 6,
+                             (((status & SLP) > 0) & ((status & REST_BIT) == 0) & (hp > 0)).any(-1).float(),
+                             ((status == FRZ) & (hp > 0)).any(-1).float()], -1)
+        x = x + self.side_extra(sides)
+        f = s[:, BASE_STATE_FIELDS:].float()
+        foe = f[:, 4 * MOVE_FEATS:8 * MOVE_FEATS].view(B, 4, MOVE_FEATS) * f.new_tensor(MOVE_SCALE)
+        known = (a[:, 1, 13:17] > 0)[..., None].float()
+        threat = (self.foe_threat(foe) * known).sum(1)
+        return x + torch.stack([torch.zeros_like(threat), threat], 1)
+
+    def request_features(self, req, request, s):
+        """cs3's additions to the request tokens req [B, REQUEST_TOKENS, d]:
+        our moves' features on the move tokens (by move id), our Pokémon's
+        switch-in features on the side slots (by species)."""
+        B = s.shape[0]
+        s, request = s.long(), request.long()
+        f = s[:, BASE_STATE_FIELDS:].float()
+        ours = f[:, :4 * MOVE_FEATS].view(B, 4, MOVE_FEATS) * f.new_tensor(MOVE_SCALE)
+        ids = s[:, 1 + 13:1 + 17]  # our active's moves, the features' order
+        rid = request[:, HEADER:HEADER + ACTIVE_MOVES * MOVE_FIELDS:MOVE_FIELDS]
+        hit = ((rid[:, :, None] == ids[:, None]) & (rid[:, :, None] > 0)).float()
+        moves = hit @ ours / hit.sum(-1, keepdim=True).clamp(min=1)
+        sw = f[:, 8 * MOVE_FEATS:].view(B, 6, SWITCH_FEATS) * f.new_tensor(SWITCH_SCALE)
+        party = s[:, 1 + 2 * ACTIVE_FIELDS:BASE_STATE_FIELDS].view(B, 12, MON_FIELDS)[:, :6, 3]
+        rsp = request[:, HEADER + ACTIVE_MOVES * MOVE_FIELDS::POKEMON_FIELDS]
+        hit = ((rsp[:, :, None] == party[:, None]) & (rsp[:, :, None] > 0)).float()
+        mons = hit @ sw / hit.sum(-1, keepdim=True).clamp(min=1)
+        extra = torch.cat([torch.zeros_like(req[:, :1]), self.move_feat(moves),
+                           self.switch_feat(mons)], 1)
+        return req + extra.to(req.dtype)
 
     def decide(self, h, request, choices, n, state=None):
         """h [B, d] the history's output at this decision. Returns (logits
         [B, CHOICES], -inf past n; value logits [B, 3])."""
         B = h.shape[0]
         dev = h.device
-        parts = [self.value_token.expand(B, 1, -1), (h.to(self.value_token.dtype) + self.h_type)[:, None],
-                 self.embed_request(request)]
+        req = self.embed_request(request)
+        if self.c.features:
+            req = self.request_features(req, request, state)
+        parts = [self.value_token.expand(B, 1, -1), (h.to(self.value_token.dtype) + self.h_type)[:, None], req]
         if self.c.state:
             parts.append(self.embed_state(state))
         x = self.norm(self.history_encoder(torch.cat(parts, 1)))
@@ -184,7 +261,22 @@ class CausalPolicy(Policy):
 SIZES["cs"] = CausalConfig()
 # CS2 (the user, 2026-10-27): 5 decision layers, 4 causal layers, d 256
 SIZES["cs2"] = CausalConfig(depth=5, causal_depth=4)
+# CS3 (the user, 2026-11-02): cs2 with the matchup features and an 8-decision
+# history window (the ablation: the history's value is in the last few turns)
+SIZES["cs3"] = CausalConfig(depth=5, causal_depth=4, window=8, features=True)
 SIZES["cs_tiny"] = CausalConfig(d=32, heads=2, ff=64, field_d=8, line_ff=32, window=6)
+SIZES["cs3_tiny"] = CausalConfig(d=32, heads=2, ff=64, field_d=8, line_ff=32, window=6, features=True)
+
+
+# cs3's additions, which a cs2 checkpoint lacks (`init` from one starts them at 0)
+FEATURE_PARAMS = ("active_extra", "side_extra", "foe_threat", "move_feat", "switch_feat")
+
+
+def zero_linear(i, o):
+    x = nn.Linear(i, o)
+    nn.init.zeros_(x.weight)
+    nn.init.zeros_(x.bias)
+    return x
 
 
 def make_net(c: CausalConfig) -> CausalPolicy:

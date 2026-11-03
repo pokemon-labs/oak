@@ -120,6 +120,53 @@ inline void status_modify(uint8_t status, PKMN::Stats& stats) {
   }
 }
 
+// Mechanics.calc_damage's formula, `att` hitting `def` (`cfz` the confusion
+// self-hit: no Reflect). Psywave gives 1; Counter and Bide are the caller's.
+inline uint16_t calc_damage(const PKMN::Side& att, const PKMN::Side& def, Move move, bool crit, bool cfz,
+                            bool adjust = true, uint8_t roll = 217) {
+  const D::MoveData md = bk::data(move);
+  if (md.effect == D::Effect::SpecialDamage || md.effect == D::Effect::SuperFang) {
+    if (move == bk::Move::SuperFang) return std::max<uint16_t>(def.stored().hp / 2, 1);
+    if (move == bk::Move::SeismicToss || move == bk::Move::NightShade) return att.stored().level;
+    if (move == bk::Move::SonicBoom) return 20;
+    if (move == bk::Move::DragonRage) return 40;
+    return 1; // Psywave
+  }
+  const uint8_t type = uint8_t(md.type);
+  const bool special = type >= 8;
+  uint32_t attack = crit ? (special ? att.stored().stats.spc : att.stored().stats.atk)
+                         : (special ? att.active.stats.spc : att.active.stats.atk);
+  uint32_t defense = crit ? (special ? def.stored().stats.spc : def.stored().stats.def)
+                          : (special ? def.active.stats.spc * (def.active.volatiles.light_screen() ? 2 : 1)
+                                     : def.active.stats.def * (!cfz && def.active.volatiles.reflect() ? 2 : 1));
+  if (attack > 255 || defense > 255) {
+    attack = std::max<uint32_t>((attack / 4) & 255, 1);
+    defense = std::max<uint32_t>((defense / 4) & 255, 1);
+  }
+  const uint32_t lvl = att.stored().level * (crit ? 2 : 1);
+  if (md.effect == D::Effect::Explode) defense = std::max<uint32_t>(defense / 2, 1);
+  if (defense == 0) return 0;
+  uint32_t x = lvl * 2 / 5 + 2;
+  x *= md.bp;
+  x *= attack;
+  x /= defense;
+  x /= 50;
+  x = std::min<uint32_t>(997, x);
+  x += 2;
+  if (adjust) {
+    const uint8_t at = att.active.types;
+    if (type == (at & 15) || type == (at >> 4)) x += x / 2;
+    const uint8_t t1 = def.active.types & 15, t2 = (def.active.types >> 4) & 15;
+    const uint32_t e1 = uint32_t(D::get_effectiveness(md.type, D::Type(t1))) * 5;
+    const uint32_t e2 = uint32_t(D::get_effectiveness(md.type, D::Type(t2))) * 5;
+    if (e1 != 10) x = x * e1 / 10;
+    if (t1 != t2 && e2 != 10) x = x * e2 / 10;
+    if (x == 0) return 0;
+  }
+  if (x <= 1) return uint16_t(x);
+  return uint16_t(x * roll / 255);
+}
+
 } // namespace bk
 
 namespace D = PKMN::Data;
@@ -369,47 +416,7 @@ struct Bookkeeping {
       att.active.volatiles.set_state(0);
       return x;
     }
-    const D::MoveData md = bk::data(move);
-    if (md.effect == D::Effect::SpecialDamage || md.effect == D::Effect::SuperFang) {
-      if (move == bk::Move::SuperFang) return std::max<uint16_t>(def.stored().hp / 2, 1);
-      if (move == bk::Move::SeismicToss || move == bk::Move::NightShade) return att.stored().level;
-      if (move == bk::Move::SonicBoom) return 20;
-      if (move == bk::Move::DragonRage) return 40;
-      return 1; // Psywave
-    }
-    const uint8_t type = uint8_t(md.type);
-    const bool special = type >= 8;
-    uint32_t attack = crit ? (special ? att.stored().stats.spc : att.stored().stats.atk)
-                           : (special ? att.active.stats.spc : att.active.stats.atk);
-    uint32_t defense = crit ? (special ? def.stored().stats.spc : def.stored().stats.def)
-                            : (special ? def.active.stats.spc * (def.active.volatiles.light_screen() ? 2 : 1)
-                                       : def.active.stats.def * (!cfz && def.active.volatiles.reflect() ? 2 : 1));
-    if (attack > 255 || defense > 255) {
-      attack = std::max<uint32_t>((attack / 4) & 255, 1);
-      defense = std::max<uint32_t>((defense / 4) & 255, 1);
-    }
-    const uint32_t lvl = att.stored().level * (crit ? 2 : 1);
-    if (md.effect == D::Effect::Explode) defense = std::max<uint32_t>(defense / 2, 1);
-    if (defense == 0) return 0;
-    uint32_t x = lvl * 2 / 5 + 2;
-    x *= md.bp;
-    x *= attack;
-    x /= defense;
-    x /= 50;
-    x = std::min<uint32_t>(997, x);
-    x += 2;
-    if (adjust) {
-      const uint8_t at = att.active.types;
-      if (type == (at & 15) || type == (at >> 4)) x += x / 2;
-      const uint8_t t1 = def.active.types & 15, t2 = (def.active.types >> 4) & 15;
-      const uint32_t e1 = uint32_t(D::get_effectiveness(md.type, D::Type(t1))) * 5;
-      const uint32_t e2 = uint32_t(D::get_effectiveness(md.type, D::Type(t2))) * 5;
-      if (e1 != 10) x = x * e1 / 10;
-      if (t1 != t2 && e2 != 10) x = x * e2 / 10;
-      if (x == 0) return 0;
-    }
-    if (x <= 1) return uint16_t(x);
-    return uint16_t(x * roll / 255);
+    return bk::calc_damage(att, def, move, crit, cfz, adjust, roll);
   }
 
   // Whether the attacker against side `target` crit in this update.

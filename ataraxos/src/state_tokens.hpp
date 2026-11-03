@@ -22,6 +22,8 @@
 //     0), active, species, level, hp, max_hp (the foe's HP is the middle of
 //     its percent), status (the raw byte), sleep turns, the moves (4) and
 //     their PP (4); the foe's unrevealed moves are 0 with PP 0.
+//   the matchup features (features.hpp, FEATURE_FIELDS; cs3's, 2026-11-02:
+//     the nets before it read only the first BASE_STATE_FIELDS).
 // The hidden counters in libpkmn's Volatiles (confusion_left, attacks,
 // disable_left) aren't the viewer's to know: the Durations count up instead.
 
@@ -32,6 +34,7 @@
 #include <cstdint>
 
 #include "bookkeeping.hpp"
+#include "features.hpp"
 
 namespace ataraxos {
 
@@ -39,7 +42,8 @@ inline constexpr uint16_t MAX_TURN = 1000;
 inline constexpr size_t ACTIVE_FLAGS = 16;
 inline constexpr size_t ACTIVE_FIELDS = 1 + 2 + 6 + 4 + 8 + 1 + 4 + 3 + 1;
 inline constexpr size_t MON_FIELDS = 3 + 5 + 1 + 8;
-inline constexpr size_t STATE_FIELDS = 1 + 2 * ACTIVE_FIELDS + 12 * MON_FIELDS;
+inline constexpr size_t BASE_STATE_FIELDS = 1 + 2 * ACTIVE_FIELDS + 12 * MON_FIELDS;
+inline constexpr size_t STATE_FIELDS = BASE_STATE_FIELDS + FEATURE_FIELDS;
 
 namespace detail {
 
@@ -110,7 +114,7 @@ inline void encode_state(const Bookkeeping& bk, int16_t* out) {
   o = detail::active(b.sides[foe], bk.durations.get(foe), o);
   o = detail::mons(b.sides[us], bk.durations.get(us), bk.teamsize[us], o);
   o = detail::mons(b.sides[foe], bk.durations.get(foe), bk.teamsize[foe], o);
-  assert(o == out + STATE_FIELDS);
+  encode_features(bk, o);
 }
 
 } // namespace ataraxos

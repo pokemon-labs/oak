@@ -6,7 +6,12 @@ the env's bookkeeping state, in float32:
 - the state (src/state_tokens.hpp): each active is its side's active
   Pokémon (ours the request's) unless transformed, boosts within -6..6,
   nothing seen that doesn't exist, an unseen Pokémon and an empty move
-  slot all zeros, our team all seen;
+  slot all zeros, our team all seen; the matchup features
+  (src/features.hpp) in their ranges, an empty move slot's all zeros, and
+  the request's moves found among our active's (counted);
+- cs3 (features on) loaded from a cs_tiny net's weights gives cs_tiny's
+  log-probs and values (its feature layers start at zero), and the learner
+  vs actor check at cs3_tiny;
 - the learner, on the stored trajectories, gives every decision the
   log-probs and W/D/L values the actor gave it (the key/value ring past its
   window, game resets, the buffer's state column and its compaction across
@@ -48,12 +53,12 @@ def check_state(teams, seed):
     rng = np.random.default_rng(seed)
     A, M = cn.ACTIVE_FIELDS, cn.MON_FIELDS
     transformed = 1 << 15  # the last active flag
-    rows = 0
+    rows = missing = move_rows = 0
     for _ in range(300):
         s = obs["state"]
         assert s.shape == (len(obs["n"]), cn.STATE_FIELDS)
         act = s[:, 1:1 + 2 * A].reshape(-1, 2, A)
-        mons = s[:, 1 + 2 * A:].reshape(-1, 2, 6, M)
+        mons = s[:, 1 + 2 * A:cn.BASE_STATE_FIELDS].reshape(-1, 2, 6, M)
         exists, seen, active = mons[..., 0], mons[..., 1], mons[..., 2]
         assert (seen <= exists).all() and (active <= seen).all() and (active.sum(-1) <= 1).all()
         # an unseen Pokémon is all zeros past its flags; an empty slot has no PP
@@ -74,11 +79,53 @@ def check_state(teams, seed):
         boosts = act[..., 3:9]
         assert ((boosts >= -6) & (boosts <= 6)).all()
         assert (s[:, 0] >= 0).all() and (s[:, 0] <= 1000).all()
+        f = s[:, cn.BASE_STATE_FIELDS:]
+        mv = f[:, :8 * cn.MOVE_FEATS].reshape(-1, 2, 4, cn.MOVE_FEATS)
+        assert (mv[act[..., 13:17] == 0] == 0).all()
+        assert ((mv[..., 0] >= 0) & (mv[..., 0] <= mv[..., 1]) & (mv[..., 1] <= 2000)).all()
+        assert ((mv[..., 2] >= 0) & (mv[..., 2] <= 2000)).all()
+        assert ((mv[..., 3:5] >= 0) & (mv[..., 3:5] <= 256)).all()
+        assert ((mv[..., 5] >= 0) & (mv[..., 5] <= 255) & (mv[..., 6] >= 0) & (mv[..., 6] <= 256)).all()
+        assert np.isin(mv[..., 7], [0, 1, 2, 4, 8, 16]).all() and np.isin(mv[..., 8], [-1, 0, 1]).all()
+        sw = f[:, 8 * cn.MOVE_FEATS:].reshape(-1, 6, cn.SWITCH_FEATS)
+        assert ((sw[..., [0, 2]] >= 0) & (sw[..., [0, 2]] <= 2000)).all()
+        assert ((sw[..., [1, 3]] >= 0) & (sw[..., [1, 3]] <= 256)).all() and np.isin(sw[..., 4], [-1, 0, 1]).all()
+        assert (sw[mons[:, 0, :, 5] == 0] == 0).all()  # a fainted Pokémon
+        rid = obs["request"][:, 7:7 + 16:4].astype(np.int64)
+        moves = (obs["request"][:, 0] == 0) & (rid > 0).any(1)  # a move request
+        have = (rid[:, :, None] == act[:, 0, None, 13:17]).any(-1) | (rid <= 0)
+        missing += int((~have.all(1) & moves).sum())
+        move_rows += int(moves.sum())
         rows += len(s)
         obs = env.step((rng.random(len(obs["n"])) * obs["n"]).astype(np.uint8))
     plain = ataraxos_env.SelfPlay(4, seed, teams=teams)
     assert "state" not in plain.reset()
-    return rows
+    return rows, missing, move_rows
+
+
+def check_cs3_init(teams, seed):
+    """A cs3-shaped net with cs_tiny's weights (its feature layers at
+    zero) against cs_tiny itself, on a few self-play decisions: the largest
+    log-prob and value differences."""
+    torch.manual_seed(seed)
+    old = cn.make_net(SIZES["cs_tiny"]).eval()
+    new = cn.make_net(SIZES["cs3_tiny"]).eval()
+    missing, unexpected = new.load_state_dict(old.state_dict(), strict=False)
+    assert not unexpected and all(k.startswith(cn.FEATURE_PARAMS) for k in missing), (missing, unexpected)
+    env = ataraxos_env.SelfPlay(32, seed, teams=teams, max_turns=200, state=True)
+    a, b = CausalActor(old, 32, torch.device("cpu"), amp=False), CausalActor(new, 32, torch.device("cpu"), amp=False)
+    obs = env.reset()
+    rng = np.random.default_rng(seed)
+    wp = wv = 0.0
+    with torch.no_grad():
+        for _ in range(60):
+            _, lp, v = a.act(obs)
+            _, lq, w = b.act(obs)
+            live = torch.isfinite(lp)
+            wp = max(wp, (lp[live] - lq[live]).abs().max().item() if live.any() else 0.0)
+            wv = max(wv, (v - w).abs().max().item() if len(v) else 0.0)
+            obs = env.step((rng.random(len(obs["n"])) * obs["n"]).astype(np.uint8))
+    return wp, wv
 
 
 def plain_returns(data, td_lambda, gae_lambda):
@@ -244,7 +291,11 @@ def main():
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
     if STATE:
-        print(f"state: {check_state(teams, args.seed)} rows, invariants hold")
+        rows, missing, move_rows = check_state(teams, args.seed)
+        print(f"state: {rows} rows, invariants hold; request moves not among our active's in "
+              f"{missing} of {move_rows} move requests")
+        wp, wv = check_cs3_init(teams, args.seed)
+        print(f"cs3 from cs_tiny's weights vs cs_tiny: max |logp diff| {wp:.2e}, max |value diff| {wv:.2e}")
     worst, params = cn.check()
     print(f"causal_net.check: {worst:.2e}; {params / 1e6:.2f}M params at cs")
     cfg = train.Config(size="cs_tiny", device=args.device, battles=16, threads=4, minibatch=256, microbatch=0,
@@ -257,6 +308,10 @@ def main():
     cfg = dataclasses.replace(cfg, policy_loss="neurd")
     _, _, _, _, stats = check_learner(cfg, teams, args.games, args.seed)
     print(f"a neurd step: loss {stats['loss']:.3f}, logit_abs_max {stats['logit_abs_max']:.3f}")
+    cfg = dataclasses.replace(cfg, size="cs3_tiny", policy_loss=train.Config.policy_loss)
+    decisions, wp, wv, _, stats = check_learner(cfg, teams, args.games, args.seed)
+    print(f"cs3_tiny learner vs actor: {decisions} decisions, max |logp diff| {wp:.2e}, "
+          f"max |value diff| {wv:.2e}; a step: loss {stats['loss']:.3f}")
     if args.device == "cuda":
         print(f"graphed vs eager actor: max diff {check_graphs(teams, args.seed):.2e}")
     print("ok")
