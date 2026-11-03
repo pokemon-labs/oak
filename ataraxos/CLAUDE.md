@@ -418,3 +418,34 @@ Status (2026-11-02): steps 1-3 done (`SearchConfig(joint=True)`,
 Not done: the ladder (the user: later), budget-allocation experiments,
 type weights from the foe's belief, MMD on the GPU or in C++ if 0.2 s
 matters.
+
+## cs3 (2026-11-02, the user's: "1 and 2" of Claude's token ideas, history window 8)
+
+Why: `ataraxos/eval/ablate.py` (rby3 ckpt700, smoke run of 64 games) found the
+net leans on the state, not the log: another decision's state moves the top
+pick in 65% of decisions and makes the value worse than the base rate;
+another decision's history 24%, the value barely; a 4-decision window
+changes the policy by KL 0.06. `runs/ablate/` on the box.
+
+- `src/features.hpp`: matchup features appended to the state
+  (`BASE_STATE_FIELDS` 265 + `FEATURE_FIELDS` 102; older nets read the
+  base only). Our active's moves vs the foe's active and the foe's known
+  moves vs ours (min / max / crit-max damage per mille of HP now, KO and
+  crit-KO chance over the rolls, crit rate, hit chance, effectiveness x4,
+  who's first), our 6 Pokémon as they'd come in (damage taken from the
+  foe's known moves, dealt to it, speed). Damage is bookkeeping's formula,
+  now the free `bk::calc_damage` (check_bookkeeping unchanged: 76 / 2000 seed 1).
+- `cs3` = cs2 (depth 5, causal 4) with window 8 and `features`: the active
+  tokens get their Pokémon's status / HP / sleep turns and side summaries
+  (left, total HP, unseen, Sleep / Freeze Clause), the request's move
+  tokens their features (by move id), the side slots their switch-in
+  features (by species), the foe's active its known moves'. All through
+  zero-initialized linears: `--init` from a cs2 checkpoint loads it
+  exactly (fresh optimizer); only the window differs.
+- Checked on the box (worktree `~/oak-cs3`, built with
+  `-DOAK_DIR=/root/oak-ataraxos`, so the live clone's build is untouched):
+  test_causal ok (feature ranges, request moves found in 31383 of 31383,
+  cs3-from-cs_tiny 0.0 diff, cs3_tiny learner = actor), check_client 0
+  failed, Tauros vs Chansey by hand (Body Slam 419‰ max, Hyper Beam 739‰,
+  crit rate 55).
+- Not done: a cs3 run (the GPU has rby3).
