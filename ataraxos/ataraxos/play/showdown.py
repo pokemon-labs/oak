@@ -761,6 +761,8 @@ class Bot:
             if self.arena:
                 if self.named and not was:
                     self.send_team()
+                    if self.args.no_search:  # online, but the arena pairs it only after a /search
+                        self.send("", "/cancelsearch")
                 return
             # the avatar once per login (|updateuser|NAME|NAMED|AVATAR|SETTINGS)
             if self.named and not was and self.args.avatar and (len(p) < 5 or p[4] != self.args.avatar):
@@ -1004,6 +1006,9 @@ def main():
     ap.add_argument("--schedule", default="", help="games to challenge --challenge to: NUMBER, NAME, packed team")
     ap.add_argument("--challenge", default="", help="the user the schedule's games are against")
     ap.add_argument("--login", default="", help="a file: the name, then the password (showdown)")
+    ap.add_argument("--no-search", action="store_true",
+                    help="arena: /cancelsearch on each login, so no battle starts until "
+                         "`botctl raw '' '/search gen1ou'` (a login clears it again)")
     ap.add_argument("--server", default="showdown", choices=["showdown", "arena", "local"],
                     help="arena: pkmn.bot, as ARENA_BOT_NAME with the token ARENA_BOT_TOKEN; "
                          "local: a local server with no login (--url, --name)")
