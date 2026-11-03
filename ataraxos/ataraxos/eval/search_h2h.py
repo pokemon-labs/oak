@@ -9,7 +9,12 @@ battle's first game counts (agents.match's rules).
         [--depth 10] [--budget 128] [--worlds 0] [--teams FILE]
         [--joint [--joint_mode per_type] [--types_a 3] [--types_b 3]
          [--joint_budget 512] [--rounds 4] [--floor 0.25] [--foe_beta -1]]
-        [--mem_frac F] [--out FILE.jsonl] [--tag NAME]
+        [--mem_frac F] [--out FILE.jsonl] [--tag NAME] [--foe CKPT] [--flip]
+
+`--foe` plays the plain side with another checkpoint (the search still models
+the foe with CKPT's net). `--flip` seats the searcher as P2 in the even battles:
+the same seed draws the same teams, so a run and its flip play each team pair
+both ways.
 
 `--mem_frac` caps this process's share of the GPU (an OOM here, not in a
 training run beside it); `--out` appends the result as a JSON line.
@@ -75,6 +80,8 @@ def main():
     ap.add_argument("--mem_frac", type=float, default=0.0)
     ap.add_argument("--out", default="")
     ap.add_argument("--tag", default="")
+    ap.add_argument("--foe", default="", help="the plain side's checkpoint (default: CKPT)")
+    ap.add_argument("--flip", action="store_true", help="the searcher is P2 in the even battles")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -93,7 +100,9 @@ def main():
     env = ataraxos_env.SelfPlay(B, seed=args.seed, teams=[games], max_turns=args.max_turns,
                                 shards=min(B, 16), threads=args.threads, state=net.c.state)
     env.set_keep_after(True)
-    ours, theirs = CausalActor(net, B, dev), CausalActor(net, B, dev)
+    foe = load_policy(args.foe, dev) if args.foe else net
+    ours, theirs = CausalActor(net, B, dev), CausalActor(foe, B, dev)
+    flip = int(args.flip)
 
     result = np.full(B, -2, np.int64)  # the searcher's: 1 win, 0 tie, -1 loss
     obs = env.reset()
@@ -101,10 +110,10 @@ def main():
     while True:
         for bt, g, r in zip(obs["end_battle"], obs["end_game"], obs["end_result"]):
             if g == 0:
-                result[bt] = r if bt % 2 == 0 else -r
+                result[bt] = r if (bt + flip) % 2 == 0 else -r
         if (result != -2).all() or (args.max_searches and searched >= args.max_searches):
             break
-        mine = (obs["battle"] % 2) == obs["player"]
+        mine = ((obs["battle"] + flip) % 2) == obs["player"]
         picks = np.zeros(len(obs["n"]), np.uint8)
         rows = np.flatnonzero(~mine)
         if len(rows):
