@@ -89,7 +89,7 @@ def main():
     result = np.full(B, -2, np.int64)  # A's: 1 win, 0 tie, -1 loss
     turns = np.zeros(B, np.int64)
     obs = env.reset()
-    t0, searched = time.time(), [0, 0]
+    t0, searched, search_s = time.time(), [0, 0], [0.0, 0.0]
     out = open(args.out, "a") if args.out else None
     while True:
         for bt, g, r in zip(obs["end_battle"], obs["end_game"], obs["end_result"]):
@@ -102,6 +102,7 @@ def main():
                 if out:
                     out.write(json.dumps({"task": args.task, "a": na, "b": nb, "seed": args.seed, "flip": flip, "battle": int(bt),
                                           "a_p1": bool(a_p1), "res": int(result[bt]), "decisions": int(turns[bt]),
+                                          "searches": list(searched), "search_s": [round(x, 2) for x in search_s],
                                           "t": round(time.time() - t0, 1)}) + "\n")
                     out.flush()
         if (result != -2).all():
@@ -116,7 +117,9 @@ def main():
             search = sides[side][1]
             live = np.flatnonzero(o["game"] == 0)  # only the counted games search
             if search is not None and len(live):
+                ts = time.time()
                 sp, _, _ = search.run(env, actors[side], subset(o, live), logp[live])
+                search_s[side] += time.time() - ts
                 p[live] = sp
                 searched[side] += len(live)
             picks[rows] = p
