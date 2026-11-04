@@ -33,7 +33,7 @@ INTS = {"rounds", "budget", "depth", "types", "ta", "tb"}
 FLOATS = {"floor", "alpha", "beta", "foe_beta", "shrink"}
 
 
-def parse_spec(spec, act_rows=8192):
+def parse_spec(spec, act_rows=8192, graphs=False):
     """NAME=k:v,... -> (name, SearchConfig or None for plain)."""
     name, _, kv = spec.partition("=")
     if kv in ("", "plain"):
@@ -50,7 +50,7 @@ def parse_spec(spec, act_rows=8192):
     mode = d.pop("mode", "per_type")
     cfg = SearchConfig(joint=True, joint_mode=mode, types_a=ta, types_b=tb, budget=budget,
                        joint_budget=budget, rounds=d.pop("rounds", 2), depth=d.pop("depth", 4),
-                       act_rows=act_rows, **d)
+                       act_rows=act_rows, graphs=graphs, **d)
     return name, cfg
 
 
@@ -66,6 +66,7 @@ def main():
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--max_turns", type=int, default=300)
     ap.add_argument("--act_rows", type=int, default=8192)
+    ap.add_argument("--graphs", action="store_true", help="the rollouts' actor with CUDA graphs")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default="")
     ap.add_argument("--task", default="", help="the league's task tag, in each game line (a retry's games replace)")
@@ -77,7 +78,7 @@ def main():
     pool, games = split_teams(args.teams, tempfile.mkdtemp(prefix="search_match_"))
     sides = []
     for i, spec in enumerate((args.a, args.b)):
-        name, cfg = parse_spec(spec, args.act_rows)
+        name, cfg = parse_spec(spec, args.act_rows, args.graphs)
         search = Search(net, [pool], dev, cfg, threads=args.threads, seed=args.seed * 2 + i) if cfg else None
         sides.append((name, search))
     B = args.battles

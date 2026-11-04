@@ -227,6 +227,7 @@ def main():
     ap.add_argument("--battles", type=int, default=8)
     ap.add_argument("--procs", type=int, default=12)
     ap.add_argument("--act_rows", type=int, default=4096)
+    ap.add_argument("--graphs", action="store_true", help="the matches' rollouts with CUDA graphs")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--min_free_gb", type=float, default=4.0)
     ap.add_argument("--stagger", type=float, default=15.0)
@@ -296,7 +297,8 @@ def main():
             cmd = [sys.executable, "-u", "-m", "ataraxos.eval.search_match", args.ckpt, "--a", spec[a],
                    "--b", spec[b], "--battles", str(args.battles), "--seed", str(sd),
                    "--out", os.path.join(d, "games.jsonl"), "--act_rows", str(args.act_rows),
-                   "--threads", str(args.threads), "--task", tag] + (["--flip"] if flip else [])
+                   "--threads", str(args.threads), "--task", tag] + (["--flip"] if flip else []) \
+                + (["--graphs"] if args.graphs else [])
             lf = open(os.path.join(d, "logs", tag + ".log"), "a")
             running[tag] = (subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT, env=env), lf, task)
             log(f"start {tag} (try {tries[tag]})")
