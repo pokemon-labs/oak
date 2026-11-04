@@ -16,9 +16,9 @@ parts. Reuse oak's code where possible (`client.h`'s `compare_battles`,
   (downloads, builds, pip) uses the box's internet. Code reaches the box by
   committing on `main2`, pushing, and `git pull` on the box.
 - Commits: short lowercase messages, the user's git identity, no Claude
-  trailers. Commit only `ataraxos/`; the user's uncommitted oak edits
-  (`cpp/include/search/mcts.h`, `cpp/src/sprt.cc`, `prior.h`, `test.py`,
-  `RL/`) stay out.
+  trailers. Ataraxos commits touch only `ataraxos/`. (The user's oak WIP,
+  `RL/grub`, `cpp/include/search/bandit/prior.h`, `test.py`, was committed
+  on main2 at their ask, 2026-11-04.)
 
 ## The box
 
