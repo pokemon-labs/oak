@@ -9,8 +9,8 @@
 # Each new runs/RUN/ckptN.pt with N % 500 == 0 goes up with its teamsN.npz and
 # the run's logs (*.jsonl, *.json, *.csv). Checkpoints are written as .tmp and
 # renamed, so a ckptN.pt is complete. Pushed ones are listed in
-# runs/.hf_pushed. Locally, other checkpoints and teams files are deleted but
-# each run's newest two; nothing is deleted on the Hub. EVERY=seconds between
+# runs/.hf_pushed. Nothing is deleted, locally or on the Hub (the user's,
+# 2026-11-04: local disk is box/disk_guard.sh's job). EVERY=seconds between
 # looks for new checkpoints (default 60); ONCE=1 looks once; HF= the hf binary
 # (default: hf on PATH, else the venv's).
 set -uo pipefail
@@ -37,18 +37,6 @@ while true; do
       rc=$?
       echo "$(date '+%F %T') upload of $ck failed (exit $rc); retrying next look" >&2
     fi
-  done
-  # Local pruning (the user's, 2026-10-28): ckptN.pt and teamsN.npz with N % 500 != 0 never go up, so
-  # keep only each run's newest two of those (for resuming).
-  for d in runs/*/; do
-    for kind in ckpt:pt teams:npz; do
-      p=${kind%:*} e=${kind#*:}
-      its=$(ls "$d" | sed -n "s/^$p\([0-9]\+\)\.$e$/\1/p" | sort -n)
-      newest=$(tail -2 <<< "$its")
-      for it in $its; do
-        (( it % 500 == 0 )) || grep -qx "$it" <<< "$newest" || rm -f "$d$p$it.$e"
-      done
-    done
   done
   [ -n "${ONCE:-}" ] && break
   sleep "${EVERY:-60}"
