@@ -469,3 +469,30 @@ changes the policy by KL 0.06. `runs/ablate/` on the box.
   (4096 ran out of memory at 23 GB; 1024 took 37 s of learner per it).
 - Speed: ~48-57 s an iteration (rby3 ~43; cs3+Q at microbatch 1024 ~55),
   learner ~30 s, peak 9.8 GB.
+
+## Search league (2026-11-04)
+
+`ataraxos/eval/league.py` + `search_match.py`: search configs play each other,
+both sides searching (rby4 ckpt1750), parallel matches gated by free GPU
+memory, BT Elo with bootstrap CIs, live `configs.txt`, auto-retire at
+P(>= leader) < 0.05 after 24 games. Names: `d{depth}r{rounds}b{budget k}{m}x{n}_{team|pair}`
+(`_team` per_type, `_pair` per_pair). Speed fixes on the way: `pad_chunks` on
+the GPU (search was CPU-bound on padding, ~4.6x) and `act_rows` 4096 (~1.5x
+more); `--graphs` (CUDA graphs for the rollouts, ~1.5x on rollouts under load,
+~60 s compile) exists but the user turned it off.
+
+league1 (361 games, Elo vs plain): d4r4b1k3x3_team +228 (22-10, top),
+d8r2b2k3x3_pair +184 (10-5), d4r4b2k1x1_team +181 (14-8), d4r8b2k3x3_team
++148, d4r4b2k3x3_team +148 (42-22), the ladder's d4r2b2k3x3_team +72
+(30-29). Retired: b4096, r1, 1x3, d8r4, d2, d4r2 _pair. Read: rounds matter
+most (r4 > r2 > r1), half budget is fine at r4, depth 8 + r4 doesn't stack.
+league2 (the top 5 only) was started and stopped with no new games when the
+box was shut down.
+
+rby4 vs rby3: ckpt1750 vs rby3 ckpt1050 0.499 [0.483, 0.514] (4096 games).
+rby4 training died at it 1750 (2026-11-04 13:32, the container restarted).
+
+Box shut down 2026-11-04. Everything is on HF: `opencover/ataraxos-runs`
+(runs/ incl. every rby4 ckpt to 1750, h2h, league1/2, anchors/, arena/ with
+each bot's games as games.tar.gz) and `opencover/birch-runs` (runs/, bots/
+brew, glegle, wasian). Tokens and logins were not uploaded.
