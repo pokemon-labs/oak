@@ -9,8 +9,9 @@ ends, so a league's standings move while its matches run.
     python -m ataraxos.eval.search_match CKPT --a SPEC --b SPEC [--battles 16]
         [--seed 1] [--flip] [--out games.jsonl] [--act_rows 8192]
 
-SPEC is NAME=key:value,... (keys: rounds, budget, depth, types, mode, floor,
-alpha, beta, foe_beta, shrink) for the joint search, budget its joint_budget
+SPEC is NAME=key:value,... (keys: rounds, budget, depth, types (both sides),
+ta, tb (our types m, the foe's n), mode, floor, alpha, beta, foe_beta,
+shrink) for the joint search, budget its joint_budget
 as on the ladder, or NAME=plain for the net with no search.
 """
 
@@ -28,7 +29,7 @@ from ataraxos.eval.search_h2h import split_teams
 from ataraxos.nets.causal_actor import CausalActor
 from ataraxos.search import Search, SearchConfig
 
-INTS = {"rounds", "budget", "depth", "types"}
+INTS = {"rounds", "budget", "depth", "types", "ta", "tb"}
 FLOATS = {"floor", "alpha", "beta", "foe_beta", "shrink"}
 
 
@@ -44,9 +45,10 @@ def parse_spec(spec, act_rows=8192):
             raise ValueError(f"{spec}: unknown key {k}")
         d[k] = int(v) if k in INTS else float(v) if k in FLOATS else v
     types = d.pop("types", 3)
+    ta, tb = d.pop("ta", types), d.pop("tb", types)
     budget = d.pop("budget", 2048)
     mode = d.pop("mode", "per_type")
-    cfg = SearchConfig(joint=True, joint_mode=mode, types_a=types, types_b=types, budget=budget,
+    cfg = SearchConfig(joint=True, joint_mode=mode, types_a=ta, types_b=tb, budget=budget,
                        joint_budget=budget, rounds=d.pop("rounds", 2), depth=d.pop("depth", 4),
                        act_rows=act_rows, **d)
     return name, cfg

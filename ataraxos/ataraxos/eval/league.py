@@ -30,6 +30,10 @@ is retried up to `--tries` times.
 
     python -m ataraxos.eval.league --standings DIR   # print standings only
 
+Names: d{depth}r{rounds}b{budget, k}{m}x{n}, e.g. d8r2b2k3x3 (`config_name`).
+DIR/aliases.json ({"old": "new"}) renames configs in the games as they load,
+so matches still running under an old name keep counting.
+
 `--config` only seeds a new DIR/configs.txt; after that, edit the file.
 """
 
@@ -44,16 +48,33 @@ import time
 import numpy as np
 
 
+def config_name(spec):
+    """The full-parameter name of a SPEC's key:value part (search_match's)."""
+    kv = spec.partition("=")[2] if "=" in spec else spec
+    if kv in ("", "plain"):
+        return "plain"
+    d = dict(x.split(":") for x in kv.split(","))
+    t = d.get("types", "3")
+    b = int(d.get("budget", 2048))
+    name = f"d{d.get('depth', 4)}r{d.get('rounds', 2)}b{f'{b // 1024}k' if b % 1024 == 0 else f'{b}_'}" \
+           f"{d.get('ta', t)}x{d.get('tb', t)}"
+    extra = [f"{k}{v}" for k, v in sorted(d.items()) if k not in ("depth", "rounds", "budget", "types", "ta", "tb")]
+    return "_".join([name] + extra)
+
+
 def load_games(d):
     p = os.path.join(d, "games.jsonl")
     if not os.path.exists(p):
         return []
+    ap = os.path.join(d, "aliases.json")
+    alias = json.load(open(ap)) if os.path.exists(ap) else {}
     out = {}
     for line in open(p):
         try:
             g = json.loads(line)
         except json.JSONDecodeError:  # a line being written
             continue
+        g["a"], g["b"] = alias.get(g["a"], g["a"]), alias.get(g["b"], g["b"])
         out[(g.get("task", ""), g["seed"], g["flip"], g["a"], g["b"], g["battle"])] = g  # a retry's game replaces
     return list(out.values())
 
@@ -154,25 +175,27 @@ def standings(d, configs=None):
         for x, y, j in ((g["a"], g["b"], i), (g["b"], g["a"], 2 - i)):
             pair.setdefault((x, y), [0, 0, 0])[j] += 1
     cost = costs(games)
-    lines = [head, f"  {'config':<10}{'elo':>6}  {'95%':>13}  {'W-T-L':>9}  {'P(top)':>6}  {'s/root':>6}"]
+    nw = max(10, max(len(n) for n in names) + 1)
+    lines = [head, f"  {'config':<{nw}}{'elo':>6}  {'95%':>13}  {'W-T-L':>9}  {'P(top)':>6}  {'s/root':>6}"]
     order = list(np.argsort(-elo))
     for i in order:
         n = names[i]
         w, t, l = rec[n]
         mark = " " if n in active else "x"
         c = f"{cost[n]:6.2f}" if n in cost else f"{'-':>6}"
-        lines.append(f"{mark} {n:<10}{elo[i]:6.0f}  [{lo[i]:5.0f},{hi[i]:5.0f}]  {f'{w}-{t}-{l}':>9}  "
+        lines.append(f"{mark} {n:<{nw}}{elo[i]:6.0f}  [{lo[i]:5.0f},{hi[i]:5.0f}]  {f'{w}-{t}-{l}':>9}  "
                      f"{p_top[i]:6.2f}  {c}")
     lines.append("  (x retired; P(top) the bootstrap share at or above the leader; s/root batched, shared GPU)")
     lines.append("")
     lines.append("pair records (row's W-L vs column):")
     w = max(10, max(len(n) for n in names) + 2)
     on = [names[i] for i in order]
-    lines.append(" " * w + "".join(f"{n[:8]:>9}" for n in on))
+    cw = max(9, max(len(n) for n in names) + 1)
+    lines.append(" " * w + "".join(f"{n:>{cw}}" for n in on))
     for x in on:
         lines.append(f"{x:<{w}}" + "".join(
-            f"{f'{pair[(x, y)][0] + pair[(x, y)][1] / 2:g}-{pair[(x, y)][2] + pair[(x, y)][1] / 2:g}':>9}"
-            if (x, y) in pair else f"{'.':>9}" for y in on))
+            f"{f'{pair[(x, y)][0] + pair[(x, y)][1] / 2:g}-{pair[(x, y)][2] + pair[(x, y)][1] / 2:g}':>{cw}}"
+            if (x, y) in pair else f"{'.':>{cw}}" for y in on))
     return "\n".join(lines), dict(names=names, games=games, elo=elo, p_top=p_top, leader=leader, active=active)
 
 
