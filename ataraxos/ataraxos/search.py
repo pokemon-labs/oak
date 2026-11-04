@@ -76,6 +76,7 @@ class SearchConfig:
     mmd_iters: int = 2000
     mmd_tol: float = 1e-5
     act_rows: int = 1024   # the rollouts' decisions per net call (the activations' memory)
+    graphs: bool = False   # the rollouts' actor as one compiled step with CUDA graphs, padded to act_rows rows
 
 
 def act_chunked(actor, obs, rows):
@@ -205,7 +206,8 @@ class Search:
         if self.actor is None or self.actor.slots < 2 * rollouts:
             self.actor = None
             torch.cuda.empty_cache() if self.device.type == "cuda" else None
-            self.actor = CausalActor(self.net, max(rollouts, 64), self.device, amp=self.amp)
+            self.actor = CausalActor(self.net, max(rollouts, 64), self.device, amp=self.amp,
+                                     graphs=self.cfg.graphs, bucket=self.cfg.act_rows)
         return self.actor
 
     @torch.no_grad()
