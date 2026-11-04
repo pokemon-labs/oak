@@ -78,6 +78,7 @@ def main():
     ap.add_argument("--floor", type=float, default=0.25)
     ap.add_argument("--foe_beta", type=float, default=-1.0)
     ap.add_argument("--mem_frac", type=float, default=0.0)
+    ap.add_argument("--act_rows", type=int, default=1024, help="the rollouts' decisions per net call")
     ap.add_argument("--out", default="")
     ap.add_argument("--tag", default="")
     ap.add_argument("--foe", default="", help="the plain side's checkpoint (default: CKPT)")
@@ -94,7 +95,8 @@ def main():
     cfg = SearchConfig(worlds=args.worlds, reps=args.reps, depth=args.depth, budget=args.budget,
                        alpha=args.alpha, beta=args.beta, joint=args.joint, joint_mode=args.joint_mode,
                        types_a=args.types_a, types_b=args.types_b, joint_budget=args.joint_budget,
-                       rounds=args.rounds, floor=args.floor, foe_beta=args.foe_beta)
+                       rounds=args.rounds, floor=args.floor, foe_beta=args.foe_beta,
+                       act_rows=args.act_rows)
     search = Search(net, [pool], dev, cfg, threads=args.threads, seed=args.seed)
     B = args.battles
     env = ataraxos_env.SelfPlay(B, seed=args.seed, teams=[games], max_turns=args.max_turns,
