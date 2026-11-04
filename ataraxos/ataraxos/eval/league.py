@@ -120,15 +120,22 @@ def bt_elo(names, games, iters=200):
     return 400 * np.log10(p)
 
 
-def rate(names, games, active, boot=300, seed=0):
+def rate(names, games, active, boot=300, seed=0, min_games=24):
     """(elo [k], lo, hi, P(>= the leader) [k], leader index); the leader is
-    the top active config by point Elo."""
+    the top active config by point Elo among those with `min_games` games
+    (any active one if none has), so a hot start on a few games can't cut
+    the field."""
     elo = bt_elo(names, games)
     rng = np.random.default_rng(seed)
     samples = np.array([bt_elo(names, [games[i] for i in rng.integers(len(games), size=len(games))])
                         for _ in range(boot)])
     lo, hi = np.percentile(samples, [2.5, 97.5], axis=0)
+    count = {n: 0 for n in names}
+    for g in games:
+        count[g["a"]] += 1
+        count[g["b"]] += 1
     act = [i for i, n in enumerate(names) if n in active]
+    act = [i for i in act if count[names[i]] >= min_games] or act
     leader = max(act, key=lambda i: elo[i])
     p_top = (samples >= samples[:, [leader]] - 1e-9).mean(0)
     return elo, lo, hi, p_top, leader
@@ -150,7 +157,7 @@ def costs(games):
     return {k: sec[k] / n[k] for k in sec if n[k]}
 
 
-def standings(d, configs=None):
+def standings(d, configs=None, min_games=24):
     games = load_games(d)
     if configs is None:
         configs = read_configs(d) if os.path.exists(os.path.join(d, "configs.txt")) else []
@@ -165,7 +172,7 @@ def standings(d, configs=None):
     head = f"{time.strftime('%H:%M:%S')}  {len(games)} games"
     if not games:
         return head, None
-    elo, lo, hi, p_top, leader = rate(names, games, active)
+    elo, lo, hi, p_top, leader = rate(names, games, active, min_games=min_games)
     rec = {n: [0, 0, 0] for n in names}
     pair = {}
     for g in games:
@@ -185,7 +192,8 @@ def standings(d, configs=None):
         c = f"{cost[n]:6.2f}" if n in cost else f"{'-':>6}"
         lines.append(f"{mark} {n:<{nw}}{elo[i]:6.0f}  [{lo[i]:5.0f},{hi[i]:5.0f}]  {f'{w}-{t}-{l}':>9}  "
                      f"{p_top[i]:6.2f}  {c}")
-    lines.append("  (x retired; P(top) the bootstrap share at or above the leader; s/root batched, shared GPU)")
+    lines.append(f"  (x retired; P(top) the bootstrap share at or above the leader, the top with {min_games}+ games;"
+                 " s/root batched, shared GPU)")
     lines.append("")
     lines.append("pair records (row's W-L vs column):")
     w = max(10, max(len(n) for n in names) + 2)
@@ -305,7 +313,7 @@ def main():
             else:
                 log(f"{tag} exited {rc} (try {tries[tag]}): dropped (see logs/{tag}.log)")
         if ended or time.time() - last > 60:
-            text, r = standings(d, read_configs(d))
+            text, r = standings(d, read_configs(d), args.min_games)
             if r is not None:
                 counts = {n: 0 for n in r["names"]}
                 for g in r["games"]:
