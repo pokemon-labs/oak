@@ -30,8 +30,9 @@ is retried up to `--tries` times.
 
     python -m ataraxos.eval.league --standings DIR   # print standings only
 
-Names: d{depth}r{rounds}b{budget, k}{m}x{n}, then pp for the per_pair mode,
-e.g. d8r2b2k3x3, d4r4b2k3x3pp (`config_name`).
+Names: d{depth}r{rounds}b{budget, k}{m}x{n}_{team|pair}: _team the per_type
+mode (a policy per own team, marginal over the other side's), _pair per_pair
+(a joint policy per team pair), e.g. d8r2b2k3x3_team (`config_name`).
 DIR/aliases.json ({"old": "new"}) renames configs in the games as they load,
 so matches still running under an old name keep counting.
 
@@ -58,7 +59,7 @@ def config_name(spec):
     t = d.get("types", "3")
     b = int(d.get("budget", 2048))
     name = f"d{d.get('depth', 4)}r{d.get('rounds', 2)}b{f'{b // 1024}k' if b % 1024 == 0 else f'{b}_'}" \
-           f"{d.get('ta', t)}x{d.get('tb', t)}" + {"per_type": "", "per_pair": "pp"}[d.get("mode", "per_type")]
+           f"{d.get('ta', t)}x{d.get('tb', t)}" + {"per_type": "_team", "per_pair": "_pair"}[d.get("mode", "per_type")]
     extra = [f"{k}{v}" for k, v in sorted(d.items())
              if k not in ("depth", "rounds", "budget", "types", "ta", "tb", "mode")]
     return "_".join([name] + extra)
