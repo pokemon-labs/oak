@@ -66,6 +66,7 @@ def main():
     ap.add_argument("--act_rows", type=int, default=8192)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default="")
+    ap.add_argument("--task", default="", help="the league's task tag, in each game line (a retry's games replace)")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -99,7 +100,7 @@ def main():
                 print(f"{time.time() - t0:7.0f}s  {na} vs {nb} game {w + t + l}/{B} "
                       f"{'WTL'[1 - result[bt]]}: {w}-{t}-{l}, searches {searched}", flush=True)
                 if out:
-                    out.write(json.dumps({"a": na, "b": nb, "seed": args.seed, "flip": flip, "battle": int(bt),
+                    out.write(json.dumps({"task": args.task, "a": na, "b": nb, "seed": args.seed, "flip": flip, "battle": int(bt),
                                           "a_p1": bool(a_p1), "res": int(result[bt]), "decisions": int(turns[bt]),
                                           "t": round(time.time() - t0, 1)}) + "\n")
                     out.flush()

@@ -5,9 +5,13 @@ at once on the GPU. Games stream into DIR/games.jsonl; DIR/standings.txt (and
 stdout) has the Bradley-Terry Elo of each config (anchored to the first,
 95% intervals from a bootstrap over games) and the pair matrix, refreshed
 each minute and whenever a match ends. A restart skips the tasks in DIR/done.
+A match starts only while the GPU has `--min_free_gb` free (one at a time,
+`--stagger` s apart, so the last one's memory shows first); a failed one
+(an OOM) goes back in the queue, up to `--tries` times; its games are keyed
+by (task, battle), so a retry's replace the failed attempt's.
 
     python -m ataraxos.eval.league CKPT DIR --config SPEC [--config SPEC ...]
-        [--rounds 4] [--battles 16] [--procs 8] [--act_rows 8192]
+        [--rounds 4] [--battles 8] [--procs 8] [--act_rows 4096] [--min_free_gb 4]
 
     python -m ataraxos.eval.league --standings DIR   # print standings only
 """
@@ -27,13 +31,14 @@ def load_games(d):
     p = os.path.join(d, "games.jsonl")
     if not os.path.exists(p):
         return []
-    out = []
+    out = {}
     for line in open(p):
         try:
-            out.append(json.loads(line))
+            g = json.loads(line)
         except json.JSONDecodeError:  # a line being written
-            pass
-    return out
+            continue
+        out[(g.get("task", ""), g["seed"], g["flip"], g["a"], g["b"], g["battle"])] = g  # a retry's game replaces
+    return list(out.values())
 
 
 def bt_elo(names, games, iters=200):
@@ -105,15 +110,27 @@ def standings(d, names=None, boot=200, seed=0):
     return "\n".join(lines)
 
 
+def gpu_free_gb():
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=20).stdout
+        return float(out.split()[0]) / 1024
+    except Exception:
+        return 0.0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("ckpt", nargs="?")
     ap.add_argument("dir", nargs="?")
     ap.add_argument("--config", action="append", default=[])
     ap.add_argument("--rounds", type=int, default=4)
-    ap.add_argument("--battles", type=int, default=16)
+    ap.add_argument("--battles", type=int, default=8)
     ap.add_argument("--procs", type=int, default=8)
-    ap.add_argument("--act_rows", type=int, default=8192)
+    ap.add_argument("--act_rows", type=int, default=4096)
+    ap.add_argument("--min_free_gb", type=float, default=4.0)
+    ap.add_argument("--stagger", type=float, default=15.0)
+    ap.add_argument("--tries", type=int, default=3)
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--standings", default="", help="print DIR's standings and exit")
     args = ap.parse_args()
@@ -139,18 +156,24 @@ def main():
     todo = [t for t in tasks if not os.path.exists(os.path.join(d, "done", t[0]))]
     print(f"{len(tasks)} tasks, {len(todo)} to run, {args.procs} at once", flush=True)
     running = {}
-    last = 0.0
+    tries = {}
+    last, launched = 0.0, 0.0
+    env = dict(os.environ, PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
     while todo or running:
-        while todo and len(running) < args.procs:
-            tag, a, b, seed, flip = todo.pop(0)
+        if todo and len(running) < args.procs and time.time() - launched > args.stagger \
+                and gpu_free_gb() >= args.min_free_gb:
+            task = todo.pop(0)
+            tag, a, b, seed, flip = task
+            tries[tag] = tries.get(tag, 0) + 1
+            launched = time.time()
             cmd = [sys.executable, "-u", "-m", "ataraxos.eval.search_match", args.ckpt, "--a", spec[a],
                    "--b", spec[b], "--battles", str(args.battles), "--seed", str(seed),
                    "--out", os.path.join(d, "games.jsonl"), "--act_rows", str(args.act_rows),
-                   "--threads", str(args.threads)] + (["--flip"] if flip else [])
-            log = open(os.path.join(d, "logs", tag + ".log"), "w")
-            running[tag] = (subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT), log)
+                   "--threads", str(args.threads), "--task", tag] + (["--flip"] if flip else [])
+            log = open(os.path.join(d, "logs", tag + ".log"), "a")
+            running[tag] = (subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env), log, task)
         ended = False
-        for tag, (p, log) in list(running.items()):
+        for tag, (p, log, task) in list(running.items()):
             rc = p.poll()
             if rc is None:
                 continue
@@ -159,13 +182,19 @@ def main():
             ended = True
             if rc == 0:
                 open(os.path.join(d, "done", tag), "w").close()
-            print(f"{time.strftime('%H:%M:%S')}  {tag} exited {rc}" + ("" if rc == 0 else " (see its log)"),
-                  flush=True)
+                msg = "done"
+            elif tries[tag] < args.tries:
+                todo.append(task)
+                msg = f"exited {rc}, try {tries[tag]}: requeued (see its log)"
+            else:
+                msg = f"exited {rc}, try {tries[tag]}: dropped (see its log)"
+            print(f"{time.strftime('%H:%M:%S')}  {tag} {msg}", flush=True)
         if ended or time.time() - last > 60:
             text = standings(d, names)
             with open(os.path.join(d, "standings.txt"), "w") as f:
                 f.write(text + "\n")
-            print(text + f"\n  running {len(running)}, queued {len(todo)}\n", flush=True)
+            print(text + f"\n  running {len(running)}, queued {len(todo)}, gpu free {gpu_free_gb():.1f} GB\n",
+                  flush=True)
             last = time.time()
         time.sleep(2)
     print("league done", flush=True)
