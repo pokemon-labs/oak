@@ -204,18 +204,19 @@ class Policy(nn.Module):
 
 
 def pad_chunks(tokens: torch.Tensor, offsets: torch.Tensor, max_lines: int) -> torch.Tensor:
-    """The env's flat tokens [T, COLUMNS] and offsets [D + 1] -> [D, l,
+    """The env's flat tokens [T, COLUMNS] and offsets [D + 1] (same device) -> [D, l,
     COLUMNS], right-padded with zeros (KIND 0), each chunk cut to its last
     max_lines lines; l is the longest kept, at least 1."""
     D = offsets.numel() - 1
     lengths = (offsets[1:] - offsets[:-1]).clamp(max=max_lines)
     l = max(1, int(lengths.max())) if D else 1
-    out = torch.zeros(D, l, tokens.shape[-1], dtype=tokens.dtype)
+    dev = tokens.device  # on the GPU when the tokens are: the CPU's padding left it idle in search
+    out = torch.zeros(D, l, tokens.shape[-1], dtype=tokens.dtype, device=dev)
     if D == 0 or tokens.numel() == 0:
         return out
-    row = torch.repeat_interleave(torch.arange(D), lengths)
+    row = torch.repeat_interleave(torch.arange(D, device=dev), lengths)
     first = offsets[1:] - lengths  # the first kept line of each chunk
-    col = torch.arange(row.numel()) - torch.repeat_interleave(torch.cumsum(lengths, 0) - lengths, lengths)
+    col = torch.arange(row.numel(), device=dev) - torch.repeat_interleave(torch.cumsum(lengths, 0) - lengths, lengths)
     out[row, col] = tokens[first[row] + col]
     return out
 

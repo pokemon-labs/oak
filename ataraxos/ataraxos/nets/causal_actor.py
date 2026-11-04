@@ -89,7 +89,7 @@ class CausalActor:
             t[D:] = 0
         off = obs["offsets"]
         lengths = np.minimum(off[1:] - off[:-1], net.c.max_lines)
-        chunks = pad_chunks(torch.from_numpy(obs["tokens"]), torch.from_numpy(off), net.c.max_lines)
+        chunks = pad_chunks(to(obs["tokens"]), to(off), net.c.max_lines)
         state = obs.get("state")
 
         def padded(a, fill=0):
@@ -104,7 +104,7 @@ class CausalActor:
         n = to(padded(obs["n"], 2))
         st = to(padded(state)) if net.c.state else None
         if self.graphs:
-            lines = torch.zeros(B, net.c.max_lines, chunks.shape[2], dtype=chunks.dtype)
+            lines = torch.zeros(B, net.c.max_lines, chunks.shape[2], dtype=chunks.dtype, device=dev)
             lines[:D, :chunks.shape[1]] = chunks
             logits, value, k, v, *q = self.fn(lines.to(dev, non_blocking=True), request, st, choices, n, t,
                                               self.k[:, key], self.v[:, key])
