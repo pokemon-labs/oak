@@ -163,6 +163,10 @@ def to_id(s):
     return "".join(c for c in s.lower() if c.isalnum())
 
 
+# Showdown's line after a rated game, for each player
+RATING = re.compile(r"^\|raw\|(.+?)'s rating: \d+ (?:&rarr;|→) <strong>(\d+)</strong>", re.M)
+
+
 def say(*a):
     print(time.strftime("%H:%M:%S"), *a, flush=True)
 
@@ -320,6 +324,8 @@ class Battle:
             if tag == "error":
                 say(self.room, line)
                 self.bot.emit("error", room=self.room, text="|".join(p[2:]))
+            elif tag == "player" and len(p) > 5 and p[5].isdigit() and to_id(p[3]) == to_id(self.bot.args.name):
+                self.bot.saw_rating(int(p[5]))
             elif tag == "turn" and len(p) > 2:
                 self.turn = int(p[2]) if p[2].isdigit() else self.turn
             elif tag == "c" and len(p) > 3:
@@ -594,6 +600,17 @@ class Bot:
         self.ladder_i = 0  # the next requeue's place in --ladder-delays
         self.requeue = None  # the pending requeue's handle
 
+    def saw_rating(self, elo):
+        """Our rating, from a game's end or (in case we missed that) the next
+        one's start: with --ladder, the highest yet goes to peak.txt beside
+        --games-dir ("ELO TIME")."""
+        path = os.path.join(os.path.dirname(os.path.abspath(self.args.games_dir)), "peak.txt")
+        peak = float(open(path).read().split()[0]) if os.path.exists(path) else 0
+        if self.args.ladder and elo > peak:
+            with open(path, "w") as f:
+                f.write(f"{elo} {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n")
+            say("ladder: new peak elo", elo)
+
     def game_index(self, game):
         for i, row in enumerate(self.schedule):
             if row[0] == str(game):
@@ -797,6 +814,11 @@ class Bot:
                 self.challenged(p[2].strip(), p[4][len("/challenge "):])
 
     def room_message(self, room, body):
+        # the rated result comes after |win|, so usually to a battle we've dropped
+        for name, elo in RATING.findall(body):
+            if to_id(name) == to_id(self.args.name):
+                say("ladder: rating", elo)
+                self.saw_rating(int(elo))
         if room not in self.battles:
             if "|init|battle" not in body:
                 return  # a battle we left
