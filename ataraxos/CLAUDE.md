@@ -496,3 +496,35 @@ Box shut down 2026-11-04. Everything is on HF: `opencover/ataraxos-runs`
 (runs/ incl. every rby4 ckpt to 1750, h2h, league1/2, anchors/, arena/ with
 each bot's games as games.tar.gz) and `opencover/birch-runs` (runs/, bots/
 brew, glegle, wasian). Tokens and logins were not uploaded.
+
+## Perfect-info trainer (2026-11-18, for oak's IS-MCTS)
+
+The user's: ataraxos's training on perfect information, the net then used
+unmodified in oak's IS-MCTS. rby4's flags without Expected SARSA (the joint
+head and SARSA left out of v1). Code: `src/pi_env.hpp`, binding
+`ataraxos/_ext/ataraxos_pi.cpp` (module `ataraxos_pi`, linked to oak's
+libpkmn_chance like oak's search; its own module, `py::module_local`, since
+two pybind `SelfPlay`s collide), `ataraxos/pi/{net,agents,train}.py`.
+
+- Env: one row per battle step, libpkmn's choices (not Showdown's
+  request), oak's features: battle + durations, hidden counters out. A row
+  where neither side has two choices is played in the env.
+- Net (the user's design, ~/nn-bench's "d=64 1 block MLP x2 -> pool ->
+  MLP128"): 12 mon tokens (side, order slot). Separate Pokémon (species,
+  status, HP on oak's 50 buckets) and moves (id x PP bucket) nets, so a
+  search precomputes each per Pokémon as oak's cache.h; the token is linear
+  in them plus (side, slot). The active net (oak's Active) is added to slot
+  0's token, live per leaf. Fainted / empty masked. Masked per-side pool,
+  LN, MLP128, W/D/L value (P1's), two policy heads over oak's flat 315
+  (the legal rows only at search time). `pi` 203k params (78k in the cached
+  subnets), `pi_tiny` 65k.
+- Data: each player's trajectory is the rows where it has 2+ choices, so
+  ataraxos's returns_and_advantages / data_stats run unchanged (P2's value
+  is P1's W/D/L reversed); minibatches are shuffled kept decisions (no
+  history). lr_ceil 3e-4 and temperature_ceil 0.1 are rby3's fresh values
+  (rby4's 1.15e-4 / 0.0098 continued rby3's schedule; not confirmed).
+- Laptop checks (CPU): env 3.2M rows/s random play on 2 threads; pi_tiny,
+  256 battles, 512 games an iteration: the current net vs random 0.54 /
+  0.86 / 0.98 and vs maxdamage 0.03 / 0.12 / 0.30 at it 20 / 40 / 60.
+- Not done: the box run, the C++ forward in oak's IS-MCTS (and its check
+  against this file's outputs), CUDA graphs / compile for the actor.

@@ -28,7 +28,7 @@
 namespace py = pybind11;
 namespace pi = ataraxos::pi;
 
-struct Env : pi::SelfPlay {
+struct PiEnv : pi::SelfPlay {
   using pi::SelfPlay::SelfPlay;
   std::vector<std::string> names;
 };
@@ -37,7 +37,7 @@ namespace {
 
 template <typename T> py::array_t<T> array(std::vector<py::ssize_t> shape) { return py::array_t<T>(shape); }
 
-py::dict observe(const Env& env) {
+py::dict observe(const PiEnv& env) {
   const auto& shards = env.shards();
   size_t R = 0, E = 0;
   std::vector<size_t> r0(shards.size()), e0(shards.size());
@@ -141,7 +141,7 @@ PYBIND11_MODULE(ataraxos_pi, m) {
   m.attr("MOVE_DIM") = int(pi::MOVE_DIM);
   m.attr("SPECIES_DIM") = 152; // 0 masked, 1-151
 
-  py::class_<Env>(m, "SelfPlay")
+  py::class_<PiEnv>(m, "SelfPlay", py::module_local())
       .def(py::init([](size_t battles, uint64_t seed, std::vector<std::string> teams, uint16_t max_turns,
                        size_t shards, int threads) {
              size_t errors = 0;
@@ -149,14 +149,14 @@ PYBIND11_MODULE(ataraxos_pi, m) {
              std::vector<ataraxos::Team> pool = ataraxos::load_teams(teams, errors, &names);
              if (!teams.empty() && pool.empty()) throw std::invalid_argument("no team parses");
              if (errors) py::print("ataraxos_pi:", errors, "teams don't parse, skipped");
-             Env* env = new Env(battles, seed, shards, threads, std::move(pool), max_turns);
+             PiEnv* env = new PiEnv(battles, seed, shards, threads, std::move(pool), max_turns);
              env->names = std::move(names);
              return env;
            }),
            py::arg("battles"), py::arg("seed") = 1, py::arg("teams") = std::vector<std::string>{},
            py::arg("max_turns") = 0, py::arg("shards") = 64, py::arg("threads") = 8)
       .def("reset",
-           [](Env& env) {
+           [](PiEnv& env) {
              {
                py::gil_scoped_release release;
                env.reset();
@@ -164,7 +164,7 @@ PYBIND11_MODULE(ataraxos_pi, m) {
              return observe(env);
            })
       .def("step",
-           [](Env& env, py::array_t<uint8_t, py::array::c_style | py::array::forcecast> picks) {
+           [](PiEnv& env, py::array_t<uint8_t, py::array::c_style | py::array::forcecast> picks) {
              if (picks.ndim() != 2 || picks.shape(1) != 2 || size_t(picks.shape(0)) != env.rows())
                throw std::invalid_argument("picks is [R, 2]");
              std::span<const std::array<uint8_t, 2>> p(reinterpret_cast<const std::array<uint8_t, 2>*>(picks.data()),
@@ -183,18 +183,18 @@ PYBIND11_MODULE(ataraxos_pi, m) {
              }
              return observe(env);
            })
-      .def("set_team_weights", &Env::set_team_weights)
-      .def_property_readonly("team_probs", &Env::team_probs)
-      .def_property_readonly("team_names", [](const Env& env) { return env.names; })
+      .def("set_team_weights", &PiEnv::set_team_weights)
+      .def_property_readonly("team_probs", &PiEnv::team_probs)
+      .def_property_readonly("team_names", [](const PiEnv& env) { return env.names; })
       .def_property_readonly("team_counts",
-                             [](const Env& env) {
+                             [](const PiEnv& env) {
                                std::vector<uint64_t> c(env.pool_size(), 0);
                                for (const auto& sh : env.shards()) {
                                  for (size_t i = 0; i < c.size(); i++) c[i] += sh.team_counts[i];
                                }
                                return c;
                              })
-      .def_property_readonly("stats", [](const Env& env) {
+      .def_property_readonly("stats", [](const PiEnv& env) {
         uint64_t forced = 0, games = 0, capped = 0;
         for (const auto& sh : env.shards()) forced += sh.forced, games += sh.games, capped += sh.capped;
         py::dict d;
