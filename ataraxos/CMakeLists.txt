@@ -28,6 +28,17 @@ target_compile_definitions(ataraxos INTERFACE LOG CHANCE CALC)
 target_link_libraries(ataraxos INTERFACE libpkmn_client)
 target_compile_options(ataraxos INTERFACE -Wall -Wextra)
 
+# The perfect-info env (src/pi_env.hpp): oak's libpkmn_chance build (no
+# log), as oak's search links.
+add_library(libpkmn_chance STATIC IMPORTED)
+set_target_properties(libpkmn_chance PROPERTIES
+  IMPORTED_LOCATION ${OAK_DIR}/cpp/libpkmn/${LIBPKMN_MODE}/chance/libpkmn-showdown.a)
+add_library(ataraxos_pi_lib INTERFACE)
+target_include_directories(ataraxos_pi_lib INTERFACE src ${OAK_DIR}/cpp/include)
+target_compile_definitions(ataraxos_pi_lib INTERFACE CHANCE CALC)
+target_link_libraries(ataraxos_pi_lib INTERFACE libpkmn_chance)
+target_compile_options(ataraxos_pi_lib INTERFACE -Wall -Wextra)
+
 find_package(Threads REQUIRED)
 find_package(OpenMP)
 
@@ -52,6 +63,10 @@ foreach(name ataraxos_env ataraxos_client)
   target_link_libraries(${name} PRIVATE ataraxos)
   set_target_properties(${name} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ataraxos/_ext)
 endforeach()
+pybind11_add_module(ataraxos_pi ataraxos/_ext/ataraxos_pi.cpp)
+target_link_libraries(ataraxos_pi PRIVATE ataraxos_pi_lib)
+set_target_properties(ataraxos_pi PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ataraxos/_ext)
 if(OpenMP_CXX_FOUND)
   target_link_libraries(ataraxos_env PRIVATE OpenMP::OpenMP_CXX)
+  target_link_libraries(ataraxos_pi PRIVATE OpenMP::OpenMP_CXX)
 endif()
