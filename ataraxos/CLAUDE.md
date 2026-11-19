@@ -522,7 +522,7 @@ two pybind `SelfPlay`s collide), `ataraxos/pi/{net,agents,train}.py`.
   ataraxos's returns_and_advantages / data_stats run unchanged (P2's value
   is P1's W/D/L reversed); minibatches are shuffled kept decisions (no
   history). lr_ceil 3e-4 and temperature_ceil 0.1 are rby3's fresh values
-  (rby4's 1.15e-4 / 0.0098 continued rby3's schedule; not confirmed).
+  (the user's, 2026-11-18; rby4's 1.15e-4 / 0.0098 continued rby3's schedule).
 - Laptop checks (CPU): env 3.2M rows/s random play on 2 threads; pi_tiny,
   256 battles, 512 games an iteration: the current net vs random 0.54 /
   0.86 / 0.98 and vs maxdamage 0.03 / 0.12 / 0.30 at it 20 / 40 / 60.
