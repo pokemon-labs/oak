@@ -528,3 +528,10 @@ two pybind `SelfPlay`s collide), `ataraxos/pi/{net,agents,train}.py`.
   0.86 / 0.98 and vs maxdamage 0.03 / 0.12 / 0.30 at it 20 / 40 / 60.
 - Not done: the box run, the C++ forward in oak's IS-MCTS (and its check
   against this file's outputs), CUDA graphs / compile for the actor.
+- Run: build as the rest (`cmake --build build --target ataraxos_pi`, needs
+  oak's `cpp/libpkmn/<mode>/chance/` built), then `python -m
+  ataraxos.pi.train --run <dir> [--size pi_tiny] [teams...]`; every Config
+  field is a `--flag`; `--run` resumes from its checkpoint.
+- Box: origin (pokemon-labs/oak) is public. Push main2 only when the box
+  needs it, pull on the box, then delete the remote branch right away (the
+  user's, 2026-11-18). The user said to hold off on the next steps; ask first.
