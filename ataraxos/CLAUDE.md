@@ -12,8 +12,9 @@ parts. Reuse oak's code where possible (`client.h`'s `compare_battles`,
 - **Stop and confirm decisions** before going far with them: lay out the
   determinations and open choices, recommend, wait.
 - **Tests run on the box**, not the laptop (the laptop only compiles).
-- **Laptop network: only `git push` and moving team files.** Everything else
-  (downloads, builds, pip) uses the box's internet. Code reaches the box by
+- **Laptop network: fine to use, but be careful.** It is sometimes throttled
+  to ~6 kB/s; then keep to `git push` and small files and leave downloads,
+  builds and pip to the box's internet. Code reaches the box by
   committing on `main2`, pushing, and `git pull` on the box.
 - Commits: short lowercase messages, the user's git identity, no Claude
   trailers. Ataraxos commits touch only `ataraxos/`. (The user's oak WIP,
