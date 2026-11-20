@@ -1105,6 +1105,9 @@ def main():
             asyncio.run(bot.run())
             if bot.done:
                 return
+            if bot.arena and getattr(bot.ws, "close_code", None) == 4001:
+                say("another connection logged in as the bot (4001): exiting")
+                return  # pkmn.bot: one process per bot; the restart loop stops on exit 0
             say("disconnected")
         except Exception:  # noqa: BLE001
             say("connection failed:", traceback.format_exc())
