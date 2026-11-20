@@ -536,3 +536,16 @@ two pybind `SelfPlay`s collide), `ataraxos/pi/{net,agents,train}.py`.
 - Box: origin (pokemon-labs/oak) is public. Push main2 only when the box
   needs it, pull on the box, then delete the remote branch right away (the
   user's, 2026-11-18). The user said to hold off on the next steps; ask first.
+
+## applemagpie on pkmn.bot (2026-11-20)
+
+Box: `ssh -p 7799 root@142.127.68.223` (Vast, RTX 3060 12 GB, driver 550 so
+torch 2.6 cu124, Python 3.10). Code went by `box/push.sh` to `~/oak`
+(`~/oak-ataraxos` links to it); `ataraxos_pi` is not built there (no
+libpkmn chance build), the rest builds and checks. `applemagpie` (gen1ou)
+runs in tmux session `applemagpie`: `ROUNDS=4 DEPTH=4 BUDGET=1024
+CKPT=~/arena/applemagpie/ckpt1750.pt POOL=~/arena/applemagpie/pool.tsv
+box/arena_joint.sh applemagpie per_type 8780` (the Showdown ladder's
+d4r4b1k3x3_team, rby4 ckpt1750, top 20 pool), ~0.7 s a search. Token in
+`~/arena/token_applemagpie`. Stop: the user presses Pause, then once the card
+shows nothing left to play, kill the tmux session.
