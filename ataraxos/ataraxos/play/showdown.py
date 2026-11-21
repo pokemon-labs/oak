@@ -73,7 +73,12 @@ with "/choose default".
 
 Each battle's raw room text goes to GAMES_DIR/ROOM.log and its decisions
 (choices, probabilities, value) to GAMES_DIR/ROOM.jsonl, to replay failures
-through tests/cpp/check_client.
+through tests/cpp/check_client. ROOM.jsonl's first line is {title, team,
+ckpt}, written at the first request: `team` is the team the request shows
+we're playing, by its sets (2026-11-20: the arena's label was the last team
+sent with /utm, which a game starting while another ended got wrong, 46 of
+applemagpie's 276), with `team_sent` beside it when that differs from the
+team we thought we'd sent ("?": not one we know).
 
 Control (2026-10-26, the user's ask): with `--control-port`, a local TCP
 port (127.0.0.1 only) through which a harness watches and steers the bot,
@@ -81,7 +86,8 @@ JSON lines both ways; ataraxos/play/botctl.py is its CLI. A connection that send
 {"cmd": "events"} gets every event from then on (the decisions still
 pending first); any other command gets one reply, {"ok": ...}.
 
-- Events (`event`): `battle` (a battle starts), `decision` (a request
+- Events (`event`): `battle` (a battle starts, with the team we think we
+  sent), `team` (the first request shows another: `team`, `sent`), `decision` (a request
   waits for a choice: its choices with labels, the policy's probabilities,
   pick and P(win), the request JSON, the room's lines since the last
   decision, the seconds until the fallback), `committed` (what was sent and
@@ -161,6 +167,25 @@ MODES = ("auto", "propose", "manual")
 
 def to_id(s):
     return "".join(c for c in s.lower() if c.isalnum())
+
+
+def team_key(packed):
+    """A packed team's sets as (species, moves) pairs, order-free, to compare
+    with request_key's."""
+    out = []
+    for s in packed.split("]"):
+        f = s.split("|")
+        out.append((to_id(f[1] or f[0]), tuple(sorted(to_id(m) for m in f[4].split(",") if m))))
+    return frozenset(out)
+
+
+def request_key(req):
+    """The team a request's side shows, as team_key gives it; None without one."""
+    mons = (req.get("side") or {}).get("pokemon") or []
+    if not mons:
+        return None
+    return frozenset((to_id(p["details"].split(",")[0]), tuple(sorted(to_id(m) for m in p.get("moves", []))))
+                     for p in mons)
 
 
 # Showdown's line after a rated game, for each player
@@ -299,8 +324,31 @@ class Battle:
         self.chat = None  # the last decision's chat line, said once the turn moves on
         self.raw = open(os.path.join(bot.args.games_dir, room + ".log"), "a")
         self.out = open(os.path.join(bot.args.games_dir, room + ".jsonl"), "a")
+        self.header = None  # ROOM.jsonl's first line, written once the first request shows our team
+
+    def write_header(self):
+        if self.header is not None:
+            self.out.write(json.dumps(self.header) + "\n")
+            self.out.flush()
+            self.header = None
+
+    def check_team(self):
+        """The header's team from the first request's sets: what we're playing,
+        not what we last sent."""
+        try:
+            key = request_key(json.loads(self.request))
+        except (ValueError, KeyError, AttributeError):
+            key = None
+        sent = self.header["team"]
+        if key is not None and self.bot.team_keys.get(sent) != key:
+            played = self.bot.team_by_key.get(key, "?")
+            say(self.room, "team: sent", sent, "but playing", played)
+            self.header.update(team=played, team_sent=sent)
+            self.bot.emit("team", room=self.room, team=played, sent=sent)
+        self.write_header()
 
     def fail(self, where, e):
+        self.write_header()
         if not self.broken:
             say(self.room, f"client failed in {where}, playing on with /choose default:", repr(e))
             self.out.write(json.dumps({"error": where, "what": repr(e), "trace": traceback.format_exc()}) + "\n")
@@ -315,6 +363,8 @@ class Battle:
             if line.startswith("|request|"):
                 self.stop_idle()
                 self.request = line[len("|request|"):]
+                if self.header is not None:
+                    self.check_team()
                 self.due = time.monotonic() + random.uniform(*self.delay())
                 continue
             if line:
@@ -366,6 +416,7 @@ class Battle:
                 self.say_chat()
                 self.stop_idle()
                 say(self.room, "ended:", result, f"after {self.decisions} decisions")
+                self.write_header()
                 self.out.write(json.dumps({"result": result}) + "\n")
                 self.out.flush()
                 self.drop()
@@ -574,6 +625,8 @@ class Bot:
             self.search = Search(load_policy(args.ckpt, args.search_device, args.weights), [args.search_pool],
                                  args.search_device, cfg, threads=args.threads)
         self.pool = [line.rstrip("\n").split("\t") for line in open(args.teams) if "\t" in line]
+        self.team_keys = {name: team_key(packed) for name, packed in self.pool}  # every label we send -> its sets
+        self.team_by_key = {k: name for name, k in self.team_keys.items()}  # the pool's teams by their sets
         self.rng = np.random.default_rng()
         self.battles = {}
         self.team_for = {}  # challenger's ID -> the team name we accepted with
@@ -642,6 +695,7 @@ class Bot:
             return
         game, name, packed = self.schedule[self.sched_i]
         self.team_for[opp] = f"game {game}: {name}"
+        self.team_keys[self.team_for[opp]] = team_key(packed)
         say("schedule: challenging", self.args.challenge, f"to game {game} of {len(self.schedule)} with", name)
         self.send("", f"/utm {packed}")
         self.send("", f"/challenge {self.args.challenge}, {FORMAT}")
@@ -830,7 +884,7 @@ class Bot:
                 self.searching = False
             if self.arena:
                 team = self.arena_team
-            say("battle", room, title, "| team:", team)
+            say("battle", room, title, "| team sent:", team)
             self.battles[room] = Battle(self, room)
             self.battles[room].title = title
             self.battles[room].foe = foes[0] if foes else None
@@ -838,7 +892,7 @@ class Bot:
                 self.battles[room].sched = self.challenge_game  # the challenge we sent
                 say("schedule: game", self.schedule[self.challenge_game][0], "is", room)
                 self.challenge_game = self.challenge_sent = self.challenge_to = None  # accepted
-            self.battles[room].out.write(json.dumps({"title": title, "team": team, "ckpt": self.args.ckpt}) + "\n")
+            self.battles[room].header = {"title": title, "team": team, "ckpt": self.args.ckpt}
             self.emit("battle", room=room, title=title, team=team, foe=foes[0] if foes else None,
                       mode=self.battles[room].mode)
         self.battles[room].message(body)
