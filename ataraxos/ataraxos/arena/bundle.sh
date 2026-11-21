@@ -32,7 +32,7 @@ cp "$here/ataraxos/_ext/__init__.py" "$app/_ext/"
 for m in ataraxos_client ataraxos_env ataraxos_net; do
   cp "$here/ataraxos/_ext/$m$tag" "$app/_ext/"
 done
-cp "$here"/ataraxos/arena/{__init__,actor,search,main,export}.py "$app/arena/"
+cp "$here"/ataraxos/arena/{__init__,actor,search,main,export,stats}.py "$app/arena/"
 cp "$here/teams/selfplay/oak1500.txt" "$dist/oak1500.txt"
 
 if [ "$(uname)" = Darwin ]; then

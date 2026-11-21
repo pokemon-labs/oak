@@ -44,6 +44,7 @@ import numpy as np
 
 from ataraxos._ext import ataraxos_client
 from ataraxos.arena.actor import Actor, load
+from ataraxos.arena import stats as usage_stats
 from ataraxos.arena.search import Search, SearchConfig
 
 SETTLE = 0.5  # seconds a request waits for its |inactive| line
@@ -254,6 +255,11 @@ def main(argv=None):
         seed = a.seed if a.seed is not None else int.from_bytes(os.urandom(8), "little") >> 2
         search = Search(net, [a.pool], cfg, threads=a.threads, seed=seed)
     warm_up(net)
+    try:
+        st = usage_stats.load()
+        log("usage stats:", usage_stats.summary(st) if st else f"none ({usage_stats.path() or 'no PKMN_STATS_DIR'})")
+    except Exception as e:  # noqa: BLE001 (informational only)
+        log("usage stats unreadable:", repr(e))
     log(f"loaded in {time.monotonic() - tic:.1f} s ({a.threads} threads, search {'off' if search is None else a.joint or 'vanilla'})")
     send("/ready")
     game = Game(a, net, search)
