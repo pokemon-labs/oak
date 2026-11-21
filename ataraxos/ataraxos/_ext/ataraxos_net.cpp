@@ -9,7 +9,7 @@
 //   act(tokens i16 [T, COLUMNS], offsets i64 [D + 1], request i16 [D,
 //     REQUEST_FIELDS], state i16 [D, STATE_FIELDS] or None, choices u8 [D,
 //     CHOICES], n u8 [D], keys i64 [D], t i64 [D], K, V f32 [layers, slots,
-//     window - 1, d] (written in place), decide=True) -> (logits f32 [D,
+//     window - 1, d] (written in place), decide=True; the state only with decide) -> (logits f32 [D,
 //     CHOICES], -inf past n; value logits f32 [D, 3]), or None with
 //     decide=False (a prefill: the summaries and the cache writes only).
 
@@ -100,7 +100,8 @@ PYBIND11_MODULE(ataraxos_net, m) {
             const int64_t* off = offsets.data();
             if (D > 0 && (off[0] < 0 || off[D] > tokens.shape(0))) throw std::invalid_argument("act: offsets");
             In<int16_t> st;
-            if (net.config().state) {
+            const bool reads_state = net.config().state && decide;  // a prefill doesn't
+            if (reads_state) {
               if (state.is_none()) throw std::invalid_argument("act: the net reads the state");
               st = In<int16_t>::ensure(state);
               if (!st) throw std::invalid_argument("act: state");
@@ -115,7 +116,7 @@ PYBIND11_MODULE(ataraxos_net, m) {
             b.tokens = tokens.data();
             b.offsets = off;
             b.request = request.data();
-            b.state = net.config().state ? st.data() : nullptr;
+            b.state = reads_state ? st.data() : nullptr;
             b.choices = choices.data();
             b.n = n.data();
             b.keys = keys.data();
