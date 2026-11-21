@@ -70,3 +70,18 @@ if(OpenMP_CXX_FOUND)
   target_link_libraries(ataraxos_env PRIVATE OpenMP::OpenMP_CXX)
   target_link_libraries(ataraxos_pi PRIVATE OpenMP::OpenMP_CXX)
 endif()
+
+# The torch-free net (src/net.hpp) for pkmn.ai's bundle (ataraxos/arena/):
+# no libpkmn; Accelerate's GEMMs on Apple, Eigen's (oak's submodule) elsewhere.
+pybind11_add_module(ataraxos_net ataraxos/_ext/ataraxos_net.cpp)
+target_include_directories(ataraxos_net PRIVATE src)
+target_compile_options(ataraxos_net PRIVATE -Wall -Wextra)
+if(APPLE)
+  target_link_libraries(ataraxos_net PRIVATE "-framework Accelerate")
+else()
+  target_include_directories(ataraxos_net SYSTEM PRIVATE ${OAK_DIR}/cpp/extern/eigen)
+  if(OpenMP_CXX_FOUND)
+    target_link_libraries(ataraxos_net PRIVATE OpenMP::OpenMP_CXX)
+  endif()
+endif()
+set_target_properties(ataraxos_net PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ataraxos/_ext)
