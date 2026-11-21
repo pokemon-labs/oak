@@ -549,3 +549,38 @@ box/arena_joint.sh applemagpie per_type 8780` (the Showdown ladder's
 d4r4b1k3x3_team, rby4 ckpt1750, top 20 pool), ~0.7 s a search. Token in
 `~/arena/token_applemagpie`. Stop: the user presses Pause, then once the card
 shows nothing left to play, kill the tmux session.
+
+## pkmn.ai (2026-11-21)
+
+pkmn.ai's ladder (https://pkmn.ai/rules; the arena's code is public,
+github.com/pkmn/ai `arena/`): one game per process over stdin/stdout, an
+Apple M6 Mac mini, no network, <= 500 MiB. The user's calls: a native
+darwin/arm64 bundle, no torch (a C++ forward pass), the first submission is
+applemagpie's setup exactly (rby4 ckpt1750 EMA, joint per_type 3x3, 4
+rounds, budget 1024, depth 4, pool oak1500.txt), the Q head left out (the
+search reads the value head only), built and tested on GitHub Actions
+(pokemon-labs/oak is public; main2 stays pushed for it; the user has no Mac).
+
+- `src/net.hpp` + `ataraxos/_ext/ataraxos_net.cpp` (module `ataraxos_net`,
+  no libpkmn): the causal net's forward, float32, batched (Accelerate's GEMM
+  on Apple, Eigen's elsewhere). `ataraxos/arena/export.py`: a checkpoint to
+  its weight file without torch (a restricted unpickler).
+  `ataraxos/arena/actor.py`: CausalActor on it, numpy caches.
+  `tests/py/check_net.py CKPT`: on ckpt1750, 12199 self-play decisions,
+  log-probs within 4.2e-5 of torch's, value 5.7e-6, the caches 3.8e-6.
+- `ataraxos/search_np.py`: SearchConfig, mmd, cell_means, gather_rows moved
+  out of search.py unchanged (search.py re-exports them).
+  `ataraxos/arena/search.py`: Search on the C++ net. `tests/py/
+  check_search_np.py CKPT`: greedy rollouts on both, same seed: joint 16/16
+  roots equal (logp 1.5e-5), vanilla 15/16 (one near-tie flip).
+- `ataraxos/arena/main.py`: the stdio bot (its docstring has the protocol).
+  `tests/showdown/arena.cjs`: a local arbiter (Showdown or @pkmn/sim, a
+  random player or another command, SIGSTOP time-slicing).
+  `ataraxos/arena/bundle.sh DIST`: the bundle (153 MiB on Linux).
+- `.github/workflows/ataraxos-arena.yml` (macos-15): libpkmn, a standalone
+  Python with numpy, the extensions (libomp from brew, bundled), net.bin
+  from the private checkpoint (secret HF_TOKEN), bundle, games under the
+  arena's sandbox.sb; a manual run with `version` uploads
+  `arena/bundles/ataraxos-VERSION.tar.zst` to opencover/ataraxos-runs and
+  prints its sha256. Never workflow artifacts (the repo is public).
+- Laptop: torch is in `~/oak/.venv` (Python 3.14); ckpt1750 from HF.
