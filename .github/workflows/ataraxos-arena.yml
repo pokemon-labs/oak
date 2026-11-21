@@ -1,0 +1,120 @@
+# ataraxos's pkmn.ai bundle (ataraxos/arena/, 2026-11-21): builds the native
+# darwin/arm64 bundle on Apple silicon, plays it against a random player
+# the arena's way (sandbox.sb from pkmn/ai, a read-only bundle, a scrubbed
+# environment, scratch-only writes, SIGSTOP time-slicing; @pkmn/sim 0.11.0),
+# and with a `version` (manual runs only) uploads it to the PRIVATE Hugging
+# Face repo. This repo is public: the weights and the bundle never become
+# workflow artifacts, and the logs carry only sizes, timings and moves.
+name: ataraxos arena bundle (macOS)
+
+on:
+  push:
+    branches: ["main2"]
+    paths: ["ataraxos/**", ".github/workflows/ataraxos-arena.yml"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "upload as this version (^[A-Za-z0-9][A-Za-z0-9._-]{0,11}$); empty: build and test only"
+        default: ""
+      games:
+        description: "test games against a random player"
+        default: "2"
+
+permissions:
+  contents: read
+
+env:
+  HF_REPO: opencover/ataraxos-runs
+  CKPT: runs/rby4/ckpt1750.pt
+  PKMN_AI_COMMIT: 2e3d4fa  # pkmn/ai's sandbox.sb
+  PYTHON: "3.12"
+  NUMPY: "2.3.5"
+
+jobs:
+  bundle:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submodules (engine, pybind11)
+        run: git submodule update --init --depth 1 cpp/extern/engine cpp/extern/pybind11
+      - uses: mlugg/setup-zig@v2.2.1
+        with:
+          version: 0.16.0
+      - uses: astral-sh/setup-uv@v6
+      - name: libomp, zstd
+        run: brew install libomp zstd && echo "OMP_DIR=$(brew --prefix libomp)" >> "$GITHUB_ENV"
+
+      - name: libpkmn (client, ReleaseFast)
+        working-directory: cpp/extern/engine
+        run: |
+          zig build -Dshowdown -Dpic -Doption=ebc=false -Doption=miss=false -Doption=advance=false \
+            -Doption=key=true -Dchance -Dcalc -Dlog -Doptimize=ReleaseFast \
+            --prefix-include-dir ../../../include --prefix-lib-dir ../../../libpkmn/ReleaseFast/client
+          ls ../../libpkmn/ReleaseFast/client
+
+      - name: Standalone Python with numpy
+        run: |
+          uv python install "$PYTHON"
+          base=$(cd "$(dirname "$(uv python find "$PYTHON")")/.." && pwd -P)  # the install, not uv's version symlink
+          mkdir -p dist && cp -R "$base" dist/python
+          test ! -L dist/python && test -x dist/python/bin/python3
+          uv pip install --python dist/python/bin/python3 --break-system-packages "numpy==$NUMPY"
+          dist/python/bin/python3 -c "import numpy, sys; print(sys.version, numpy.__version__)"
+
+      - name: Extensions
+        run: |
+          cmake -S ataraxos -B build -DCMAKE_BUILD_TYPE=Release \
+            -DPython_EXECUTABLE="$PWD/dist/python/bin/python3" -DOpenMP_ROOT="$OMP_DIR"
+          cmake --build build --target ataraxos_client ataraxos_env ataraxos_net -j 3
+          ls ataraxos/ataraxos/_ext/
+
+      - name: Weights (private checkpoint -> net.bin)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          uvx --from huggingface_hub hf download "$HF_REPO" "$CKPT" --local-dir "$RUNNER_TEMP/ckpt" > /dev/null
+          cd ataraxos && ../dist/python/bin/python3 -m ataraxos.arena.export "$RUNNER_TEMP/ckpt/$CKPT" ../dist/net.bin
+          rm -rf "$RUNNER_TEMP/ckpt"
+
+      - name: Bundle
+        run: ataraxos/ataraxos/arena/bundle.sh dist
+
+      - name: Play the arena's way
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sim" && (cd "$RUNNER_TEMP/sim" && npm init -y > /dev/null && npm i @pkmn/sim@0.11.0 > /dev/null)
+          curl -fsSL "https://raw.githubusercontent.com/pkmn/ai/$PKMN_AI_COMMIT/arena/config/sandbox.sb" -o "$RUNNER_TEMP/sandbox.sb"
+          chmod -R a-w dist
+          scratch="$RUNNER_TEMP/scratch"
+          cat > "$RUNNER_TEMP/agent.sh" <<EOF
+          #!/bin/bash
+          # as /opt/arena/bin/arena and limit.c: a fresh scratch, a scrubbed environment, sandbox.sb
+          rm -rf "$scratch" && mkdir -p "$scratch" && cd "$scratch"
+          exec env -i HOME="$scratch" TMPDIR="$scratch" XDG_CACHE_HOME="$scratch" PATH=/opt/homebrew/bin:/usr/bin:/bin \
+            LANG=C.UTF-8 PYTHONHASHSEED=0 OMP_NUM_THREADS=10 MKL_NUM_THREADS=10 ARENA_MEMORY_LIMIT_MB=14336 \
+            /usr/bin/sandbox-exec -f "$RUNNER_TEMP/sandbox.sb" -D AGENT_RO_DIR="$PWD/dist" -D AGENT_SCRATCH_DIR="$scratch" \
+            "$PWD/dist/run"
+          EOF
+          chmod +x "$RUNNER_TEMP/agent.sh"
+          cd "$RUNNER_TEMP"
+          NODE_PATH="$RUNNER_TEMP/sim/node_modules" node "$GITHUB_WORKSPACE/ataraxos/tests/showdown/arena.cjs" \
+            "${{ github.event.inputs.games || '2' }}" "$GITHUB_RUN_NUMBER" \
+            "$GITHUB_WORKSPACE/ataraxos/teams/selfplay/oak150.txt" "$RUNNER_TEMP/agent.sh" random | tee games.txt
+          for f in arena-*-p1.err; do echo "== $f"; tail -c 4096 "$f"; done
+          ! grep -E 'forfeit|exit [1-9]|invalid [1-9]' games.txt
+
+      - name: Upload to the private repo
+        if: github.event.inputs.version != ''
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,11}$ ]] || { echo "bad version"; exit 1; }
+          out="$RUNNER_TEMP/ataraxos-$VERSION.tar.zst"
+          tar -C dist -cf - . | zstd -19 -T0 -o "$out"
+          ls -l "$out"
+          echo "sha256: $(shasum -a 256 "$out" | cut -d' ' -f1)"
+          uvx --from huggingface_hub hf upload "$HF_REPO" "$out" "arena/bundles/ataraxos-$VERSION.tar.zst" > /dev/null
+          echo "uploaded to $HF_REPO arena/bundles/ataraxos-$VERSION.tar.zst"
