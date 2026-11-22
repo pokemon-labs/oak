@@ -140,15 +140,23 @@ class PiNet(nn.Module):
         tok = tok.reshape(B, 12, -1) + self.pos
         return tok, (species > 0).reshape(B, 12)
 
-    def forward(self, mon, hp, active):
-        """Returns (value logits [B, 3] (loss, draw, win) for P1, policy
-        logits [B, 2, POLICY])."""
+    def trunk(self, mon, hp, active):
+        """The shared hidden layer [B, hidden] both heads read."""
         x, mask = self.tokens(mon, hp, active)
         for b in self.blocks:
             x = b(x, mask)
         w = mask.view(-1, 2, 6, 1).to(x.dtype)
         pooled = (x.view(-1, 2, 6, self.c.d) * w).sum(2) / w.sum(2).clamp(min=1)  # [B, 2, d]
-        h = F.relu(self.fc(self.ln(pooled.flatten(1))))
+        return F.relu(self.fc(self.ln(pooled.flatten(1))))
+
+    def value(self, mon, hp, active):
+        """forward's value logits alone (search in training's leaves)."""
+        return self.value_out(F.relu(self.value_fc(self.trunk(mon, hp, active))))
+
+    def forward(self, mon, hp, active):
+        """Returns (value logits [B, 3] (loss, draw, win) for P1, policy
+        logits [B, 2, POLICY])."""
+        h = self.trunk(mon, hp, active)
         value = self.value_out(F.relu(self.value_fc(h)))
         policy = torch.stack([out(F.relu(fc(h))) for fc, out in zip(self.policy_fc, self.policy_out)], 1)
         return value, policy

@@ -89,7 +89,7 @@ Gains are guesses until the baseline is in.
 Order: 4, 3, 6 (flags or a few lines), then 1, then 2 once the numbers
 show act and train are close.
 
-### Flags (written 2026-11-22, not yet run on a GPU)
+### Flags (written 2026-11-22; first GPU numbers below)
 
 Every idea is a `Config` flag in `ataraxos/pi/train.py`; each default is
 the original code path, so a run with no new flags is the baseline and any
@@ -109,6 +109,10 @@ one flag can be switched off for an ablation. Code: `ataraxos/pi/fast.py`.
 | `--overlap 1` | 2: the learner in a thread on its own stream, the actor on its own copy of the net refreshed after each learner step (one step stale) | off |
 | `--eval_async 1` | 8: evals in a thread on copies of the nets, own stream, at most one in flight; results as their own `eval_it` log line | off |
 | `--eval_threads N` | the eval env's threads (0: `--threads`), so async evals don't oversubscribe | 0 |
+| `--actor_compile 1` | 3: `torch.compile` of the actor's forward (inside the graph with `graphs`; sampling stays eager) | off |
+| `--torch_threads N` | torch's CPU threads; **default 4**, the one changed default (torch's own, the host's CPU count, oversubscribes a box's CPU quota: ~300x slower CPU copies on the Vast 3060 box) | 4 |
+| `--take_gather 1` | 7: `NumpyBuffer.take` gathers the needed rows from the stored parts, no full concatenation (0.80 -> 0.45 s a take on the laptop, identical losses) | off |
+| `--stats_every N` | `metrics.data_stats` every N iterations | 1 |
 
 Checks for when a machine is free: `tests/py/check_pi_buffer.py` (CPU,
 seconds: NumpyBuffer gives train.Buffer's trajectories, with and without
@@ -125,6 +129,28 @@ period (collecting the next iteration while this one trains), plus
 `overlap_wait_s`; its env / team stats include the next collection. The
 learner thread shares the GIL with the collection loop (the env releases
 it while stepping): whether that costs more than it saves is for the box.
+
+First GPU run (2026-11-22, Vast RTX 3060 12 GB, 20.5-core quota on a
+shared 128-core EPYC whose neighbours hold the load at ~130: single-thread
+memory copies 1.6 GB/s, so CPU-side numbers are pessimistic). 8192
+battles, oak150, 16 env threads, iterations 5-10:
+
+| | games/s | iteration | act | train |
+| --- | --- | --- | --- | --- |
+| original path | 1611 | ~5.2 s | ~2.0 s | ~3.2 s |
+| `--buffer numpy --actor graphs --actor_compile 1 --pingpong 1 --overlap 1 --compile_train default --gae gpu --fused_adam 1` | 4030 | ~2.1 s | ~0.65 s | ~1.6 s (overlapped) |
+
+- 2.5x games/s (2.9x per decision: the run's games were longer). Compile
+  costs ~68 s in each of the first two iterations.
+- `--overlap` lags learning by about an iteration early (value_ev 0.75 vs
+  0.84 at it 10, the baseline's it 8-9).
+- After it the learner bounds the loop: `train_prep_s` 0.8-1.1 s, then
+  `buffer.take` (`--take_gather`, `--stats_every`).
+- Forward bench (`tests/py/bench_pi_forward.py`, M rows/s at 16k / 65k /
+  131k rows): eager 0.95 / 0.97 / 0.98, compile 2.27 / 2.50 / 2.54, CUDA
+  graph of the eager forward 0.96 / 0.98 / 0.98, compiled forward in the
+  graph 2.42 / 2.50 / 2.52. The GPU is memory-bound in eager (gathers,
+  elementwise); compile fuses them; graphs alone buy nothing at these sizes.
 
 Birch's 3x: no record of which change gave it. Birch's commits show a
 GPU-resident learner (`e3a5e85`) and history grouped by length
@@ -151,6 +177,51 @@ cu128 torch work before renting it for a long run (the last box had
 driver 550 and needed torch 2.6).
 
 ## Search during training
+
+Built 2026-11-22: `ataraxos/pi/search.py` (TrainSearch), the env's
+depth-1 rollouts and batched MMD / solve / plan in `src/pi_env.hpp` (bound
+in `ataraxos_pi`), checked by `tests/py/check_pi_search.py` (C++ MMD and
+solve vs search_np to 1e-7, the plan's cell frequencies, rollouts
+deterministic per seed and leaving the env untouched, every leaf mode vs
+eager on the GPU). Off by default (`--search_p 0`); needs `--buffer numpy`.
+
+| Flag | What | Default |
+| --- | --- | --- |
+| `--search_p P` | the share of rows (either side 2+ choices) searched at the start | 0 (off) |
+| `--search_p_end P`, `--search_anneal D` | p linear to P_END over D decisions | -1 (no anneal), 1e9 |
+| `--search_budget B` | depth-1 rollouts a root | 64 |
+| `--search_beta L` | MMD's lambda, the prior as both magnets (alpha 0) | 0.03 |
+| `--search_floor F` | the rollouts' share of uniform (P1, P2) pairs | 0.25 |
+| `--search_shrink S` | cell means' pseudo-counts toward the row / column means | 1 |
+| `--search_coef C` | CE to the posteriors (searched decisions, out of the PPO loss) | 1 |
+| `--search_value_mix M` | searched decisions' value target: (1 - M) TD(lambda) + M the search's W/D/L under the posteriors | 0.5 |
+
+Each root: B pairs from the priors (F uniform), B rollouts (a copy of the
+battle, a fresh RNG seed and hidden counters from the durations, as oak's
+MCTS root iteration; one turn; the forced steps), the leaves' value head
+(or the result's one-hot), cell means, MMD to the fixed point; both sides
+play a draw from their posteriors. Searched decisions are always kept by
+the advantage filter, so they are a large share of the minibatches
+(~44% at p 0.1 in the CPU smoke run).
+
+Speed flags (each default the original path):
+
+| Flag | What |
+| --- | --- |
+| `--search_solve cpp` | cell means, MMD and the W/D/L per root in C++ (numpy's took ~120 ms a step at 1100 roots on the 3060 box: 4.2 -> 1.9 s an iteration in the first, noisy, ablation) |
+| `--search_plan cpp` | the cells drawn in C++ (own RNG) |
+| `--search_leaf async\|graphs` | leaves through pinned slots and non-blocking copies; `graphs` adds a CUDA graph per power-of-2 leaf count |
+| `--search_direct 1` | rollouts write the leaves into the pinned slot (`SelfPlay.rollouts_into`) |
+| `--search_value_only 1` | `PiNet.value`, no policy heads, for the leaves |
+| `--search_compile 1` | `torch.compile` (dynamic) of the leaves' forward |
+| `--search_async 1` | with `--pingpong`: one env's leaf forward runs while the other env is stepped (begin / finish) |
+
+First GPU run at p 0.1, budget 64 (all the speed flags above off, the
+non-search speed flags on): ~1100 roots and ~70k leaves an env step; per
+iteration ~25-50 s of collection, mostly the leaf forward
+(`search_value_s` 13-35 s), then solve (4-5 s), plan (2-5 s), rollouts
+(2-5 s). The ablation of the search speed flags (`runs/abl_search.sh`)
+shared the GPU with applemagpie's live games, so it needs a rerun.
 
 Agreed (2026-11-22): one round of joint MMD, 64-128 rollouts,
 applemagpie's update, both sides' posteriors as CE targets; rows where
@@ -201,5 +272,6 @@ Starting point: depth 1, budget 64, 1 round, alpha 0, beta 0.02-0.05.
 
 - Minimum host: 16 cores or 32?
 - One-iteration-stale actor (idea 2) acceptable?
-- Starting p, budget, depth and lambda, after the softness run.
+- Search in training's p schedule (proposed 0.05 -> 0.25 over ~1B
+  decisions) and value target mix (proposed 0.5).
 - Does oak's C++ forward for IS-MCTS wait until after the first GPU run?

@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <random>
@@ -41,6 +42,7 @@
 #include <encode/battle/policy.h>
 #include <libpkmn/data.h>
 #include <libpkmn/pkmn.h>
+#include <search/durations.h>
 
 #include "teams.hpp"
 
@@ -239,6 +241,55 @@ class SelfPlay {
     }
   }
 
+  // Depth-1 rollouts for search in training (ataraxos/pi/search.py): for each
+  // k, a copy of battle[k] (as its current row) with a fresh RNG seed and
+  // its hidden counters drawn from the durations (oak's MCTS root
+  // iteration), plays picks[k] = {P1's, P2's} index into the row's choices,
+  // then the forced steps, up to the next state where the game is over or a
+  // side has 2+ choices: the leaf. done[k] marks a finished game (result
+  // P1's +1/0/-1; a turn past max_turns is a tie), else features[k] is the
+  // leaf for the value head, written to mon / hp / active at row k (the
+  // layout of a row's features; zeros where done).
+  void rollouts(std::span<const uint32_t> battle, std::span<const std::array<uint8_t, 2>> picks,
+                std::span<const uint64_t> seeds, int16_t* mon, float* hp, float* active, uint8_t* done,
+                int8_t* result) const {
+    constexpr size_t NM = 2 * 6 * MON_FIELDS, NH = 2 * 6, NA = 2 * ACTIVE_DIM;
+    const size_t K = battle.size();
+#pragma omp parallel for schedule(static) num_threads(threads_)
+    for (size_t k = 0; k < K; k++) {
+      Battle c = battles_[battle[k]];
+      PKMN::view(c.battle).rng = seeds[k];
+      pkmn_gen1_chance_options chance{};
+      chance.durations = *pkmn_gen1_battle_options_chance_durations(&c.options);
+      MCTS::randomize_hidden_variables(c.battle, chance.durations);
+      pkmn_gen1_battle_options_set(&c.options, nullptr, &chance, nullptr);
+      const auto p = picks[k];
+      c.update(c.choices[0][p[0]], c.choices[1][p[1]]);
+      Features f;
+      for (;;) {
+        if (c.over() || c.state().turn > max_turns_) {
+          const auto r = c.over() ? pkmn_result_type(c.result) : PKMN_RESULT_TIE;
+          done[k] = 1;
+          result[k] = r == PKMN_RESULT_WIN ? 1 : r == PKMN_RESULT_LOSE ? -1 : 0;
+          std::fill_n(mon + k * NM, NM, int16_t(0));
+          std::fill_n(hp + k * NH, NH, 0.f);
+          std::fill_n(active + k * NA, NA, 0.f);
+          break;
+        }
+        if (c.n[0] > 1 || c.n[1] > 1) {
+          done[k] = 0;
+          result[k] = 0;
+          encode(c.state(), c.durations(), f);
+          std::copy(f.mon.begin(), f.mon.end(), mon + k * NM);
+          std::copy(f.hp.begin(), f.hp.end(), hp + k * NH);
+          std::copy(f.active.begin(), f.active.end(), active + k * NA);
+          break;
+        }
+        c.update(c.choices[0][0], c.choices[1][0]);
+      }
+    }
+  }
+
   size_t rows() const {
     size_t n = 0;
     for (const Shard& sh : shards_) n += sh.rows.size();
@@ -338,5 +389,190 @@ class SelfPlay {
     }
   }
 };
+
+// Two-player MMD to the fixed point for one root, search_np.mmd with one
+// type a side and extragradient steps: Q [MAX_CHOICES]^2 (P1's, row-major),
+// magnets' log-probs m1, m2 (the net's prior), a, b legal choices (a side
+// with one has the policy [1]), lam the regularization, eta the step, at
+// most `iters` iterations or until no probability moves more than `tol`.
+// Writes the log-policies l1, l2 (-1e9 past a, b); returns the iterations.
+inline int mmd_root(const double* q, const float* m1, const float* m2, size_t a, size_t b, double lam, double eta,
+                    int iters, double tol, float* l1, float* l2) {
+  constexpr size_t C = MAX_CHOICES;
+  constexpr double NEG = -1e9;
+  std::array<double, C> M1{}, M2{}, x1{}, x2{}, h1{}, h2{}, y1{}, y2{}, p1{}, p2{};
+  auto norm = [](std::array<double, C>& l, size_t n) {
+    double mx = NEG;
+    for (size_t i = 0; i < n; i++) mx = std::max(mx, l[i]);
+    double s = 0;
+    for (size_t i = 0; i < n; i++) s += std::exp(l[i] - mx);
+    const double z = mx + std::log(s);
+    for (size_t i = 0; i < n; i++) l[i] -= z;
+    for (size_t i = n; i < C; i++) l[i] = NEG;
+  };
+  for (size_t i = 0; i < C; i++) M1[i] = m1[i], M2[i] = m2[i];
+  norm(M1, a);
+  norm(M2, b);
+  x1 = M1, x2 = M2;
+  // one MMD step from (x1, x2) with q read at the policies (at1, at2)
+  auto step = [&](const std::array<double, C>& at1, const std::array<double, C>& at2, std::array<double, C>& o1,
+                  std::array<double, C>& o2) {
+    std::array<double, C> e1{}, e2{};
+    for (size_t i = 0; i < a; i++) e1[i] = std::exp(at1[i]);
+    for (size_t j = 0; j < b; j++) e2[j] = std::exp(at2[j]);
+    for (size_t i = 0; i < a; i++) {
+      double v = 0;
+      for (size_t j = 0; j < b; j++) v += q[i * C + j] * e2[j];
+      o1[i] = (x1[i] + eta * v + eta * lam * M1[i]) / (1 + eta * lam);
+    }
+    for (size_t j = 0; j < b; j++) {
+      double v = 0;
+      for (size_t i = 0; i < a; i++) v -= q[i * C + j] * e1[i];
+      o2[j] = (x2[j] + eta * v + eta * lam * M2[j]) / (1 + eta * lam);
+    }
+    norm(o1, a);
+    norm(o2, b);
+  };
+  int it = 0;
+  if (a > 1 || b > 1) {
+    for (it = 1; it <= iters; it++) {
+      for (size_t i = 0; i < a; i++) p1[i] = std::exp(x1[i]);
+      for (size_t j = 0; j < b; j++) p2[j] = std::exp(x2[j]);
+      step(x1, x2, h1, h2);
+      step(h1, h2, y1, y2);
+      double d = 0;
+      for (size_t i = 0; i < a; i++) d = std::max(d, std::abs(std::exp(y1[i]) - p1[i]));
+      for (size_t j = 0; j < b; j++) d = std::max(d, std::abs(std::exp(y2[j]) - p2[j]));
+      x1 = y1, x2 = y2;
+      if (d < tol) break;
+    }
+    it = std::min(it, iters);
+  }
+  for (size_t i = 0; i < C; i++) l1[i] = float(x1[i]), l2[i] = float(x2[i]);
+  return it;
+}
+
+// mmd_root over G roots: Q [G][C][C], m1, m2, l1, l2 [G][C], n1, n2, its [G].
+inline void mmd_batch(size_t G, const float* Q, const float* m1, const float* m2, const uint8_t* n1,
+                      const uint8_t* n2, float lam, float eta, int iters, float tol, float* l1, float* l2,
+                      int32_t* its, int threads) {
+  constexpr size_t C = MAX_CHOICES;
+#pragma omp parallel for schedule(dynamic, 16) num_threads(threads)
+  for (size_t g = 0; g < G; g++) {
+    std::array<double, C * C> q;
+    for (size_t k = 0; k < C * C; k++) q[k] = Q[g * C * C + k];
+    its[g] = mmd_root(q.data(), m1 + g * C, m2 + g * C, std::max<uint8_t>(n1[g], 1), std::max<uint8_t>(n2[g], 1),
+                      lam, eta, iters, tol, l1 + g * C, l2 + g * C);
+  }
+}
+
+// search_np.cell_means for one root and one value channel: sums / counts
+// [C][C] over the legal a x b cells; an empty cell reads the mean of its
+// row's and column's means (one if the other is empty, else the root's mean,
+// else 0), every cell shrunk toward that by `shrink` pseudo-counts; 0 past
+// a, b.
+inline void cell_means_root(const double* total, const double* count, size_t a, size_t b, double shrink,
+                            double* out) {
+  constexpr size_t C = MAX_CHOICES;
+  std::array<double, C> rs{}, rc{}, cs{}, cc{};
+  double bs = 0, bc = 0;
+  for (size_t i = 0; i < a; i++) {
+    for (size_t j = 0; j < b; j++) {
+      const double t = total[i * C + j], n = count[i * C + j];
+      rs[i] += t, rc[i] += n, cs[j] += t, cc[j] += n, bs += t, bc += n;
+    }
+  }
+  const double block = bc > 0 ? bs / bc : 0.0;
+  for (size_t i = 0; i < C; i++) {
+    for (size_t j = 0; j < C; j++) {
+      if (i >= a || j >= b) {
+        out[i * C + j] = 0;
+        continue;
+      }
+      const bool hr = rc[i] > 0, hc = cc[j] > 0;
+      const double prior = hr && hc ? (rs[i] / rc[i] + cs[j] / cc[j]) / 2
+                           : hr     ? rs[i] / rc[i]
+                           : hc     ? cs[j] / cc[j]
+                                    : block;
+      const double t = total[i * C + j], n = count[i * C + j];
+      out[i * C + j] = shrink > 0 ? (t + shrink * prior) / (n + shrink) : n > 0 ? t / n : prior;
+    }
+  }
+}
+
+// The whole solve for S roots of B rollouts each (search in training's
+// finish, --search_solve cpp): cells [S][B][2] (P1's, P2's choice),
+// wdl [S][B][3] the leaves' P1 (loss, draw, win), n1, n2, m1, m2 as
+// mmd_batch; cell means of Q = win - loss and of each W/D/L channel, MMD,
+// then the W/D/L under the posteriors. Writes l1, l2 [S][C], swdl [S][3],
+// its [S].
+inline void solve_batch(size_t S, size_t B, const uint8_t* cells, const float* wdl, const uint8_t* n1,
+                        const uint8_t* n2, const float* m1, const float* m2, float shrink, float lam, float eta,
+                        int iters, float tol, float* l1, float* l2, float* swdl, int32_t* its, int threads) {
+  constexpr size_t C = MAX_CHOICES;
+#pragma omp parallel for schedule(dynamic, 16) num_threads(threads)
+  for (size_t s = 0; s < S; s++) {
+    std::array<double, C * C> count{}, tq{}, Q{};
+    std::array<std::array<double, C * C>, 3> tw{}, W{};
+    for (size_t k = 0; k < B; k++) {
+      const uint8_t* c = cells + (s * B + k) * 2;
+      const float* w = wdl + (s * B + k) * 3;
+      const size_t cell = size_t(c[0]) * C + c[1];
+      count[cell] += 1;
+      tq[cell] += double(w[2]) - double(w[0]);
+      for (size_t h = 0; h < 3; h++) tw[h][cell] += w[h];
+    }
+    const size_t a = std::max<uint8_t>(n1[s], 1), b = std::max<uint8_t>(n2[s], 1);
+    cell_means_root(tq.data(), count.data(), a, b, shrink, Q.data());
+    for (size_t h = 0; h < 3; h++) cell_means_root(tw[h].data(), count.data(), a, b, shrink, W[h].data());
+    its[s] = mmd_root(Q.data(), m1 + s * C, m2 + s * C, a, b, lam, eta, iters, tol, l1 + s * C, l2 + s * C);
+    std::array<double, C> p1{}, p2{};
+    double z1 = 0, z2 = 0;
+    for (size_t i = 0; i < a; i++) z1 += p1[i] = std::exp(double(l1[s * C + i]));
+    for (size_t j = 0; j < b; j++) z2 += p2[j] = std::exp(double(l2[s * C + j]));
+    for (size_t h = 0; h < 3; h++) {
+      double v = 0;
+      for (size_t i = 0; i < a; i++)
+        for (size_t j = 0; j < b; j++) v += p1[i] * p2[j] * W[h][i * C + j];
+      swdl[s * 3 + h] = float(v / (z1 * z2));
+    }
+  }
+}
+
+// The rollouts' cells for S roots (search in training's begin, --search_plan
+// cpp): B pairs a root, each with probability `floor` uniform over the legal
+// a x b pairs, else P1's and P2's choices drawn from their priors (probs
+// [S][2][C], 0 past n). seed and the root index seed each root's RNG.
+inline void plan_cells(size_t S, size_t B, const float* prior, const uint8_t* n1, const uint8_t* n2, float floor,
+                       uint64_t seed, uint8_t* cells, int threads) {
+  constexpr size_t C = MAX_CHOICES;
+#pragma omp parallel for schedule(static) num_threads(threads)
+  for (size_t s = 0; s < S; s++) {
+    std::mt19937_64 rng(seed ^ (0x9E3779B97F4A7C15ull * (s + 1)));
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    const size_t n[2] = {std::max<uint8_t>(n1[s], 1), std::max<uint8_t>(n2[s], 1)};
+    std::array<std::array<double, C>, 2> cdf{};
+    for (size_t side = 0; side < 2; side++) {
+      double acc = 0;
+      for (size_t i = 0; i < n[side]; i++) cdf[side][i] = acc += double(prior[(s * 2 + side) * C + i]);
+    }
+    for (size_t k = 0; k < B; k++) {
+      uint8_t* c = cells + (s * B + k) * 2;
+      const bool uni = u(rng) < floor;
+      for (size_t side = 0; side < 2; side++) {
+        const size_t m = n[side];
+        size_t i;
+        if (uni) {
+          i = std::min(size_t(u(rng) * double(m)), m - 1);
+        } else {
+          const double x = u(rng) * cdf[side][m - 1];
+          i = 0;
+          while (i + 1 < m && x > cdf[side][i]) i++;
+        }
+        c[side] = uint8_t(i);
+      }
+    }
+  }
+}
 
 } // namespace ataraxos::pi

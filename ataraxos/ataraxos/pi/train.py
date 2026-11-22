@@ -45,6 +45,7 @@ from ataraxos._ext import ataraxos_pi
 from ataraxos.pi.agents import NetAgent, make_agent, match
 from ataraxos.pi.fast import AsyncActor, Envs, NumpyBuffer
 from ataraxos.pi.net import CHOICES, legal_logits, make_net
+from ataraxos.pi.search import TrainSearch
 from ataraxos.rl import metrics, teams
 from ataraxos.rl.buffer import returns_and_advantages
 from ataraxos.rl.train import (code_version, cpu_seconds, latest_checkpoint, magnet, peak_gb, power_schedule,
@@ -59,6 +60,8 @@ class Config:
     # env
     battles: int = 8192
     threads: int = 8
+    torch_threads: int = 4  # torch's CPU threads (0: torch's default, the host's CPUs: on a box with a CPU quota
+                            # under its core count that oversubscribes, ~300x slower CPU copies on a Vast 3060 box)
     seed: int = 1
     max_turns: int = 300
     at_cap: str = "draw"  # "draw" or "drop" (no bootstrap: the env sends no row at the cap)
@@ -105,6 +108,7 @@ class Config:
     # speed options (ataraxos/pi/fast.py, docs/pi_speed.md); each default is the original code path
     buffer: str = "python"  # "numpy": trajectories found in take, no Python loop per row
     actor: str = "eager"    # "async": pinned buffers, non-blocking copies; "graphs": async + one CUDA graph
+    actor_compile: bool = False  # torch.compile the actor's forward (with --actor async|graphs; in the graph)
     pingpong: bool = False  # two half-size envs, one steps while the other's forward runs (actor async|graphs)
     fused_adam: bool = False  # AdamW(fused=True) on CUDA
     tf32: bool = False      # TF32 matmuls and convolutions
@@ -113,6 +117,28 @@ class Config:
     overlap: bool = False   # learn on iteration t in a thread while collecting t+1 with t's weights (one stale)
     eval_async: bool = False  # evals in a thread on a snapshot of the nets; results as their own log line
     eval_threads: int = 0   # the eval env's threads (0: --threads)
+    # search in training (ataraxos/pi/search.py; off at search_p 0, the original path); needs --buffer numpy
+    search_p: float = 0.0   # the share of rows (either side 2+ choices) searched, at the start
+    search_p_end: float = -1.0  # annealed linearly to this over search_anneal decisions (-1: search_p throughout)
+    search_anneal: float = 1e9
+    search_budget: int = 64  # depth-1 rollouts a root (search_gain.py: depth 1 budget 64)
+    search_beta: float = 0.03  # MMD's lambda, the prior as the magnet (alpha 0; search_gain.py: 0.02-0.05)
+    search_floor: float = 0.25  # the rollouts' share of uniform (P1, P2) pairs
+    search_shrink: float = 1.0  # cell means' pseudo-counts toward the row / column means
+    search_iters: int = 2000
+    search_tol: float = 1e-4
+    search_coef: float = 1.0  # cross-entropy to the posteriors (searched decisions; out of the PPO loss)
+    search_value_mix: float = 0.5  # searched decisions' value target: (1 - mix) TD(lambda) + mix the search's W/D/L
+    # search speed options (ataraxos/pi/search.py), each default the original path
+    search_leaf: str = "eager"  # the leaves' forward: "async" pinned slots, non-blocking; "graphs" + CUDA graphs
+    search_compile: bool = False  # torch.compile the leaves' forward (dynamic shapes)
+    search_value_only: bool = False  # the value head alone for the leaves (PiNet.value)
+    search_direct: bool = False  # rollouts write the leaves into the pinned slot (search_leaf async|graphs)
+    search_async: bool = False  # one env's leaf forward runs while the other steps (needs --pingpong)
+    take_gather: bool = False  # NumpyBuffer.take gathers the needed rows from the parts (no full concatenation)
+    stats_every: int = 1    # metrics.data_stats (the value's calibration, EV, ...) every N iterations (1: every one)
+    search_plan: str = "numpy"  # "cpp": the rollouts' cells drawn in C++
+    search_solve: str = "numpy"  # "cpp": cell means, MMD and the searched W/D/L in C++ per root
 
 
 ROW_COLUMNS = ("mon", "hp", "active", "policy", "n", "choices")
@@ -137,6 +163,9 @@ class Data:
     reward: np.ndarray    # [G] the player's
     rows: dict            # ROW_COLUMNS, each [R, ...]
     truncated: np.ndarray = None
+    searched: np.ndarray = None  # [N] bool, with --search_p (ataraxos/pi/search.py)
+    post: np.ndarray = None      # [N, CHOICES] the search's posterior (probabilities)
+    swdl: np.ndarray = None      # [N, 3] the W/D/L under the posteriors, the deciding player's
 
 
 class Buffer:
@@ -261,6 +290,13 @@ class Learner:
                         float(adv.abs()[torch.randperm(len(adv), device=gd)[:2**24]].quantile(cfg.adv_filt_rate)),
                         cfg.adv_filt_thresh)
         keep = (adv.abs() >= threshold).cpu().numpy()
+        searched = data.searched
+        if searched is not None:
+            keep |= searched  # their cross-entropy targets don't depend on the advantage
+            if cfg.search_value_mix > 0:
+                m = cfg.search_value_mix
+                s = torch.as_tensor(searched, device=ret.device)[:, None]
+                ret = torch.where(s, (1 - m) * ret + m * torch.as_tensor(data.swdl, device=ret.device), ret)
         step = self.schedule_step()
         lr = power_schedule(cfg.lr_coef, step, cfg.lr_decay, cfg.lr_ceil, cfg.lr_floor)
         temperature = power_schedule(cfg.temperature_coef, step, cfg.temperature_decay, cfg.temperature_ceil,
@@ -269,12 +305,19 @@ class Learner:
             g["lr"] = lr
         stats = dict(lr=lr, temperature=temperature, schedule_step=step, adv_threshold=threshold,
                      decisions=len(adv), kept=int(keep.sum()))
-        stats.update(metrics.data_stats(data, ret.cpu(), adv.cpu()))
+        if searched is not None:
+            stats.update(searched_frac=float(searched.mean()))
+        ta = time.perf_counter()
+        if cfg.stats_every <= 1 or self.it % cfg.stats_every == 0:
+            stats.update(metrics.data_stats(data, ret.cpu(), adv.cpu()))
+        tb = time.perf_counter()
         # everything on the device once
         T = lambda a, dt=None: torch.as_tensor(np.ascontiguousarray(a), device=dev, dtype=dt)
         rows = {k: T(v) for k, v in data.rows.items()}
         dd = dict(row=T(data.row), side=T(data.side), n=T(data.n), choices=T(data.choices),
                   logp=T(data.logp, torch.float), pick=T(data.pick, torch.long), ret=ret.to(dev), adv=adv.to(dev))
+        if searched is not None:
+            dd.update(searched=T(searched), post=T(data.post, torch.float))
         params = [p.detach() for p in self.net.parameters()]
         before = [p.clone() for p in params]
         sums, steps = {}, 0
@@ -315,7 +358,8 @@ class Learner:
                                          + [delta, norm]).tolist()
         stats.update({k: v if k.endswith("_max") else v / max(1, steps) for k, v in zip(keys, vals)},
                      grad_steps=steps, param_norm=math.sqrt(norm), update_ratio=math.sqrt(delta / max(norm, 1e-30)),
-                     train_prep_s=t1 - t0, train_issue_s=t2 - t1, train_wait_s=time.perf_counter() - t2)
+                     train_prep_s=t1 - t0, train_gae_s=ta - t0, train_stats_s=tb - ta, train_upload_s=t1 - tb,
+                     train_issue_s=t2 - t1, train_wait_s=time.perf_counter() - t2)
         return stats
 
     def loss(self, rows, dd, idx, temperature):
@@ -336,11 +380,19 @@ class Learner:
         a, A, R = dd["pick"][idx][:, None], dd["adv"][idx], dd["ret"][idx]
         ratio = torch.exp(logp.gather(1, a)[:, 0] - old.gather(1, a)[:, 0])
         clipped = torch.clamp(ratio, 1 - cfg.clip_range, 1 + cfg.clip_range)
-        policy_loss = -torch.min(A * ratio, A * clipped).mean()
+        searched = dd["searched"][idx] if "searched" in dd else None
+        pg = torch.min(A * ratio, A * clipped)
+        policy_loss = -(pg if searched is None else pg * (~searched).float()).mean()
         kl_data = (p * (logp - old)).sum(-1).mean()
         kl_magnet = (p * (logp - magnet(dd["choices"][idx], legal, cfg.magnet))).sum(-1).mean()
         value_loss = -(R * torch.log_softmax(value, -1)).sum(-1).mean()
         loss = cfg.policy_coef * policy_loss + temperature * kl_magnet + cfg.vf_coef * value_loss + cfg.kl_coef * kl_data
+        extra = {}
+        if searched is not None:  # cross-entropy to the posterior, over the searched decisions, as a batch mean
+            ce = -(dd["post"][idx] * logp.masked_fill(~legal, 0)).sum(-1)
+            search_ce = (ce * searched.float()).mean()
+            loss = loss + cfg.search_coef * search_ce
+            extra = dict(search_ce=search_ce, search_ce_per=(ce * searched.float()).sum() / searched.sum().clamp(min=1))
         ent = -(p * logp).sum(-1)
         y = logits.detach().masked_fill(~legal, 0)
         y = (y - y.sum(-1, keepdim=True) / n[:, None].float()).masked_fill(~legal, 0)
@@ -348,7 +400,7 @@ class Learner:
             loss=loss, policy_loss=policy_loss, value_loss=value_loss, kl_data=kl_data, kl_magnet=kl_magnet,
             entropy=ent.mean(), entropy_norm_learner=(ent / torch.log(n.float())).mean(),
             clip_frac=((ratio - 1).abs() > cfg.clip_range).float().mean(), ratio_mean=ratio.mean(),
-            ratio_max=ratio.max(), logit_abs_max=y.abs().max()).items()}
+            ratio_max=ratio.max(), logit_abs_max=y.abs().max(), **extra).items()}
 
     def save(self, path, exp3=None, rng=None, team_counts=None, pairs=None):
         ck = dict(net=self.net.state_dict(), ema=self.ema.state_dict(), optim=self.optim.state_dict(), it=self.it,
@@ -390,10 +442,22 @@ def main(argv=None):
         raise ValueError(f"--buffer {cfg.buffer!r}: python or numpy")
     if cfg.actor not in ("eager", "async", "graphs"):
         raise ValueError(f"--actor {cfg.actor!r}: eager, async or graphs")
+    if cfg.search_p > 0 and cfg.buffer != "numpy":
+        raise ValueError("--search_p needs --buffer numpy")
+    if cfg.search_leaf not in ("eager", "async", "graphs"):
+        raise ValueError(f"--search_leaf {cfg.search_leaf!r}: eager, async or graphs")
+    if cfg.search_direct and cfg.search_leaf == "eager":
+        raise ValueError("--search_direct needs --search_leaf async or graphs")
+    if cfg.search_async and not cfg.pingpong:
+        raise ValueError("--search_async needs --pingpong")
+    if cfg.actor_compile and cfg.actor == "eager":
+        raise ValueError("--actor_compile needs --actor async or graphs")
     if cfg.pingpong and cfg.actor == "eager":
         raise ValueError("--pingpong needs --actor async or graphs")
     if cfg.actor == "graphs" and not cfg.device.startswith("cuda"):
         raise ValueError("--actor graphs needs CUDA")
+    if cfg.torch_threads > 0:
+        torch.set_num_threads(cfg.torch_threads)
     if cfg.tf32:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
@@ -456,8 +520,34 @@ def main(argv=None):
         actor = Actor(actor_net, cfg.device, cfg.amp)
     else:
         actor = AsyncActor(actor_net, cfg.device, cfg.amp, capacity=max(sizes), slots=len(sizes),
-                           graphs=cfg.actor == "graphs")
-    buffer = NumpyBuffer(cfg.at_cap) if cfg.buffer == "numpy" else Buffer(cfg.at_cap)
+                           graphs=cfg.actor == "graphs", compile=cfg.actor_compile)
+    buffer = NumpyBuffer(cfg.at_cap, cfg.take_gather) if cfg.buffer == "numpy" else Buffer(cfg.at_cap)
+    searcher = None
+    if cfg.search_p > 0:
+        searcher = TrainSearch(actor_net, cfg.device, cfg.amp, budget=cfg.search_budget, beta=cfg.search_beta,
+                               floor=cfg.search_floor, shrink=cfg.search_shrink, iters=cfg.search_iters,
+                               tol=cfg.search_tol, threads=cfg.threads, seed=cfg.seed + 7 * learner.it,
+                               compile=cfg.search_compile, leaf=cfg.search_leaf, value_only=cfg.search_value_only,
+                               direct=cfg.search_direct, slots=len(envs), plan=cfg.search_plan,
+                               solve=cfg.search_solve)
+    offsets = env.offsets if cfg.pingpong else [0]
+
+    def search_p():
+        end = cfg.search_p if cfg.search_p_end < 0 else cfg.search_p_end
+        return cfg.search_p + (end - cfg.search_p) * min(1.0, learner.decisions / max(cfg.search_anneal, 1.0))
+
+    def search_stats(st, sums):
+        for k, v in st.items():
+            sums[k] = sums.get(k, 0.0) + v
+        sums["search_steps"] = sums.get("search_steps", 0) + (st["search_roots"] > 0)
+
+    def search(e, i, o, picks, logp, sums):
+        """Search in training on obs o of env e (index i): overwrites picks, returns the buffer's columns."""
+        if searcher is None:
+            return None
+        cols, st = searcher.run(e, o, picks, logp, sums.setdefault("search_p", search_p()), int(offsets[i]), i)
+        search_stats(st, sums)
+        return cols
     obs_list = [env.shift(i, e.reset()) if cfg.pingpong else e.reset() for i, e in enumerate(envs)]
     for o in obs_list:
         ended(o)
@@ -480,6 +570,7 @@ def main(argv=None):
         peak_gb(learner.dev)
         rows = decisions = 0
         net_s = env_s = 0.0
+        ss = {}  # search stats summed over steps
         if not cfg.overlap:
             learner.net.eval()
         obs = state["obs"]
@@ -487,7 +578,7 @@ def main(argv=None):
             ta = time.perf_counter()
             picks, logp, value = actor.act(obs)
             tb = time.perf_counter()
-            buffer.add(obs, picks, logp, value)
+            buffer.add(obs, picks, logp, value, search(envs[0], 0, obs, picks, logp, ss))
             rows += len(picks)
             decisions += int((obs["n"] >= 2).sum())
             tc = time.perf_counter()
@@ -501,13 +592,53 @@ def main(argv=None):
         # time spent waiting for a forward. Forwards queued at an iteration's end ran before the
         # learner's kernels (one stream; with --overlap, before the actor net's refresh, on the actor's
         # stream), so their log-probs are the policy that picked.
-        while handles is not None and buffer.games() < cfg.games_per_iter:
+        # --search_async: env i's rows are searched up to the leaves' forward (begin), then the other env's
+        # pending search is finished and that env stepped, so a leaf forward runs while the CPU steps
+        acc = dict(rows=0, decisions=0, net_s=0.0, env_s=0.0)
+
+        def finish_step(i, picks, logp, value, tok):
+            cols, st = searcher.finish(tok)
+            search_stats(st, ss)
+            o = obs_list[i]
+            buffer.add(o, picks, logp, value, cols)
+            acc["rows"] += len(picks)
+            acc["decisions"] += int((o["n"] >= 2).sum())
+            tc = time.perf_counter()
+            o = envs[i].step(picks)
+            acc["env_s"] += time.perf_counter() - tc
+            o = env.shift(i, o)
+            obs_list[i] = o
+            buffer.end(o)
+            ended(o)
+            handles[i] = actor.launch(o, i)
+
+        pend, i = None, 0
+        while handles is not None and searcher is not None and cfg.search_async:
+            cur = None
+            if buffer.games() < cfg.games_per_iter:
+                ta = time.perf_counter()
+                picks, logp, value = actor.collect(handles[i])
+                acc["net_s"] += time.perf_counter() - ta
+                tok = searcher.begin(envs[i], obs_list[i], picks, logp, ss.setdefault("search_p", search_p()),
+                                     int(offsets[i]), i)
+                cur = (i, picks, logp, value, tok)
+            if pend is not None:
+                finish_step(*pend)
+            if cur is None:
+                break
+            pend, i = cur, (i + 1) % len(envs)
+        rows += acc["rows"]
+        decisions += acc["decisions"]
+        net_s += acc["net_s"]
+        env_s += acc["env_s"]
+        while handles is not None and not (searcher is not None and cfg.search_async) and \
+                buffer.games() < cfg.games_per_iter:
             for i, e in enumerate(envs):
                 ta = time.perf_counter()
                 picks, logp, value = actor.collect(handles[i])
                 tb = time.perf_counter()
                 o = obs_list[i]
-                buffer.add(o, picks, logp, value)
+                buffer.add(o, picks, logp, value, search(e, i, o, picks, logp, ss))
                 rows += len(picks)
                 decisions += int((o["n"] >= 2).sum())
                 tc = time.perf_counter()
@@ -520,7 +651,10 @@ def main(argv=None):
                 ended(o)
                 handles[i] = actor.launch(o, i)
         t1 = time.perf_counter()
-        return dict(act_rows=rows, act_decisions=decisions, rows_per_s=rows / (t1 - t0), act_s=t1 - t0,
+        n_steps = max(1, ss.pop("search_steps", 1))
+        s_summary = {k: v if k in ("search_roots", "search_leaves", "search_p") or k.endswith("_s") else v / n_steps
+                        for k, v in ss.items()}
+        return dict(**s_summary, act_rows=rows, act_decisions=decisions, rows_per_s=rows / (t1 - t0), act_s=t1 - t0,
                     act_net_s=net_s, act_env_s=env_s, act_other_s=t1 - t0 - net_s - env_s,
                     **({"act_gb": peak_gb(learner.dev)} if cuda else {}))
 
@@ -616,7 +750,8 @@ def main(argv=None):
         log.flush()
         keys = ("it", "games", "games_per_s", "rows_per_s", "act_s", "train_s", "iter_s", "act_gb", "train_gb",
                 "loss", "value_loss", "value_ev", "entropy", "entropy_norm", "kl_data", "clip_frac", "grad_clipped",
-                "kept", "mean_length", "ties", "teams/gamma", "teams/p_eff", "teams/nash_eff")
+                "kept", "mean_length", "ties", "teams/gamma", "teams/p_eff", "teams/nash_eff", "search_p",
+                "search_roots", "search_kl", "search_ce_per", "searched_frac")
         print(" ".join(f"{k}={stats[k]:.4g}" if isinstance(stats.get(k), float) else f"{k}={stats.get(k)}"
                        for k in keys if k in stats) + print_evals(stats), flush=True)
 
@@ -626,8 +761,10 @@ def main(argv=None):
             act = collect()
             t1 = time.perf_counter()
             data = buffer.take()
+            t_take = time.perf_counter()
             stats = learner.train(data, rng)
-            stats.update(train_s=time.perf_counter() - t1, **({"train_gb": peak_gb(learner.dev)} if cuda else {}))
+            stats.update(train_s=time.perf_counter() - t1, take_s=t_take - t1,
+                         **({"train_gb": peak_gb(learner.dev)} if cuda else {}))
             finish(stats, data, act, t0, cpu0)
     else:
         # iteration t's learner step runs while t+1 is collected with the weights from before it, so the
@@ -657,7 +794,8 @@ def main(argv=None):
             nxt = None
             if submitted < cfg.iters:
                 act = collect()
-                nxt = (buffer.take(), act)
+                tk = time.perf_counter()
+                nxt = (buffer.take(), dict(act, take_s=time.perf_counter() - tk))
             if pending is not None:
                 fut, data, act_prev = pending
                 tw = time.perf_counter()

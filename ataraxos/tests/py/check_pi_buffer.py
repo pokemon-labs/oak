@@ -3,7 +3,9 @@ self-play on the perfect-info env, both buffers fed the same rows, ends and
 fake log-probs / values, and every `take` compared (the same trajectories,
 as sets of (rows, player, reward); the same rows, n, choices, log-probs,
 picks and values per trajectory). Also with two envs through Envs (battle
-ids offset), as --pingpong feeds the buffer. CPU only, a few seconds.
+ids offset), as --pingpong feeds the buffer; and NumpyBuffer(gather=True)
+(--take_gather) against the default NumpyBuffer, field for field, with
+search in training's columns. CPU only, a few seconds.
 
     python tests/py/check_pi_buffer.py [BATTLES] [TAKES] [STEPS_PER_TAKE] [drop]
 """
@@ -42,11 +44,12 @@ def run(battles, takes, steps, at_cap, pingpong):
     sizes = [battles // 2, battles - battles // 2] if pingpong else [battles]
     envs = [ataraxos_pi.SelfPlay(s, 3 + i, max_turns=60, threads=1) for i, s in enumerate(sizes)]
     env = Envs(envs, sizes)
-    a, b = Buffer(at_cap), NumpyBuffer(at_cap)
+    a, b, c = Buffer(at_cap), NumpyBuffer(at_cap), NumpyBuffer(at_cap, gather=True)
     obs = [env.shift(i, e.reset()) for i, e in enumerate(envs)]
     for o in obs:
         a.end(o)
         b.end(o)
+        c.end(o)
     total = 0
     for t in range(takes):
         for _ in range(steps):
@@ -56,18 +59,31 @@ def run(battles, takes, steps, at_cap, pingpong):
                 logp = rng.standard_normal((len(picks), 2, CHOICES)).astype(np.float32)
                 value = rng.standard_normal((len(picks), 3)).astype(np.float32)
                 a.add(o, picks, logp, value)
-                b.add(o, picks, logp, value)
+                R = len(picks)
+                extra = dict(searched=(rng.random(R) < 0.2).astype(np.uint8),
+                             post=rng.random((R, 2, CHOICES)).astype(np.float32),
+                             swdl=rng.random((R, 3)).astype(np.float32))
+                b.add(o, picks, logp, value, extra)
+                c.add(o, picks, logp, value, extra)
                 o = env.shift(i, e.step(picks))
                 obs[i] = o
                 a.end(o)
                 b.end(o)
+                c.end(o)
         ga, gb = a.games(), b.games()
-        da, db = a.take(), b.take()
+        da, db, dc = a.take(), b.take(), c.take()
+        fields = ("row", "player", "side", "n", "choices", "logp", "pick", "value", "start", "length", "reward",
+                  "searched", "post", "swdl")
+        same = all(np.array_equal(getattr(db, f), getattr(dc, f)) for f in fields) and \
+            all(np.array_equal(db.rows[k], dc.rows[k]) for k in db.rows) and b.size == c.size
+        if not same:
+            print(f"take {t}: gather differs from the default numpy take")
+            return False
         ca, cb = canon(da), canon(db)
         ok = ca == cb and a.size == b.size
         total += len(da.length)
         print(f"{'pingpong ' if pingpong else ''}{at_cap} take {t}: {len(da.length)} vs {len(db.length)} trajectories, "
-              f"games {ga} vs {gb}, kept rows {a.size} vs {b.size}: {'ok' if ok else 'DIFFERENT'}")
+              f"games {ga} vs {gb}, kept rows {a.size} vs {b.size}, gather equal: {'ok' if ok else 'DIFFERENT'}")
         if not ok:
             return False
     return total > 0

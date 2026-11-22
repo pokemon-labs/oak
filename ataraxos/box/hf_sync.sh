@@ -12,7 +12,9 @@
 # runs/.hf_pushed. Nothing is deleted, locally or on the Hub (the user's,
 # 2026-11-04: local disk is box/disk_guard.sh's job). EVERY=seconds between
 # looks for new checkpoints (default 60); ONCE=1 looks once; HF= the hf binary
-# (default: hf on PATH, else the venv's).
+# (default: hf on PATH, else the venv's); MOD= the iteration multiple
+# uploaded (default 500; 25 for the perfect-info net's few-MB checkpoints,
+# 2026-11-22).
 set -uo pipefail
 [ $# -ge 1 ] || { sed -n 2,15p "$0"; exit 2; }
 repo=$1
@@ -24,7 +26,7 @@ while true; do
   for ck in runs/*/ckpt*.pt; do
     [ -e "$ck" ] || continue
     it=$(basename "$ck" .pt); it=${it#ckpt}
-    [[ $it =~ ^[0-9]+$ ]] && (( it % 500 == 0 )) || continue
+    [[ $it =~ ^[0-9]+$ ]] && (( it % ${MOD:-500} == 0 )) || continue
     grep -qxF "$ck" "$pushed" && continue
     run=$(basename "$(dirname "$ck")")
     if $HF upload "$repo" runs runs --repo-type model \

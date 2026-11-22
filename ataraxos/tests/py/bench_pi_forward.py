@@ -18,7 +18,7 @@ from ataraxos.pi.net import CHOICES, legal_logits, make_net
 
 
 def rows_from_env(R):
-    env = ataraxos_pi.SelfPlay(min(R, 4096), 1, max_turns=200, threads=4)
+    env = ataraxos_pi.SelfPlay(min(R, 4096), 1, teams=["teams/selfplay/oak150.txt"], max_turns=200, threads=4)
     rng = np.random.default_rng(1)
     obs = env.reset()
     for _ in range(20):  # past the opening
@@ -45,6 +45,7 @@ def main():
     counts = [int(x) for x in (sys.argv[2] if len(sys.argv) > 2 else "4096,16384,65536,131072").split(",")]
     seconds = float(sys.argv[3]) if len(sys.argv) > 3 else 2.0
     dev = torch.device("cuda")
+    torch.set_num_threads(4)  # the host's CPU count oversubscribes a box's CPU quota (train.py's --torch_threads)
     torch.backends.cuda.matmul.allow_tf32 = True
     net = make_net(size).to(dev).eval()
     print(f"{torch.cuda.get_device_name()}, torch {torch.__version__}, {size} "
@@ -59,7 +60,8 @@ def main():
         return (logp - torch.log(-torch.log(u))).argmax(-1), logp, value
 
     compiled = torch.compile(step, mode="max-autotune-no-cudagraphs", dynamic=False)
-    print(f"{'rows':>8} | {'eager':>12} {'compile':>12} {'graph':>12} {'graph+copies':>13}  (M rows/s)")
+    print(f"{'rows':>8} | {'eager':>12} {'compile':>12} {'graph':>12} {'graph+copies':>13} {'cgraph':>12}"
+          f" {'cgraph+copies':>14}  (M rows/s; cgraph: the compiled forward in the graph)")
     for R in counts:
         obs = rows_from_env(R)
         x = {k: torch.from_numpy(v).to(dev) for k, v in obs.items()}
@@ -75,8 +77,13 @@ def main():
         actor.collect(actor.launch(obs))  # captures
         out["graph"] = timeit(lambda: actor.graph.replay(), seconds)
         out["copies"] = timeit(lambda: actor.collect(actor.launch(obs)), seconds)
+        cactor = AsyncActor(net, dev, True, capacity=R, slots=1, graphs=True, compile=True)
+        cactor.collect(cactor.launch(obs))  # compiles, captures
+        out["cgraph"] = timeit(lambda: cactor.graph.replay(), seconds)
+        out["ccopies"] = timeit(lambda: cactor.collect(cactor.launch(obs)), seconds)
         print(f"{R:8d} | " + " ".join(f"{R / out[k] / 1e6:12.2f}" for k in ("eager", "compile", "graph"))
-              + f" {R / out['copies'] / 1e6:13.2f}")
+              + f" {R / out['copies'] / 1e6:13.2f} {R / out['cgraph'] / 1e6:12.2f}"
+              + f" {R / out['ccopies'] / 1e6:14.2f}", flush=True)
 
 
 if __name__ == "__main__":

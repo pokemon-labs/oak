@@ -545,27 +545,53 @@ Plan and results: `docs/pi_speed.md` (read it first). The user's calls:
   30xx (~20 cores) first, then a final hour on a 4090 / 5090 to pick the
   card and tune `--battles`, `--threads`, graph sizes.
 - Every speedup is a `Config` flag in `ataraxos/pi/train.py` whose default
-  is the original path, so each can be ablated. Written, not yet run on a
-  GPU (`ataraxos/pi/fast.py`): `--buffer numpy`, `--actor async|graphs`,
-  `--pingpong`, `--fused_adam`, `--tf32` (bf16 autocast is already on, so
-  `--tf32` does ~nothing: remove unless the user wants it kept), `--gae
-  gpu`, `--compile_train MODE`, `--overlap` (one-step-stale actor),
-  `--eval_async` / `--eval_threads`; all smoke-run on the laptop's CPU.
-  Checks to run when a machine is free: `tests/py/check_pi_buffer.py` (CPU,
-  first), `tests/py/bench_pi_forward.py`, `tests/py/check_pi_gae.py` (GPU).
-  The trainer needs a team file: with no teams the env's rows have policy
+  is the original path, so each can be ablated (`ataraxos/pi/fast.py`,
+  `ataraxos/pi/search.py`; the table is in `docs/pi_speed.md`). The one
+  changed default: `--torch_threads 4` (torch's own oversubscribes a box's
+  CPU quota). "Obviously we compile everything" (the user): real runs use
+  `--actor graphs --actor_compile 1 --compile_train default`.
+- First GPU run (Vast 3060, 2026-11-22): all the non-search speed flags
+  give 2.5x games/s (1611 -> 4030); the learner's prep and `buffer.take`
+  bound the loop after it (`--take_gather`, `--stats_every`). Checks:
+  `tests/py/check_pi_buffer.py`, `check_pi_gae.py`, `check_pi_search.py`,
+  `bench_pi_forward.py`, all passing on the box.
+- Search in training is built (`--search_p`, off by default; needs
+  `--buffer numpy`): KataGo-style share p of rows, depth-1 rollouts on the
+  env (`SelfPlay.rollouts`), 1 round of joint MMD (C++), both sides'
+  posteriors as CE targets, the searched action played and masked out of
+  the PPO loss, `--search_value_mix` of the search's W/D/L in the value
+  target. Settings from `tests/py/search_gain.py`: budget 64, alpha 0,
+  beta 0.03. Speed flags: `--search_solve cpp`, `--search_plan cpp`,
+  `--search_leaf async|graphs`, `--search_direct`, `--search_value_only`,
+  `--search_compile`, `--search_async`. Their ablation
+  (`runs/abl_search.sh` on the box) was contaminated by applemagpie's
+  games on the same GPU: rerun. Open: p's schedule (proposed 0.05 -> 0.25
+  over ~1B decisions), the value mix.
+- The trainer needs a team file: with no teams the env's rows have policy
   index -1 and `legal_logits` fails (pre-existing, 2026-11-22).
-- Search in training (agreed, not built): KataGo-style, a share p of rows
-  searched (annealed up), 1 round of joint MMD, both sides' posteriors as CE
-  targets, the searched action played and masked out of the PG loss, value
-  CE on the rollouts' empirical W/D/L, rows where either side has 2+
-  choices. Settings from `tests/py/search_gain.py` (rby2 ckpt250, gain vs a
-  depth 8 reference): depth 1, budget 64, alpha 0 (prior-only magnet), beta
-  0.02-0.05. Rollouts should join the env's lockstep batch (birch
-  `docs/OVO.md`).
 - Laptop: 7 GB RAM; the user runs other jobs on it. Keep laptop tests to
   20-30 min, cap memory (search_gain.py: 2 roots a step), test one net and
   skip settings already known to be bad.
+
+## applemagpie on Showdown, challenges only (2026-11-22)
+
+The user's: "apple magpie" on the main Showdown server, accepting gen1ou
+challenges, no ladder: `LADDER=0 box/ladder_main.sh` in tmux session
+`applemagpie` on the Vast 3060 box (`ssh -p 28963 root@ssh5.vast.ai`, no
+volume: lost on destroy). ckpt1750 from HF, the top-20 pool rebuilt by
+`codegen/top_teams.py` from rby4's teams1750.npz, `login.txt` in
+`~/ladder/applemagpie` (chmod 600). That image sets `HF_HOME=/workspace/.hf_home`,
+so `hf` needs `HF_TOKEN_PATH=~/.cache/huggingface/token`. Stopped the same
+day (the user's), for pi1.
+
+## pi1 (2026-11-22, the user: "just start training")
+
+`box/run_pi1.sh` in tmux `pi1` on the same box: the perfect-info net with
+every speed flag and search in training (p 0.05 -> 0.25 over 1e9
+decisions, budget 64, beta 0.03, value mix 0.5), oak1500, evals vs random
+and maxdamage every 25 (async). Restart loop resumes from the newest
+checkpoint. `box/hf_sync.sh` in tmux `hfsync` with `MOD=25` uploads
+`runs/pi1` to `opencover/ataraxos-runs` (the box has no volume).
 
 ## applemagpie on pkmn.bot (2026-11-20)
 

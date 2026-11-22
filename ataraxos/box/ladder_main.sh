@@ -5,8 +5,10 @@
 # per_type, 3x3 types, 4 rounds, budget 1024, depth 4, sampler pool
 # oak1500.txt, on the GPU; temperature 1 and no min-prob, as in the league).
 # Restart loop; extra args go to the bot; stops when the bot exits 0.
+# LADDER=0 (2026-11-22, the user's): no ladder queue, only accept gen1ou
+# challenges.
 #
-#   box/ladder_main.sh [--games N ...]
+#   [LADDER=0] box/ladder_main.sh [--games N ...]
 #
 # Needs in ~/ladder/applemagpie: login.txt (name, then password; chmod 600;
 # never in a repo or a log), ckpt.pt, pool.tsv (codegen/top_teams.py).
@@ -14,11 +16,13 @@
 # (`games 0` to stop after the current game).
 set -uo pipefail
 d=~/ladder/applemagpie
-ROUNDS=${ROUNDS:-4} DEPTH=${DEPTH:-4} BUDGET=${BUDGET:-1024} PY=${PY:-/venv/main/bin/python}
+ROUNDS=${ROUNDS:-4} DEPTH=${DEPTH:-4} BUDGET=${BUDGET:-1024} PY=${PY:-/venv/main/bin/python} LADDER=${LADDER:-1}
+ladder=--ladder
+[ "$LADDER" = 0 ] && ladder=
 mkdir -p $d/games
 cd ~/oak-ataraxos/ataraxos
 while true; do
-  nice -n 10 $PY -u -m ataraxos.play.showdown --server showdown --login $d/login.txt --ladder \
+  nice -n 10 $PY -u -m ataraxos.play.showdown --server showdown --login $d/login.txt $ladder \
     --ckpt $d/ckpt.pt --teams $d/pool.tsv \
     --leave-after 5 --idle-timer 20 \
     --games-dir $d/games --threads 4 --control-port 8780 \
