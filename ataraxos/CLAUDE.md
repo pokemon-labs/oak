@@ -593,6 +593,15 @@ and maxdamage every 25 (async). Restart loop resumes from the newest
 checkpoint. `box/hf_sync.sh` in tmux `hfsync` with `MOD=25` uploads
 `runs/pi1` to `opencover/ataraxos-runs` (the box has no volume).
 
+pi1 stopped at it ~235 (2026-11-22 21:40): it ran on the trainer's Exp3
+defaults (`team_gamma` 0.1 decaying, `team_eta` gamma/k ~6.7e-5), not the
+team flags rby1-4 pass in their launch scripts, so the team pool collapsed
+to ~13 effective teams by it 100 (team 40 ~39%) while the evals draw
+uniformly from all 1500: per battle it trailed rby1 vs maxdamage (0.79 vs
+0.93 at 1.5M). `runs/pi2` (tmux `pi2`, `RUN=pi2 box/run_pi1.sh`): pi1 fresh
+with rby's team flags (`--team_gamma 0.5 --team_gamma_tau 0 --team_eta 1e-5`).
+Before a new trainer's run, diff its config.json against rby1's.
+
 ## applemagpie on pkmn.bot (2026-11-20)
 
 Box: `ssh -p 7799 root@142.127.68.223` (Vast, RTX 3060 12 GB, driver 550 so
