@@ -89,6 +89,43 @@ Gains are guesses until the baseline is in.
 Order: 4, 3, 6 (flags or a few lines), then 1, then 2 once the numbers
 show act and train are close.
 
+### Flags (written 2026-11-22, not yet run on a GPU)
+
+Every idea is a `Config` flag in `ataraxos/pi/train.py`; each default is
+the original code path, so a run with no new flags is the baseline and any
+one flag can be switched off for an ablation. Code: `ataraxos/pi/fast.py`.
+
+| Flag | Idea | Default |
+| --- | --- | --- |
+| `--battles N` | 4 | 8192 |
+| `--buffer numpy` | 7 (part): trajectories built with numpy in `take`, no Python loop per row in `add` | `python` |
+| `--actor async` | 5: pinned buffers, non-blocking copies, `launch` / `collect` | `eager` |
+| `--actor graphs` | 3 + 5: the forward and sampling as one CUDA graph (Gumbel-max sampling) | `eager` |
+| `--pingpong 1` | 1: two half-size envs, one steps while the other's forward runs (needs `async` or `graphs`) | off |
+| `--fused_adam 1` | 6 (part) | off |
+| `--tf32 1` | 9 | off |
+| `--gae gpu` | 7 (rest): returns, advantages and the filter's quantile on the device | `cpu` |
+| `--compile_train MODE` | 6 (rest): `torch.compile` of the loss, forward and backward (`default`, `reduce-overhead`, `max-autotune`); one recompile for the last, smaller minibatch, then dynamic | off |
+| `--overlap 1` | 2: the learner in a thread on its own stream, the actor on its own copy of the net refreshed after each learner step (one step stale) | off |
+| `--eval_async 1` | 8: evals in a thread on copies of the nets, own stream, at most one in flight; results as their own `eval_it` log line | off |
+| `--eval_threads N` | the eval env's threads (0: `--threads`), so async evals don't oversubscribe | 0 |
+
+Checks for when a machine is free: `tests/py/check_pi_buffer.py` (CPU,
+seconds: NumpyBuffer gives train.Buffer's trajectories, with and without
+two envs), `tests/py/bench_pi_forward.py` (GPU: eager vs compile vs
+graph rows/s) and `tests/py/check_pi_gae.py` (GPU: `--gae gpu` against the
+CPU).
+
+Laptop smoke run (CPU, 256 battles, 4 iterations, oak150): every new flag
+and `--overlap 1 --eval_async 1 --buffer numpy --actor async --pingpong 1`
+together run, save and resume-format checkpoints; `--gae gpu` (on the CPU)
+and `--compile_train default` give the baseline's losses exactly. With
+`--overlap`, a logged iteration's `iter_s` / `games_per_s` is the loop's
+period (collecting the next iteration while this one trains), plus
+`overlap_wait_s`; its env / team stats include the next collection. The
+learner thread shares the GIL with the collection loop (the env releases
+it while stepping): whether that costs more than it saves is for the box.
+
 Birch's 3x: no record of which change gave it. Birch's commits show a
 GPU-resident learner (`e3a5e85`) and history grouped by length
 (`68b3542`); its notes say the learner is "bound by CPU kernel issue". In
@@ -133,11 +170,32 @@ Batching: rollouts join the env's lockstep batch as extra battles
 (birch's `docs/OVO.md`); a searching game waits for its rollouts while
 the others step, so one forward serves both.
 
-Softness (rby4 ckpt1750, 6-root smoke run): budget 64 gives per-action Q
-noise ~0.10. At applemagpie's lambda 0.022 two seeds disagree more than
-either differs from the prior. At lambda 0.11-0.22 the posterior moves
-0.01-0.05 nats from the prior and two seeds agree. A 150-root run (budgets
-64, 128, 512) is in progress.
+Settings test (2026-11-22, rby2 ckpt250 as a weak net, 80 roots, 1 round,
+1 type a side with the foe's true sets). Score: the posterior's gain over
+the prior, sum (post - prior) q_ref, with q_ref from an independent depth 8
+budget 256 run with uniform cells, against the foe's prior; in
+win-minus-loss points x100 (+- one standard error):
+
+| Depth, budget (forwards) | alpha 0, beta 0.02 | alpha 0, beta 0.05 | alpha 0, beta 0.2 | 1:10, lambda 0.022 | 1:10, lambda 0.22 |
+| --- | --- | --- | --- | --- | --- |
+| 1, 64 (64) | 0.97 +- 0.31 | 0.70 +- 0.20 | 0.23 +- 0.06 | 0.93 | 0.17 |
+| 1, 128 (128) | 1.04 +- 0.34 | 0.66 +- 0.20 | 0.23 +- 0.07 | 0.98 | 0.16 |
+| 4, 128 (512) | 1.47 +- 0.52 | 1.07 +- 0.34 | 0.42 +- 0.10 | 1.43 | 0.34 |
+
+- The gain keeps rising as lambda falls to 0.02 (smaller wasn't tested).
+- alpha 0 (the prior alone as the magnet) beats 1:10 at every lambda: the
+  attack_switch magnet costs win rate and adds entropy.
+- Depth 1 budget 64 gives the most gain per forward (~0.015 / forward vs
+  ~0.003 at depth 4); budget 128 adds nothing at depth 1.
+- Entropy at alpha 0, lambda 0.02: 0.63 -> 0.53 nats (no collapse).
+- Seed noise is large at small lambda (KL 0.25 at budget 64), but CE is
+  linear in the target, so it is zero-mean gradient noise; the gain above
+  already includes noise's effect on the mean.
+- An earlier test on rby4 ckpt1750 scored against a 512 reference at the
+  same depth and favoured lambda ~0.2; that criterion was wrong (it counted
+  noise as harm and graded against a same-depth run).
+
+Starting point: depth 1, budget 64, 1 round, alpha 0, beta 0.02-0.05.
 
 ## Open decisions
 

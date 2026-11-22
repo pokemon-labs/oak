@@ -537,6 +537,36 @@ two pybind `SelfPlay`s collide), `ataraxos/pi/{net,agents,train}.py`.
   needs it, pull on the box, then delete the remote branch right away (the
   user's, 2026-11-18). The user said to hold off on the next steps; ask first.
 
+## Perfect-info speed and search in training (2026-11-22)
+
+Plan and results: `docs/pi_speed.md` (read it first). The user's calls:
+
+- Training cost is what's paid for. Build the speedups on a cheap rented
+  30xx (~20 cores) first, then a final hour on a 4090 / 5090 to pick the
+  card and tune `--battles`, `--threads`, graph sizes.
+- Every speedup is a `Config` flag in `ataraxos/pi/train.py` whose default
+  is the original path, so each can be ablated. Written, not yet run on a
+  GPU (`ataraxos/pi/fast.py`): `--buffer numpy`, `--actor async|graphs`,
+  `--pingpong`, `--fused_adam`, `--tf32` (bf16 autocast is already on, so
+  `--tf32` does ~nothing: remove unless the user wants it kept), `--gae
+  gpu`, `--compile_train MODE`, `--overlap` (one-step-stale actor),
+  `--eval_async` / `--eval_threads`; all smoke-run on the laptop's CPU.
+  Checks to run when a machine is free: `tests/py/check_pi_buffer.py` (CPU,
+  first), `tests/py/bench_pi_forward.py`, `tests/py/check_pi_gae.py` (GPU).
+  The trainer needs a team file: with no teams the env's rows have policy
+  index -1 and `legal_logits` fails (pre-existing, 2026-11-22).
+- Search in training (agreed, not built): KataGo-style, a share p of rows
+  searched (annealed up), 1 round of joint MMD, both sides' posteriors as CE
+  targets, the searched action played and masked out of the PG loss, value
+  CE on the rollouts' empirical W/D/L, rows where either side has 2+
+  choices. Settings from `tests/py/search_gain.py` (rby2 ckpt250, gain vs a
+  depth 8 reference): depth 1, budget 64, alpha 0 (prior-only magnet), beta
+  0.02-0.05. Rollouts should join the env's lockstep batch (birch
+  `docs/OVO.md`).
+- Laptop: 7 GB RAM; the user runs other jobs on it. Keep laptop tests to
+  20-30 min, cap memory (search_gain.py: 2 roots a step), test one net and
+  skip settings already known to be bad.
+
 ## applemagpie on pkmn.bot (2026-11-20)
 
 Box: `ssh -p 7799 root@142.127.68.223` (Vast, RTX 3060 12 GB, driver 550 so

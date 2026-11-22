@@ -163,37 +163,40 @@ def _bootstrap(V, data: Data):
     computed, since the env sends no decision there."""
     if data.truncated is None or not data.truncated.any():
         return
-    g = torch.from_numpy(np.flatnonzero(data.truncated))
-    last = torch.from_numpy(data.length[data.truncated])
+    g = torch.from_numpy(np.flatnonzero(data.truncated)).to(V.device)
+    last = torch.from_numpy(data.length[data.truncated]).to(V.device)
     V[g, last] = V[g, last - 1]
 
 
 @torch.no_grad()
-def returns_and_advantages(data: Data, td_lambda: float, gae_lambda: float):
+def returns_and_advantages(data: Data, td_lambda: float, gae_lambda: float, device="cpu"):
     """Stratego's buffer.process_data, per trajectory, over (loss, draw, win)
     distributions: rewards terminal only, gamma 1. A step's target is the
     next step's distribution, or the result's one-hot at the last step (a
     truncated trajectory's own distribution there); returns are TD(td_lambda)
     over the distribution, advantages GAE(gae_lambda) over the expected
     outcome P(win) - P(loss), the paper's, so its 0.01 filter threshold keeps
-    its scale. Returns (returns [N, 3], advantages [N])."""
+    its scale. Returns (returns [N, 3], advantages [N]), on `device` (the
+    pi trainer's --gae gpu; the default, the CPU, is the original path)."""
     G, T = len(data.length), int(data.length.max())
     N = len(data.n)
-    pos = np.arange(N) - np.repeat(data.start, data.length)
-    row = np.repeat(np.arange(G), data.length)
-    V = torch.zeros(G, T + 1, 3)
-    V[row, pos] = torch.softmax(torch.from_numpy(data.value).float(), -1)
-    V[torch.arange(G), torch.from_numpy(data.length)] = F.one_hot(torch.from_numpy(data.reward + 1), 3).float()
+    d = torch.device(device)
+    pos = torch.from_numpy(np.arange(N) - np.repeat(data.start, data.length)).to(d)
+    row = torch.from_numpy(np.repeat(np.arange(G), data.length)).to(d)
+    V = torch.zeros(G, T + 1, 3, device=d)
+    V[row, pos] = torch.softmax(torch.from_numpy(data.value).to(d).float(), -1)
+    V[torch.arange(G, device=d), torch.from_numpy(data.length).to(d)] = \
+        F.one_hot(torch.from_numpy(data.reward + 1).to(d), 3).float()
     _bootstrap(V, data)
-    valid = torch.zeros(G, T, dtype=torch.bool)
+    valid = torch.zeros(G, T, dtype=torch.bool, device=d)
     valid[row, pos] = True
     delta = (V[:, 1:] - V[:, :-1]) * valid[..., None]  # [G, T, 3]
     e = delta[..., 2] - delta[..., 0]
-    ret = torch.zeros(G, T, 3)
-    adv = torch.zeros(G, T)
-    acc, sacc = torch.zeros(G, 3), torch.zeros(G)
+    ret = torch.zeros(G, T, 3, device=d)
+    adv = torch.zeros(G, T, device=d)
+    acc, sacc = torch.zeros(G, 3, device=d), torch.zeros(G, device=d)
     for t in range(T - 1, -1, -1):
-        nxt = valid[:, t + 1].float() if t + 1 < T else torch.zeros(G)
+        nxt = valid[:, t + 1].float() if t + 1 < T else torch.zeros(G, device=d)
         acc = delta[:, t] + td_lambda * acc * nxt[:, None]
         sacc = e[:, t] + gae_lambda * sacc * nxt
         ret[:, t] = acc

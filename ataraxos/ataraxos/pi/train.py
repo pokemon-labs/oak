@@ -29,6 +29,8 @@ the games in progress are dropped).
 """
 
 import argparse
+import concurrent.futures
+import contextlib
 import dataclasses
 import json
 import math
@@ -41,6 +43,7 @@ import torch
 
 from ataraxos._ext import ataraxos_pi
 from ataraxos.pi.agents import NetAgent, make_agent, match
+from ataraxos.pi.fast import AsyncActor, Envs, NumpyBuffer
 from ataraxos.pi.net import CHOICES, legal_logits, make_net
 from ataraxos.rl import metrics, teams
 from ataraxos.rl.buffer import returns_and_advantages
@@ -99,6 +102,17 @@ class Config:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     amp: bool = True
     gpu_log: float = 2.0
+    # speed options (ataraxos/pi/fast.py, docs/pi_speed.md); each default is the original code path
+    buffer: str = "python"  # "numpy": trajectories found in take, no Python loop per row
+    actor: str = "eager"    # "async": pinned buffers, non-blocking copies; "graphs": async + one CUDA graph
+    pingpong: bool = False  # two half-size envs, one steps while the other's forward runs (actor async|graphs)
+    fused_adam: bool = False  # AdamW(fused=True) on CUDA
+    tf32: bool = False      # TF32 matmuls and convolutions
+    gae: str = "cpu"        # "gpu": returns, advantages and the filter's quantile on the device
+    compile_train: str = ""  # torch.compile the loss (forward + backward): default, reduce-overhead, max-autotune
+    overlap: bool = False   # learn on iteration t in a thread while collecting t+1 with t's weights (one stale)
+    eval_async: bool = False  # evals in a thread on a snapshot of the nets; results as their own log line
+    eval_threads: int = 0   # the eval env's threads (0: --threads)
 
 
 ROW_COLUMNS = ("mon", "hp", "active", "policy", "n", "choices")
@@ -226,9 +240,13 @@ class Learner:
         self.ema.load_state_dict(self.net.state_dict())
         for p in self.ema.parameters():
             p.requires_grad_(False)
-        self.optim = torch.optim.AdamW(self.net.parameters(), lr=cfg.lr_ceil, weight_decay=cfg.weight_decay)
+        fused = cfg.fused_adam and self.dev.type == "cuda"
+        self.optim = torch.optim.AdamW(self.net.parameters(), lr=cfg.lr_ceil, weight_decay=cfg.weight_decay,
+                                       **({"fused": True} if fused else {}))
         self.it = 0
         self.decisions = 0
+        self.loss_fn = self.loss if not cfg.compile_train else torch.compile(
+            self.loss, mode=None if cfg.compile_train == "default" else cfg.compile_train)
 
     def schedule_step(self):
         c = self.cfg
@@ -237,11 +255,12 @@ class Learner:
     def train(self, data: Data, rng):
         cfg, dev = self.cfg, self.dev
         t0 = time.perf_counter()
-        ret, adv = returns_and_advantages(data, cfg.td_lambda, cfg.gae_lambda)
+        gd = dev if cfg.gae == "gpu" else torch.device("cpu")
+        ret, adv = returns_and_advantages(data, cfg.td_lambda, cfg.gae_lambda, gd)
         threshold = max(float(adv.abs().quantile(cfg.adv_filt_rate)) if len(adv) < 2**24 else
-                        float(adv.abs()[torch.randperm(len(adv))[:2**24]].quantile(cfg.adv_filt_rate)),
+                        float(adv.abs()[torch.randperm(len(adv), device=gd)[:2**24]].quantile(cfg.adv_filt_rate)),
                         cfg.adv_filt_thresh)
-        keep = (adv.abs() >= threshold).numpy()
+        keep = (adv.abs() >= threshold).cpu().numpy()
         step = self.schedule_step()
         lr = power_schedule(cfg.lr_coef, step, cfg.lr_decay, cfg.lr_ceil, cfg.lr_floor)
         temperature = power_schedule(cfg.temperature_coef, step, cfg.temperature_decay, cfg.temperature_ceil,
@@ -250,7 +269,7 @@ class Learner:
             g["lr"] = lr
         stats = dict(lr=lr, temperature=temperature, schedule_step=step, adv_threshold=threshold,
                      decisions=len(adv), kept=int(keep.sum()))
-        stats.update(metrics.data_stats(data, ret, adv))
+        stats.update(metrics.data_stats(data, ret.cpu(), adv.cpu()))
         # everything on the device once
         T = lambda a, dt=None: torch.as_tensor(np.ascontiguousarray(a), device=dev, dtype=dt)
         rows = {k: T(v) for k, v in data.rows.items()}
@@ -268,7 +287,7 @@ class Learner:
                                                           for k in range(0, len(group), cfg.microbatch)]
             self.optim.zero_grad(set_to_none=True)
             for m in micros:
-                loss, out = self.loss(rows, dd, torch.from_numpy(m).to(dev), temperature)
+                loss, out = self.loss_fn(rows, dd, torch.from_numpy(m).to(dev), temperature)
                 (loss * (len(m) / len(group))).backward()
                 for k, v in out.items():
                     sums[k] = (torch.maximum(sums[k], v) if k in sums and k.endswith("_max") else
@@ -367,6 +386,17 @@ def parse(argv) -> Config:
 
 def main(argv=None):
     cfg = parse(argv)
+    if cfg.buffer not in ("python", "numpy"):
+        raise ValueError(f"--buffer {cfg.buffer!r}: python or numpy")
+    if cfg.actor not in ("eager", "async", "graphs"):
+        raise ValueError(f"--actor {cfg.actor!r}: eager, async or graphs")
+    if cfg.pingpong and cfg.actor == "eager":
+        raise ValueError("--pingpong needs --actor async or graphs")
+    if cfg.actor == "graphs" and not cfg.device.startswith("cuda"):
+        raise ValueError("--actor graphs needs CUDA")
+    if cfg.tf32:
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
     os.makedirs(cfg.run, exist_ok=True)
     torch.manual_seed(cfg.seed)
     rng = np.random.default_rng(cfg.seed)
@@ -390,7 +420,9 @@ def main(argv=None):
     with open(os.path.join(cfg.run, f"config_resume{learner.it}.json" if ck else "config.json"), "w") as f:
         json.dump({**dataclasses.asdict(cfg), "code": code_version()}, f, indent=1)
     env_seed = cfg.seed if ck is None else int(np.random.SeedSequence([cfg.seed, learner.it]).generate_state(1)[0])
-    env = env_factory(cfg.battles, env_seed)
+    sizes = [cfg.battles // 2, cfg.battles - cfg.battles // 2] if cfg.pingpong else [cfg.battles]
+    envs = [env_factory(s, env_seed + 7919 * i) for i, s in enumerate(sizes)]
+    env = Envs(envs, sizes) if cfg.pingpong else envs[0]
     k = len(env.team_probs)
     exp3 = teams.Exp3(k, cfg.team_gamma, cfg.team_eta, cfg.team_gamma_floor, cfg.team_gamma_tau,
                       cfg.team_gamma_decay) if cfg.teams else None
@@ -412,24 +444,46 @@ def main(argv=None):
             exp3.update(obs["end_team"][done], obs["end_prob"][done], obs["end_result"][done])
             env.set_team_weights(exp3.probs())
 
-    actor = Actor(learner.net, cfg.device, cfg.amp)
-    buffer = Buffer(cfg.at_cap)
-    obs = env.reset()
-    ended(obs)
+    # --overlap: the actor plays with its own copy of the net, refreshed after each learner step, while the
+    # learner runs in a thread on its own CUDA stream (the env releases the GIL while it steps)
+    actor_net = learner.net
+    if cfg.overlap:
+        actor_net = make_net(cfg.size).to(learner.dev).eval()
+        actor_net.load_state_dict(learner.net.state_dict())
+        for p in actor_net.parameters():
+            p.requires_grad_(False)
+    if cfg.actor == "eager":
+        actor = Actor(actor_net, cfg.device, cfg.amp)
+    else:
+        actor = AsyncActor(actor_net, cfg.device, cfg.amp, capacity=max(sizes), slots=len(sizes),
+                           graphs=cfg.actor == "graphs")
+    buffer = NumpyBuffer(cfg.at_cap) if cfg.buffer == "numpy" else Buffer(cfg.at_cap)
+    obs_list = [env.shift(i, e.reset()) if cfg.pingpong else e.reset() for i, e in enumerate(envs)]
+    for o in obs_list:
+        ended(o)
+    state = dict(obs=obs_list[0], env_before=env.stats)
+    # async: each env's next forward is queued before the loop and after each step, and collected at its turn
+    handles = [actor.launch(o, i) for i, o in enumerate(obs_list)] if cfg.actor != "eager" else None
     log = open(os.path.join(cfg.run, "log.jsonl"), "a")
     if ck is not None:
         log.write(json.dumps({"resume": learner.it}) + "\n")
     anchors = {a: make_agent(a, cfg.device, cfg.seed, cfg.amp) for a in cfg.anchors if "{it}" not in a}
     start_gpu_log(cfg)
-    env_before = env.stats
+    cuda = learner.dev.type == "cuda"
+    eval_env = lambda it: (lambda b: ataraxos_pi.SelfPlay(b, cfg.seed + 10**6 + it, teams=cfg.teams,
+                                                          max_turns=cfg.max_turns,
+                                                          threads=cfg.eval_threads or cfg.threads))
 
-    while learner.it < cfg.iters:
-        t0, cpu0 = time.perf_counter(), cpu_seconds()
+    def collect():
+        """Plays until the buffer holds games_per_iter games; returns the act timings."""
+        t0 = time.perf_counter()
         peak_gb(learner.dev)
         rows = decisions = 0
         net_s = env_s = 0.0
-        learner.net.eval()
-        while buffer.games() < cfg.games_per_iter:
+        if not cfg.overlap:
+            learner.net.eval()
+        obs = state["obs"]
+        while handles is None and buffer.games() < cfg.games_per_iter:
             ta = time.perf_counter()
             picks, logp, value = actor.act(obs)
             tb = time.perf_counter()
@@ -442,43 +496,112 @@ def main(argv=None):
             net_s += tb - ta
             buffer.end(obs)
             ended(obs)
+        state["obs"] = obs
+        # async / pingpong: env i's forward runs on the GPU while the other env steps; act_net_s is the
+        # time spent waiting for a forward. Forwards queued at an iteration's end ran before the
+        # learner's kernels (one stream; with --overlap, before the actor net's refresh, on the actor's
+        # stream), so their log-probs are the policy that picked.
+        while handles is not None and buffer.games() < cfg.games_per_iter:
+            for i, e in enumerate(envs):
+                ta = time.perf_counter()
+                picks, logp, value = actor.collect(handles[i])
+                tb = time.perf_counter()
+                o = obs_list[i]
+                buffer.add(o, picks, logp, value)
+                rows += len(picks)
+                decisions += int((o["n"] >= 2).sum())
+                tc = time.perf_counter()
+                o = e.step(picks)
+                env_s += time.perf_counter() - tc
+                net_s += tb - ta
+                o = env.shift(i, o) if cfg.pingpong else o
+                obs_list[i] = o
+                buffer.end(o)
+                ended(o)
+                handles[i] = actor.launch(o, i)
         t1 = time.perf_counter()
-        act_gb = peak_gb(learner.dev)
-        data = buffer.take()
-        stats = learner.train(data, rng)
-        t2 = time.perf_counter()
-        train_gb = peak_gb(learner.dev)
+        return dict(act_rows=rows, act_decisions=decisions, rows_per_s=rows / (t1 - t0), act_s=t1 - t0,
+                    act_net_s=net_s, act_env_s=env_s, act_other_s=t1 - t0 - net_s - env_s,
+                    **({"act_gb": peak_gb(learner.dev)} if cuda else {}))
+
+    def run_evals(it, nets):
+        """`nets`: (prefix, net) pairs. Returns the eval stats."""
+        out = {}
+        opps = dict(anchors)
+        for a in cfg.anchors:
+            if "{it}" in a and os.path.exists(a.format(it=it)):
+                opps[a] = make_agent(a.format(it=it), cfg.device, cfg.seed, cfg.amp)
+        for prefix, net in nets:
+            net.eval()
+            ours = NetAgent(net, cfg.device, cfg.amp)
+            for name, opp in opps.items():
+                w, t, l = match(eval_env(it), ours, opp, cfg.eval_battles)
+                score = (w + t / 2) / max(1, w + t + l)
+                key = f"{prefix}/{os.path.basename(name)}"
+                out[key] = score
+                out[key + "_wtl"] = [w, t, l]
+                out[key + "_ci95"] = list(metrics.wilson(score, w + t + l))
+        return out
+
+    def print_evals(stats):
+        return "".join(f" {k}={v:.3f}" for k, v in stats.items() if k.startswith("eval") and isinstance(v, float))
+
+    # --eval_async: one eval in flight, on copies of the nets, on its own stream
+    eval_pool = concurrent.futures.ThreadPoolExecutor(1) if cfg.eval_async else None
+    eval_job = [None]
+
+    def eval_done(wait):
+        job = eval_job[0]
+        if job is None or not (wait or job[1].done()):
+            return
+        it, fut, t = job
+        out = fut.result()
+        eval_job[0] = None
+        log.write(json.dumps(dict(eval_it=it, eval_s=time.perf_counter() - t, time=time.time(), **out)) + "\n")
+        log.flush()
+        print(f"eval_it={it}" + print_evals(out), flush=True)
+
+    def eval_start(it):
+        eval_done(wait=True)
+        nets = []
+        for prefix, net in (("eval", learner.ema), ("eval_net", learner.net)):
+            c = make_net(cfg.size).to(learner.dev).eval()
+            c.load_state_dict(net.state_dict())
+            nets.append((prefix, c))
+        stream = torch.cuda.Stream() if cuda else None
+        if cuda:
+            stream.wait_stream(torch.cuda.current_stream())
+
+        def job():
+            with torch.cuda.stream(stream) if cuda else contextlib.nullcontext():
+                out = run_evals(it, nets)
+            if cuda:
+                stream.synchronize()
+            return out
+
+        eval_job[0] = (it, eval_pool.submit(job), time.perf_counter())
+
+    def finish(stats, data, act, t_start, cpu0):
+        """The iteration's log line, evals and checkpoint, after its learner step."""
         env_now = env.stats
-        d_env = {key: env_now[key] - env_before[key] for key in env_now}
-        env_before = env_now
+        d_env = {key: env_now[key] - state["env_before"][key] for key in env_now}
+        state["env_before"] = env_now
         r = data.reward
-        stats.update(it=learner.it, games=len(data.length) // 2, act_rows=rows, act_decisions=decisions,
-                     rows_per_s=rows / (t1 - t0), act_s=t1 - t0, train_s=t2 - t1, act_net_s=net_s, act_env_s=env_s,
-                     act_other_s=t1 - t0 - net_s - env_s, mean_length=float(data.length.mean()),
+        stats.update(act)
+        stats.update(it=learner.it, games=len(data.length) // 2, mean_length=float(data.length.mean()),
                      ties=float((r == 0).mean()), capped_rate=d_env["capped"] / max(1, d_env["games"]),
-                     forced_frac=d_env["forced"] / max(1, d_env["forced"] + rows))
-        if learner.dev.type == "cuda":
-            stats.update(act_gb=act_gb, train_gb=train_gb)
+                     forced_frac=d_env["forced"] / max(1, d_env["forced"] + act["act_rows"]))
         team_counts = counts_before + np.asarray(env.team_counts, np.int64) if exp3 is not None else None
         if exp3 is not None:
             stats.update(teams.summary(exp3, team_counts))
         t3 = time.perf_counter()
+        if eval_pool is not None:
+            eval_done(wait=False)
         if learner.it % cfg.eval_every == 0:
-            opps = dict(anchors)
-            for a in cfg.anchors:
-                if "{it}" in a and os.path.exists(a.format(it=learner.it)):
-                    opps[a] = make_agent(a.format(it=learner.it), cfg.device, cfg.seed, cfg.amp)
-            for prefix, net in (("eval", learner.ema), ("eval_net", learner.net)):
-                net.eval()
-                ours = NetAgent(net, cfg.device, cfg.amp)
-                for name, opp in opps.items():
-                    w, t, l = match(lambda b: env_factory(b, cfg.seed + 10**6 + learner.it), ours, opp,
-                                    cfg.eval_battles)
-                    score = (w + t / 2) / max(1, w + t + l)
-                    key = f"{prefix}/{os.path.basename(name)}"
-                    stats[key] = score
-                    stats[key + "_wtl"] = [w, t, l]
-                    stats[key + "_ci95"] = list(metrics.wilson(score, w + t + l))
+            if eval_pool is not None:
+                eval_start(learner.it)
+            else:
+                stats.update(run_evals(learner.it, (("eval", learner.ema), ("eval_net", learner.net))))
         t4 = time.perf_counter()
         if learner.it % cfg.save_every == 0:
             learner.save(os.path.join(cfg.run, f"ckpt{learner.it}.pt"), exp3, rng, team_counts, pairs)
@@ -486,8 +609,8 @@ def main(argv=None):
                 np.savez(os.path.join(cfg.run, f"teams{learner.it}.npz"), log_w=exp3.log_w, p=exp3.probs(),
                          q_avg=exp3.q_avg(), counts=team_counts, names=np.array(env.team_names), **pairs.arrays())
         t5 = time.perf_counter()
-        stats.update(eval_s=t4 - t3, save_s=t5 - t4, iter_s=t5 - t0, time=time.time(),
-                     games_per_s=stats["games"] / (t5 - t0), cpu_cores=(cpu_seconds() - cpu0) / (t5 - t0),
+        stats.update(eval_s=t4 - t3, save_s=t5 - t4, iter_s=t5 - t_start, time=time.time(),
+                     games_per_s=stats["games"] / (t5 - t_start), cpu_cores=(cpu_seconds() - cpu0) / (t5 - t_start),
                      rss_peak_gb=rss_peak_gb())
         log.write(json.dumps(stats) + "\n")
         log.flush()
@@ -495,10 +618,64 @@ def main(argv=None):
                 "loss", "value_loss", "value_ev", "entropy", "entropy_norm", "kl_data", "clip_frac", "grad_clipped",
                 "kept", "mean_length", "ties", "teams/gamma", "teams/p_eff", "teams/nash_eff")
         print(" ".join(f"{k}={stats[k]:.4g}" if isinstance(stats.get(k), float) else f"{k}={stats.get(k)}"
-                       for k in keys if k in stats) + "".join(f" {k}={v:.3f}" for k, v in stats.items()
-                                                              if k.startswith("eval") and isinstance(v, float)),
-              flush=True)
+                       for k in keys if k in stats) + print_evals(stats), flush=True)
 
+    if not cfg.overlap:
+        while learner.it < cfg.iters:
+            t0, cpu0 = time.perf_counter(), cpu_seconds()
+            act = collect()
+            t1 = time.perf_counter()
+            data = buffer.take()
+            stats = learner.train(data, rng)
+            stats.update(train_s=time.perf_counter() - t1, **({"train_gb": peak_gb(learner.dev)} if cuda else {}))
+            finish(stats, data, act, t0, cpu0)
+    else:
+        # iteration t's learner step runs while t+1 is collected with the weights from before it, so the
+        # data is one learner step stale (PPO's ratio uses the stored log-probs). A logged iteration's
+        # iter_s / games_per_s is the loop's period: collecting the next iteration, waiting for this
+        # one's learner step (overlap_wait_s), its evals and checkpoint.
+        pool = concurrent.futures.ThreadPoolExecutor(1)
+        learn_stream = torch.cuda.Stream() if cuda else None
+        params = [p.detach() for p in learner.net.parameters()] + list(learner.net.buffers())
+        actor_params = [p.detach() for p in actor_net.parameters()] + list(actor_net.buffers())
+
+        def train_job(data):
+            if cuda:
+                learn_stream.wait_stream(torch.cuda.current_stream())  # the data's and the weights' last copies
+            t = time.perf_counter()
+            with torch.cuda.stream(learn_stream) if cuda else contextlib.nullcontext():
+                stats = learner.train(data, rng)
+            if cuda:
+                learn_stream.synchronize()
+            stats.update(train_s=time.perf_counter() - t)
+            return stats
+
+        submitted = learner.it
+        pending = None
+        while submitted < cfg.iters or pending is not None:
+            t0, cpu0 = time.perf_counter(), cpu_seconds()
+            nxt = None
+            if submitted < cfg.iters:
+                act = collect()
+                nxt = (buffer.take(), act)
+            if pending is not None:
+                fut, data, act_prev = pending
+                tw = time.perf_counter()
+                stats = fut.result()
+                stats.update(overlap_wait_s=time.perf_counter() - tw)
+                if cuda:
+                    torch.cuda.current_stream().wait_stream(learn_stream)
+                with torch.no_grad():
+                    torch._foreach_copy_(actor_params, params)
+                finish(stats, data, act_prev, t0, cpu0)
+                pending = None
+            if nxt is not None:
+                pending = (pool.submit(train_job, nxt[0]), nxt[0], nxt[1])
+                submitted += 1
+        pool.shutdown()
+    if eval_pool is not None:
+        eval_done(wait=True)
+        eval_pool.shutdown()
 
 if __name__ == "__main__":
     main()
