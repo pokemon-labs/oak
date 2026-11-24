@@ -48,6 +48,8 @@
 
 #include "client.hpp"
 #include "env.hpp"
+#include "pi4.hpp"
+#include "pi_env.hpp"
 #include "rollouts.hpp"
 
 namespace py = pybind11;
@@ -348,6 +350,149 @@ PYBIND11_MODULE(ataraxos_env, m) {
       .def_property_readonly("battles", &SelfPlay::size)
       .def_property_readonly("decisions", &SelfPlay::decisions)
       .def("set_keep_after", &SelfPlay::set_keep_after, py::arg("on"))
+      .def("set_light", &SelfPlay::set_light, py::arg("on"))
+      .def_property_readonly("stats",
+                             [](const Env& env) {
+                               uint64_t forced = 0, games = 0, capped = 0;
+                               for (const ataraxos::Shard& sh : env.shards()) {
+                                 forced += sh.forced;
+                                 games += sh.games;
+                                 capped += sh.capped;
+                               }
+                               py::dict out;
+                               out["forced"] = forced;
+                               out["games"] = games;
+                               out["capped"] = capped;
+                               return out;
+                             })
+      // pi4's input (src/pi4.hpp, docs/pi4.md) for the last gather. With
+      // `rows` (training) one row per battle with a decision, each player's
+      // choices filled where it decides; else one row per decision, only the
+      // deciding player's (evals, an agent per seat). state i16 [R, 2,
+      // PI4_FIELDS] (from P1's side, then P2's), request i16 [R, 2,
+      // REQUEST_FIELDS] (each player's current request), choices u8 [R, 2,
+      // 9] and n u8 [R, 2] (n 1 where a side doesn't decide in the row),
+      // battle and game u32 [R], player u8 [R] (the first deciding player),
+      // dec i64 [R, 2] (the decision each side's pick answers, -1 none).
+      // Needs `state` (light or not).
+      .def("pi4_obs",
+           [](Env& env, bool rows) {
+             if (!env.tracking()) throw std::logic_error("pi4_obs needs state=True");
+             const auto& shards = env.shards();
+             const size_t S = shards.size();
+             std::vector<size_t> r0(S), dbase(S);
+             size_t R = 0, D = 0;
+             for (size_t s = 0; s < S; s++) {
+               r0[s] = R;
+               dbase[s] = D;
+               uint32_t last = UINT32_MAX;
+               for (const ataraxos::Decision& x : shards[s].decisions) {
+                 if (!rows || x.battle != last) R++;
+                 last = x.battle;
+               }
+               D += shards[s].decisions.size();
+             }
+             constexpr size_t C = ataraxos::MAX_CHOICES, F = ataraxos::PI4_FIELDS, Q = ataraxos::REQUEST_FIELDS;
+             auto state = array<int16_t>({py::ssize_t(R), 2, py::ssize_t(F)});
+             auto request = array<int16_t>({py::ssize_t(R), 2, py::ssize_t(Q)});
+             auto choices = array<uint8_t>({py::ssize_t(R), 2, py::ssize_t(C)});
+             auto n = array<uint8_t>({py::ssize_t(R), 2});
+             auto battle = array<uint32_t>({py::ssize_t(R)});
+             auto game = array<uint32_t>({py::ssize_t(R)});
+             auto player = array<uint8_t>({py::ssize_t(R)});
+             auto dec = array<int64_t>({py::ssize_t(R), 2});
+             int16_t* ps = state.mutable_data();
+             int16_t* pq = request.mutable_data();
+             uint8_t* pc = choices.mutable_data();
+             uint8_t* pn = n.mutable_data();
+             uint32_t* pb = battle.mutable_data();
+             uint32_t* pg = game.mutable_data();
+             uint8_t* pp = player.mutable_data();
+             int64_t* pd = dec.mutable_data();
+             std::fill(pc, pc + R * 2 * C, uint8_t(0));
+             std::fill(pn, pn + R * 2, uint8_t(1));
+             std::fill(pd, pd + R * 2, int64_t(-1));
+             {
+               py::gil_scoped_release release;
+#pragma omp parallel for schedule(dynamic) num_threads(env.threads())
+               for (size_t s = 0; s < S; s++) {
+                 const ataraxos::Shard& sh = shards[s];
+                 size_t r = r0[s];
+                 uint32_t last = UINT32_MAX;
+                 for (size_t k = 0; k < sh.decisions.size(); k++) {
+                   const ataraxos::Decision& x = sh.decisions[k];
+                   if (k > 0 && (!rows || x.battle != last)) r++;
+                   if (k == 0 || !rows || x.battle != last) {
+                     const ataraxos::BattleData& d = env.battle(x.battle);
+                     pb[r] = x.battle;
+                     pg[r] = x.game;
+                     pp[r] = x.player;
+                     ataraxos::encode_pi4(d, ps + r * 2 * F);
+                     for (uint8_t q = 0; q < 2; q++) ataraxos::encode(d.request[q], pq + (r * 2 + q) * Q);
+                   }
+                   last = x.battle;
+                   for (size_t c = 0; c < x.n; c++) pc[(r * 2 + x.player) * C + c] = x.options[c];
+                   pn[r * 2 + x.player] = x.n;
+                   pd[r * 2 + x.player] = int64_t(dbase[s] + k);
+                 }
+               }
+             }
+             py::dict out;
+             out["state"] = state;
+             out["request"] = request;
+             out["choices"] = choices;
+             out["n"] = n;
+             out["battle"] = battle;
+             out["game"] = game;
+             out["player"] = player;
+             out["dec"] = dec;
+             return out;
+           },
+           py::arg("rows") = true)
+      // The last gather's decisions as the perfect-info net's input
+      // (src/pi_env.hpp's encode on the battle and its chance durations), for
+      // a pi net against a Showdown-view net (ataraxos/eval/pi_h2h.py): mon,
+      // hp, active as ataraxos_pi's; policy i16 [D, 2, 9] and n u8 [D, 2]
+      // with only the deciding player's side filled (its choices in this
+      // env's order; the other side n 1).
+      .def("pi_obs",
+           [](Env& env) {
+             const auto D = py::ssize_t(env.decisions()), C = py::ssize_t(ataraxos::MAX_CHOICES);
+             auto mon = array<int16_t>({D, 2, 6, py::ssize_t(ataraxos::pi::MON_FIELDS)});
+             auto hp = array<float>({D, 2, 6});
+             auto active = array<float>({D, 2, py::ssize_t(ataraxos::pi::ACTIVE_DIM)});
+             auto policy = array<int16_t>({D, 2, C});
+             auto n = array<uint8_t>({D, 2});
+             std::fill(policy.mutable_data(), policy.mutable_data() + policy.size(), int16_t(0));
+             std::fill(n.mutable_data(), n.mutable_data() + n.size(), uint8_t(1));
+             ataraxos::pi::Features f;
+             size_t i = 0;
+             for (const ataraxos::Shard& sh : env.shards()) {
+               for (const ataraxos::Decision& x : sh.decisions) {
+                 auto& d = const_cast<ataraxos::BattleData&>(env.battle(x.battle));
+                 const PKMN::Battle& b = d.state();
+                 ataraxos::pi::encode(b, PKMN::view(*pkmn_gen1_battle_options_chance_durations(&d.options)), f);
+                 std::copy(f.mon.begin(), f.mon.end(), mon.mutable_data() + i * f.mon.size());
+                 std::copy(f.hp.begin(), f.hp.end(), hp.mutable_data() + i * f.hp.size());
+                 std::copy(f.active.begin(), f.active.end(), active.mutable_data() + i * f.active.size());
+                 const std::span<const pkmn_choice> legal{d.legal[x.player].data(), d.n_legal[x.player]};
+                 int16_t* pol = policy.mutable_data() + (i * 2 + x.player) * C;
+                 for (size_t k = 0; k < x.n; k++) {
+                   const pkmn_choice c = ataraxos::engine_choice(x.options[k], legal);
+                   pol[k] = int16_t(Encode::Battle::Policy::get_index(b.sides[x.player], c));
+                 }
+                 n.mutable_data()[i * 2 + x.player] = x.n;
+                 i++;
+               }
+             }
+             py::dict out;
+             out["mon"] = mon;
+             out["hp"] = hp;
+             out["active"] = active;
+             out["policy"] = policy;
+             out["n"] = n;
+             return out;
+           })
       .def_property_readonly("stats", [](const Env& env) {
         uint64_t forced = 0, games = 0, capped = 0;
         for (const ataraxos::Shard& sh : env.shards()) {

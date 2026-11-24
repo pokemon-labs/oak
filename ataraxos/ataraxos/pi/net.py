@@ -61,6 +61,12 @@ class PiConfig:
 
 SIZES = {
     "pi": PiConfig(),
+    # pi3 (2026-11-23, the user's: pi2 lost 0.157 to rby4, "the net's too
+    # small"; the cheapest per CPU leaf of the 1-2M shapes): 1.42M params,
+    # trunk 0.59M (~7M MACs a leaf, ~15x pi's), wide heads (run once a leaf)
+    "pi3": PiConfig(d=128, heads=4, blocks=3, mlp_ratio=4, pokemon_hidden=128, pokemon_out=64, moves_hidden=128,
+                    moves_out=64, active_hidden=128, active_out=64, hidden=512, value_hidden=128,
+                    policy_hidden=256),
     "pi_tiny": PiConfig(d=32, heads=1, pokemon_hidden=32, pokemon_out=16, moves_hidden=32, moves_out=16,
                         active_hidden=32, active_out=16, hidden=32, value_hidden=16, policy_hidden=16),
 }

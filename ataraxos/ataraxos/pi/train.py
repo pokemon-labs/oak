@@ -17,6 +17,14 @@ What changes from ataraxos/rl/train.py:
   - no history, so minibatches are shuffled kept decisions, not whole
     trajectories, and there's no causal cache or CUDA-graphed actor.
   - evals against "random", "maxdamage" or checkpoints (ataraxos/pi/agents.py).
+pi4 (2026-11-24, docs/pi4.md): `--size pi4` (ataraxos/pi4/net.py) trains on
+rby4's env as rows (ataraxos/pi4/env.py: Showdown's choices, perfect-info
+state from both sides, both requests), with `--expected_sarsa` (rby4's Q
+head: each player's W/D/L per choice, targets the next decision's Q under the
+data policy, ataraxos/rl/buffer.py's sarsa_targets; `--sarsa_adv` of its
+advantage mixed into GAE's), and evals in rby4's env against random,
+maxdamage, rby4, pi1-3 or pi4 checkpoints (ataraxos/pi4/agents.py). Needs
+--buffer numpy; no search in training.
 Unchanged: clipped PPO, the reverse KL to the data policy, the annealed
 reverse KL to the attack_switch magnet, the advantage filter, one epoch, the
 EMA, W/D/L value by cross-entropy, the decision-counted LR / temperature
@@ -43,11 +51,12 @@ import torch
 
 from ataraxos._ext import ataraxos_pi
 from ataraxos.pi.agents import NetAgent, make_agent, match
-from ataraxos.pi.fast import AsyncActor, Envs, NumpyBuffer
-from ataraxos.pi.net import CHOICES, legal_logits, make_net
+from ataraxos.pi.fast import AsyncActor, Envs, NumpyBuffer, pi_logits, sample_q
+from ataraxos.pi.net import CHOICES, make_net
 from ataraxos.pi.search import TrainSearch
+from ataraxos.pi4 import net as pi4net
 from ataraxos.rl import metrics, teams
-from ataraxos.rl.buffer import returns_and_advantages
+from ataraxos.rl.buffer import returns_and_advantages, sarsa_targets
 from ataraxos.rl.train import (code_version, cpu_seconds, latest_checkpoint, magnet, peak_gb, power_schedule,
                                rss_peak_gb, start_gpu_log)
 
@@ -139,9 +148,45 @@ class Config:
     stats_every: int = 1    # metrics.data_stats (the value's calibration, EV, ...) every N iterations (1: every one)
     search_plan: str = "numpy"  # "cpp": the rollouts' cells drawn in C++
     search_solve: str = "numpy"  # "cpp": cell means, MMD and the searched W/D/L in C++ per root
+    # Expected SARSA (rby4's, ataraxos/rl/train.py; pi4's nets have the Q heads)
+    expected_sarsa: bool = False
+    q_coef: float = 1.0
+    sarsa_adv: float = 0.0  # rby4's 0: Q trains, GAE's advantage alone
 
 
 ROW_COLUMNS = ("mon", "hp", "active", "policy", "n", "choices")
+PI4_COLUMNS = ("state", "request", "choices", "n")
+
+
+def pi4_logits(net, x, with_q=False):
+    """pi4's forward on a dict of inputs: (logits [R, 2, CHOICES], -1e9 past
+    n; value logits [R, 3]; Q logits [R, 2, CHOICES, 3] with `with_q` else
+    None)."""
+    out = net(x["state"], x["request"], x["choices"], x["n"], with_q=with_q)
+    return out[1], out[0], (out[2] if with_q else None)
+
+
+class Model:
+    """The net family a size names: pi's (ataraxos/pi/net.py, its env
+    ataraxos_pi.SelfPlay) or pi4's (ataraxos/pi4/, rby4's env as rows)."""
+
+    def __init__(self, size, q=False):
+        self.pi4 = pi4net.is_pi4(size)
+        self.size = size
+        self.q = q
+        if q and not self.pi4:
+            raise ValueError("--expected_sarsa needs a pi4 size")
+        self.columns = PI4_COLUMNS if self.pi4 else ROW_COLUMNS
+        self.inputs = PI4_COLUMNS if self.pi4 else ("mon", "hp", "active", "policy", "n")
+
+    def make_net(self):
+        return pi4net.make_net(self.size) if self.pi4 else make_net(self.size)
+
+    def logits(self, net, x, with_q=False):
+        return pi4_logits(net, x, with_q) if self.pi4 else pi_logits(net, x)
+
+    def actor_logits(self, net, x):
+        return self.logits(net, x, self.q)
 
 
 @dataclass
@@ -163,6 +208,8 @@ class Data:
     reward: np.ndarray    # [G] the player's
     rows: dict            # ROW_COLUMNS, each [R, ...]
     truncated: np.ndarray = None
+    q_exp: np.ndarray = None     # [N, 3] with --expected_sarsa: the actor's Q (the player's W/D/L) under the data policy
+    q_pick: np.ndarray = None    # [N, 3] and at its pick
     searched: np.ndarray = None  # [N] bool, with --search_p (ataraxos/pi/search.py)
     post: np.ndarray = None      # [N, CHOICES] the search's posterior (probabilities)
     swdl: np.ndarray = None      # [N, 3] the W/D/L under the posteriors, the deciding player's
@@ -242,30 +289,36 @@ class Buffer:
 
 class Actor:
     """One forward per row: picks [R, 2] (0 for a side with one choice),
-    the data policy's log-probs [R, 2, CHOICES] and the value logits [R, 3]."""
+    the data policy's log-probs [R, 2, CHOICES], the value logits [R, 3],
+    and with the model's Q the Q columns (q_exp, q_pick [R, 2, 3]) else
+    None."""
 
-    def __init__(self, net, device, amp):
+    def __init__(self, net, device, amp, model=None):
         self.net, self.dev, self.amp = net, torch.device(device), amp
+        self.model = model or Model("pi")
 
     @torch.no_grad()
     def act(self, obs):
         d = self.dev
-        mon, hp, active = (torch.from_numpy(obs[k]).to(d) for k in ("mon", "hp", "active"))
+        x = {k: torch.from_numpy(obs[k]).to(d) for k in self.model.inputs}
         with torch.autocast(d.type, torch.bfloat16, enabled=self.amp and d.type == "cuda"):
-            value, policy = self.net(mon.long(), hp, active)
-        x, _ = legal_logits(policy, torch.from_numpy(obs["policy"]).to(d), torch.from_numpy(obs["n"]).to(d))
-        logp = torch.log_softmax(x, -1)
+            logits, value, q = self.model.actor_logits(self.net, x)
+        logp = torch.log_softmax(logits.float(), -1)
         pick = torch.multinomial(logp.exp().view(-1, CHOICES), 1).view(-1, 2)
+        extra = None
+        if q is not None:
+            extra = {k: v.cpu().numpy() for k, v in zip(("q_exp", "q_pick"), sample_q(logp, pick, q))}
         return (pick.to(torch.uint8).cpu().numpy(), logp.cpu().numpy().astype(np.float32),
-                value.float().cpu().numpy())
+                value.float().cpu().numpy(), extra)
 
 
 class Learner:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.dev = torch.device(cfg.device)
-        self.net = make_net(cfg.size).to(self.dev)
-        self.ema = make_net(cfg.size).to(self.dev).eval()
+        self.model = Model(cfg.size, cfg.expected_sarsa)
+        self.net = self.model.make_net().to(self.dev)
+        self.ema = self.model.make_net().to(self.dev).eval()
         self.ema.load_state_dict(self.net.state_dict())
         for p in self.ema.parameters():
             p.requires_grad_(False)
@@ -286,6 +339,14 @@ class Learner:
         t0 = time.perf_counter()
         gd = dev if cfg.gae == "gpu" else torch.device("cpu")
         ret, adv = returns_and_advantages(data, cfg.td_lambda, cfg.gae_lambda, gd)
+        q_target, q_stats = None, {}
+        if cfg.expected_sarsa:
+            q_target, q_adv = sarsa_targets(data)
+            q_adv = q_adv.to(adv.device)
+            q_stats = dict(adv_gae_std=float(adv.std()), adv_q_std=float(q_adv.std()),
+                           adv_q_gae_corr=float(torch.corrcoef(torch.stack([adv.float(), q_adv]))[0, 1]))
+            if cfg.sarsa_adv:
+                adv = (1 - cfg.sarsa_adv) * adv + cfg.sarsa_adv * q_adv
         threshold = max(float(adv.abs().quantile(cfg.adv_filt_rate)) if len(adv) < 2**24 else
                         float(adv.abs()[torch.randperm(len(adv), device=gd)[:2**24]].quantile(cfg.adv_filt_rate)),
                         cfg.adv_filt_thresh)
@@ -304,7 +365,7 @@ class Learner:
         for g in self.optim.param_groups:
             g["lr"] = lr
         stats = dict(lr=lr, temperature=temperature, schedule_step=step, adv_threshold=threshold,
-                     decisions=len(adv), kept=int(keep.sum()))
+                     decisions=len(adv), kept=int(keep.sum()), **q_stats)
         if searched is not None:
             stats.update(searched_frac=float(searched.mean()))
         ta = time.perf_counter()
@@ -318,6 +379,8 @@ class Learner:
                   logp=T(data.logp, torch.float), pick=T(data.pick, torch.long), ret=ret.to(dev), adv=adv.to(dev))
         if searched is not None:
             dd.update(searched=T(searched), post=T(data.post, torch.float))
+        if q_target is not None:
+            dd.update(q_target=q_target.to(dev))
         params = [p.detach() for p in self.net.parameters()]
         before = [p.clone() for p in params]
         sums, steps = {}, 0
@@ -365,15 +428,21 @@ class Learner:
     def loss(self, rows, dd, idx, temperature):
         cfg, dev = self.cfg, self.dev
         r, side = dd["row"][idx], dd["side"][idx]
-        with torch.autocast(dev.type, torch.bfloat16, enabled=cfg.amp and dev.type == "cuda"):
-            value, policy = self.net(rows["mon"][r].long(), rows["hp"][r], rows["active"][r])
         K = len(idx)
         k = torch.arange(K, device=dev)
+        q = None
+        with torch.autocast(dev.type, torch.bfloat16, enabled=cfg.amp and dev.type == "cuda"):
+            if self.model.pi4:
+                both, value, q = pi4_logits(self.net, {c: rows[c][r] for c in PI4_COLUMNS}, "q_target" in dd)
+                side_logits = both[k, side]
+            else:
+                value, policy = self.net(rows["mon"][r].long(), rows["hp"][r], rows["active"][r])
+                side_logits = policy[k, side].gather(-1, rows["policy"][r, side].long())
         value = value.float()
         value = torch.where(side[:, None] == 1, value.flip(-1), value)  # the deciding player's W/D/L
         n = dd["n"][idx]
         legal = torch.arange(CHOICES, device=dev)[None] < n[:, None]
-        logits = policy[k, side].gather(-1, rows["policy"][r, side].long()).float().masked_fill(~legal, -1e9)
+        logits = side_logits.float().masked_fill(~legal, -1e9)
         logp = torch.log_softmax(logits, -1)
         p = logp.exp() * legal
         old = dd["logp"][idx].clamp(min=-1e9).masked_fill(~legal, -1e9)
@@ -388,6 +457,10 @@ class Learner:
         value_loss = -(R * torch.log_softmax(value, -1)).sum(-1).mean()
         loss = cfg.policy_coef * policy_loss + temperature * kl_magnet + cfg.vf_coef * value_loss + cfg.kl_coef * kl_data
         extra = {}
+        if q is not None:  # Expected SARSA: Q at the pick against the next decision's sum
+            qa = q[k, side].float().gather(1, a[..., None].expand(-1, -1, 3))[:, 0]
+            extra["q_loss"] = -(dd["q_target"][idx] * torch.log_softmax(qa, -1)).sum(-1).mean()
+            loss = loss + cfg.q_coef * extra["q_loss"]
         if searched is not None:  # cross-entropy to the posterior, over the searched decisions, as a batch mean
             ce = -(dd["post"][idx] * logp.masked_fill(~legal, 0)).sum(-1)
             search_ce = (ce * searched.float()).mean()
@@ -456,6 +529,9 @@ def main(argv=None):
         raise ValueError("--pingpong needs --actor async or graphs")
     if cfg.actor == "graphs" and not cfg.device.startswith("cuda"):
         raise ValueError("--actor graphs needs CUDA")
+    model = Model(cfg.size, cfg.expected_sarsa)
+    if model.pi4 and (cfg.buffer != "numpy" or cfg.search_p > 0):
+        raise ValueError("pi4 needs --buffer numpy and no search")
     if cfg.torch_threads > 0:
         torch.set_num_threads(cfg.torch_threads)
     if cfg.tf32:
@@ -466,6 +542,9 @@ def main(argv=None):
     rng = np.random.default_rng(cfg.seed)
 
     def env_factory(battles, seed=cfg.seed):
+        if model.pi4:
+            from ataraxos.pi4.env import Pi4Env
+            return Pi4Env(battles, seed, teams=cfg.teams, max_turns=cfg.max_turns, threads=cfg.threads)
         return ataraxos_pi.SelfPlay(battles, seed, teams=cfg.teams, max_turns=cfg.max_turns, threads=cfg.threads)
 
     learner = Learner(cfg)
@@ -512,16 +591,17 @@ def main(argv=None):
     # learner runs in a thread on its own CUDA stream (the env releases the GIL while it steps)
     actor_net = learner.net
     if cfg.overlap:
-        actor_net = make_net(cfg.size).to(learner.dev).eval()
+        actor_net = model.make_net().to(learner.dev).eval()
         actor_net.load_state_dict(learner.net.state_dict())
         for p in actor_net.parameters():
             p.requires_grad_(False)
     if cfg.actor == "eager":
-        actor = Actor(actor_net, cfg.device, cfg.amp)
+        actor = Actor(actor_net, cfg.device, cfg.amp, model)
     else:
         actor = AsyncActor(actor_net, cfg.device, cfg.amp, capacity=max(sizes), slots=len(sizes),
-                           graphs=cfg.actor == "graphs", compile=cfg.actor_compile)
-    buffer = NumpyBuffer(cfg.at_cap, cfg.take_gather) if cfg.buffer == "numpy" else Buffer(cfg.at_cap)
+                           graphs=cfg.actor == "graphs", compile=cfg.actor_compile, inputs=model.inputs,
+                           logits=model.actor_logits, q=model.q)
+    buffer = NumpyBuffer(cfg.at_cap, cfg.take_gather, model.columns) if cfg.buffer == "numpy" else Buffer(cfg.at_cap)
     searcher = None
     if cfg.search_p > 0:
         searcher = TrainSearch(actor_net, cfg.device, cfg.amp, budget=cfg.search_budget, beta=cfg.search_beta,
@@ -535,6 +615,14 @@ def main(argv=None):
     def search_p():
         end = cfg.search_p if cfg.search_p_end < 0 else cfg.search_p_end
         return cfg.search_p + (end - cfg.search_p) * min(1.0, learner.decisions / max(cfg.search_anneal, 1.0))
+
+    def merge(*cols):
+        """The buffer's extra columns from the actor (Q) and the search, either None."""
+        out = {}
+        for c in cols:
+            if c:
+                out.update(c)
+        return out or None
 
     def search_stats(st, sums):
         for k, v in st.items():
@@ -557,12 +645,21 @@ def main(argv=None):
     log = open(os.path.join(cfg.run, "log.jsonl"), "a")
     if ck is not None:
         log.write(json.dumps({"resume": learner.it}) + "\n")
-    anchors = {a: make_agent(a, cfg.device, cfg.seed, cfg.amp) for a in cfg.anchors if "{it}" not in a}
+    if model.pi4:  # evals in rby4's env (ataraxos/pi4/agents.py)
+        from ataraxos.pi4 import agents as pi4agents
+        agent_of, match_fn = pi4agents.make_agent, pi4agents.match
+        ours_of = lambda net: pi4agents.Pi4Agent(net, cfg.device, cfg.amp)
+        eval_env = lambda it: pi4agents.eval_env(cfg.seed + 10**6 + it, cfg.teams, cfg.max_turns,
+                                                 cfg.eval_threads or cfg.threads)
+    else:
+        agent_of, match_fn = make_agent, match
+        ours_of = lambda net: NetAgent(net, cfg.device, cfg.amp)
+        eval_env = lambda it: (lambda b: ataraxos_pi.SelfPlay(b, cfg.seed + 10**6 + it, teams=cfg.teams,
+                                                              max_turns=cfg.max_turns,
+                                                              threads=cfg.eval_threads or cfg.threads))
+    anchors = {a: agent_of(a, cfg.device, cfg.seed, cfg.amp) for a in cfg.anchors if "{it}" not in a}
     start_gpu_log(cfg)
     cuda = learner.dev.type == "cuda"
-    eval_env = lambda it: (lambda b: ataraxos_pi.SelfPlay(b, cfg.seed + 10**6 + it, teams=cfg.teams,
-                                                          max_turns=cfg.max_turns,
-                                                          threads=cfg.eval_threads or cfg.threads))
 
     def collect():
         """Plays until the buffer holds games_per_iter games; returns the act timings."""
@@ -576,9 +673,9 @@ def main(argv=None):
         obs = state["obs"]
         while handles is None and buffer.games() < cfg.games_per_iter:
             ta = time.perf_counter()
-            picks, logp, value = actor.act(obs)
+            picks, logp, value, qx = actor.act(obs)
             tb = time.perf_counter()
-            buffer.add(obs, picks, logp, value, search(envs[0], 0, obs, picks, logp, ss))
+            buffer.add(obs, picks, logp, value, merge(qx, search(envs[0], 0, obs, picks, logp, ss)))
             rows += len(picks)
             decisions += int((obs["n"] >= 2).sum())
             tc = time.perf_counter()
@@ -617,7 +714,7 @@ def main(argv=None):
             cur = None
             if buffer.games() < cfg.games_per_iter:
                 ta = time.perf_counter()
-                picks, logp, value = actor.collect(handles[i])
+                picks, logp, value, _ = actor.collect(handles[i])
                 acc["net_s"] += time.perf_counter() - ta
                 tok = searcher.begin(envs[i], obs_list[i], picks, logp, ss.setdefault("search_p", search_p()),
                                      int(offsets[i]), i)
@@ -635,10 +732,10 @@ def main(argv=None):
                 buffer.games() < cfg.games_per_iter:
             for i, e in enumerate(envs):
                 ta = time.perf_counter()
-                picks, logp, value = actor.collect(handles[i])
+                picks, logp, value, qx = actor.collect(handles[i])
                 tb = time.perf_counter()
                 o = obs_list[i]
-                buffer.add(o, picks, logp, value, search(e, i, o, picks, logp, ss))
+                buffer.add(o, picks, logp, value, merge(qx, search(e, i, o, picks, logp, ss)))
                 rows += len(picks)
                 decisions += int((o["n"] >= 2).sum())
                 tc = time.perf_counter()
@@ -664,12 +761,12 @@ def main(argv=None):
         opps = dict(anchors)
         for a in cfg.anchors:
             if "{it}" in a and os.path.exists(a.format(it=it)):
-                opps[a] = make_agent(a.format(it=it), cfg.device, cfg.seed, cfg.amp)
+                opps[a] = agent_of(a.format(it=it), cfg.device, cfg.seed, cfg.amp)
         for prefix, net in nets:
             net.eval()
-            ours = NetAgent(net, cfg.device, cfg.amp)
+            ours = ours_of(net)
             for name, opp in opps.items():
-                w, t, l = match(eval_env(it), ours, opp, cfg.eval_battles)
+                w, t, l = match_fn(eval_env(it), ours, opp, cfg.eval_battles)
                 score = (w + t / 2) / max(1, w + t + l)
                 key = f"{prefix}/{os.path.basename(name)}"
                 out[key] = score
@@ -699,7 +796,7 @@ def main(argv=None):
         eval_done(wait=True)
         nets = []
         for prefix, net in (("eval", learner.ema), ("eval_net", learner.net)):
-            c = make_net(cfg.size).to(learner.dev).eval()
+            c = model.make_net().to(learner.dev).eval()
             c.load_state_dict(net.state_dict())
             nets.append((prefix, c))
         stream = torch.cuda.Stream() if cuda else None

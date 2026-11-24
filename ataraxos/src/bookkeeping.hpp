@@ -179,6 +179,18 @@ struct Bookkeeping {
   // Each active's stats at the start of the message being read (safari's
   // SideAux), restored when a boost fails.
   std::array<PKMN::Stats, 2> stored{};
+  // The other side's last click was never shown (2026-11-24, the user's
+  // "maybe desync", docs/pi4.md): libpkmn saved a move it chose (or, asleep
+  // or frozen, Showdown's "Fight": its first legal move) that no Move line
+  // showed, so last_selected_move here may not be libpkmn's and Counter may
+  // desync. Set when it can't move for paralysis, flinch, sleep, freeze or
+  // a bind, wakes up, hits itself in confusion, or shows nothing in a turn
+  // both actives started (a faint ended the turn before it moved: its
+  // click, a move, since a switch goes first), none of them on a forced
+  // turn (recharge, Thrash, Rage, a charge, Bide: no new click); cleared by
+  // its next Move line or a Disable `cant` (which names the move); kept
+  // through switches. Never set for our own side.
+  std::array<bool, 2> unshown{};
 
   Bookkeeping() = default;
   // `own` is our side as the battle starts (our team, before the leads come
@@ -250,13 +262,29 @@ struct Bookkeeping {
   // rule here reads its own update).
   void update(std::span<const Obs> obs, std::span<const std::vector<Obs>> = {}) {
     msgs = obs;
+    acted = {};
+    std::array<bool, 2> alive{};
+    for (uint8_t s = 0; s < 2; s++) {
+      const PKMN::Side& sd = side(s);
+      alive[s] = sd.order[0] != 0 && sd.pokemon[sd.order[0] - 1].hp > 0;
+    }
     store_stats();
     for (i = 0; i < obs.size(); i++) read(obs[i]);
+    // a turn both actives started: a side that showed nothing chose a move
+    // the turn ended before
+    if (alive[0] && alive[1]) {
+      for (uint8_t s = 0; s < 2; s++) {
+        if (!acted[s]) hide_click(s);
+      }
+    }
   }
 
  private:
   std::span<const Obs> msgs;
   size_t i = 0;
+  // Each side had a Move, Cant, Switch, confusion self-hit or wake-up in
+  // this update (for `unshown`).
+  std::array<bool, 2> acted{};
   // The move each side's log line shows while its binding move goes on.
   std::array<bk::Move, 2> bind_shown{};
   // The Metronome or Mirror Move that called each side's current lock, or
@@ -323,6 +351,16 @@ struct Bookkeeping {
   }
 
   enum class Why : uint8_t { None, Sleep, Freeze, Bound, Flinch, Recharge, Disable, Confusion, Paralysis, Bide };
+
+  // A turn with no new click (Showdown's locked requests).
+  bool forced(uint8_t s) {
+    const PKMN::Volatiles& v = side(s).active.volatiles;
+    return v.recharging() || v.thrashing() || v.rage() || v.charging() || v.bide();
+  }
+  // Side s chose a move this turn that no Move line will show.
+  void hide_click(uint8_t s) {
+    if (s != player && !forced(s)) unshown[s] = true;
+  }
 
   // Mechanics.before_move
   void before_move(uint8_t s, Why why = Why::None) {
@@ -481,6 +519,7 @@ struct Bookkeeping {
 
   void switch_in(const Obs& o) {
     const uint8_t s = side_of(o.u8(0)), opp = 1 - s;
+    acted[s] = true;
     const uint8_t k = ident_slot(o.u8(0)); // party position (ours) or number (theirs)
     PKMN::Side& sd = side(s);
     PKMN::Side& od = side(opp);
@@ -584,6 +623,8 @@ struct Bookkeeping {
     if (!is_damage) return;
     switch (reason) {
     case bk::DmgConfusion:
+      hide_click(s);
+      acted[s] = true;
       before_move(s, Why::Confusion);
       store_stats();
       break;
@@ -599,6 +640,8 @@ struct Bookkeeping {
 
   void move(const Obs& o) {
     const uint8_t s = side_of(o.u8(0)), opp = 1 - s;
+    unshown[s] = false;
+    acted[s] = true;
     PKMN::Side& sd = side(s);
     PKMN::Side& od = side(opp);
     PKMN::Volatiles& v = sd.active.volatiles;
@@ -857,6 +900,9 @@ struct Bookkeeping {
     const uint8_t s = side_of(o.u8(0));
     const bool from_haze = prev() && prev()->type == ArgType::ClearAllBoost;
     if (bk::is_sleep(uint8_t(side(s).stored().status)) && !from_haze) {
+      // waking up takes the turn: its click (Fight) never shows
+      hide_click(s);
+      acted[s] = true;
       before_move(s);
       store_stats();
     }
@@ -868,6 +914,22 @@ struct Bookkeeping {
     PKMN::Side& sd = side(s);
     PKMN::Duration& d = dur(s);
     Why why = Why::None;
+    acted[s] = true;
+    switch (o.u8(1)) {
+    case bk::CantParalysis:
+    case bk::CantFlinch:
+    case bk::CantSleep:
+    case bk::CantFreeze:
+    case bk::CantBound: hide_click(s); break;
+    case bk::CantDisable:
+      // the move it chose, named
+      if (s != player) {
+        sd.last_selected_move = bk::Move(o.u8(2));
+        unshown[s] = false;
+      }
+      break;
+    default: break;
+    }
     switch (o.u8(1)) {
     case bk::CantRecharge: why = Why::Recharge; break;
     case bk::CantParalysis: why = Why::Paralysis; break;

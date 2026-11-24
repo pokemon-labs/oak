@@ -18,6 +18,11 @@
 // update's log (oak's text) and both battles.
 //
 //   check_bookkeeping [GAMES] [SEED] [BANNED,MOVES,...|-] [REASON]
+// Also `unshown` (Counter's "maybe desync", 2026-11-24): after every update,
+// the other side's tracked last_selected_move against libpkmn's; a
+// difference with the flag clear is unsound (printed, and failing the run
+// when it changes the move's counterability), and how often the flag is set.
+//
 // BANNED is a comma-separated list of move names as libpkmn spells them
 // (e.g. Wrap,Bind,Clamp,FireSpin), or - for none; with REASON only the
 // mismatches whose reason contains it are printed.
@@ -80,6 +85,12 @@ Team test_team(std::mt19937_64& rng, const std::vector<PKMN::Data::Move>& banned
     }
   }
   return team;
+}
+
+bool counterable(PKMN::Data::Move m) {
+  if (m == PKMN::Data::Move::None || m == PKMN::Data::Move::Counter) return false;
+  const PKMN::Data::MoveData md = PKMN::Data::move_data(m);
+  return md.bp > 0 && (md.type == PKMN::Data::Type::Normal || md.type == PKMN::Data::Type::Fighting);
 }
 
 bool flinch_move(PKMN::Data::Move m) {
@@ -150,6 +161,9 @@ int main(int argc, char** argv) {
   const std::string only = argc > 4 ? argv[4] : "";
   std::map<std::string, size_t> reasons;
   size_t failed = 0, updates = 0, printed = 0;
+  // `unshown` against the truth, per (update, view)
+  size_t views_n = 0, sel_diff = 0, sel_unflagged = 0, counter_unflagged = 0, flagged = 0, flagged_same = 0,
+         flagged_live = 0, printed_unshown = 0;
   for (size_t g = 0; g < games; g++) {
     const Team t1 = test_team(rng, banned), t2 = test_team(rng, banned);
     pkmn_gen1_battle b = init_battle(rng(), t1, t2);
@@ -221,6 +235,31 @@ int main(int argc, char** argv) {
           rq[p] = request_data(PKMN::view(b), p, kind, binds.of(PKMN::view(b), p));
           bks[p].request(rq[p]);
         }
+        {
+          const uint8_t f = uint8_t(1 - p);
+          const PKMN::Data::Move truth = PKMN::view(b).sides[f].last_selected_move;
+          const PKMN::Data::Move tracked = bks[p].battle.sides[f].last_selected_move;
+          const bool flag = bks[p].unshown[f];
+          views_n++;
+          flagged += flag;
+          flagged_same += flag && truth == tracked;
+          flagged_live += flag && PKMN::view(b).last_moves[f].counterable;
+          if (truth != tracked) {
+            sel_diff++;
+            if (!flag) {
+              sel_unflagged++;
+              const bool counter = counterable(truth) != counterable(tracked);
+              counter_unflagged += counter;
+              if (printed_unshown++ < 3) {
+                std::printf("== unshown: game %zu, turn %d, p%d's view of p%d: selected %s, tracked %s%s\n", g, turn,
+                            p + 1, f + 1, PKMN::move_string(truth).c_str(), PKMN::move_string(tracked).c_str(),
+                            counter ? " (counterability differs)" : "");
+                const size_t from = text.size() > 12 ? text.size() - 12 : 0;
+                for (size_t j = from; j < text.size(); j++) std::printf("%s\n", text[j].c_str());
+              }
+            }
+          }
+        }
         const auto [key, dkey] = keys(uint8_t(1 - p), bks[p].battle, psy_sub);
         std::string reason;
         if (!PKMN::Client::compare_battles(bks[p].battle, bks[p].durations, PKMN::view(b), truth_d, key, dkey, reason)) {
@@ -252,5 +291,10 @@ int main(int argc, char** argv) {
   for (const auto& [r, k] : reasons) sorted.push_back({k, r});
   std::sort(sorted.rbegin(), sorted.rend());
   for (const auto& [k, r] : sorted) std::printf("  %6zu  %s\n", k, r.c_str());
-  return failed != 0;
+  std::printf("unshown: %zu views; the other side's last selected move differs in %zu, %zu of them unflagged "
+              "(%zu changing counterability); flag set in %zu (%.2f%%), %zu of them with the truth's move, %zu "
+              "with its counterable flag set\n",
+              views_n, sel_diff, sel_unflagged, counter_unflagged, flagged, 100.0 * flagged / std::max<size_t>(1, views_n),
+              flagged_same, flagged_live);
+  return failed != 0 || counter_unflagged != 0;
 }

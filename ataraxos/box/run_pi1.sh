@@ -11,17 +11,22 @@
 # teams by it 100 while the evals draw uniformly from all 1500. The team
 # flags below are rby1-4's (box/run_rby1.sh), so pi2 is fresh with them.
 #
+# pi3 (2026-11-23): pi2's flags with --size pi3 (1.42M params; pi2 lost
+# 0.157 to rby4 at ckpt2575).
+#
 #   RUN=pi2 box/run_pi1.sh    (from ataraxos/, in tmux; RUN defaults to pi2)
+#   RUN=pi3 SIZE=pi3 box/run_pi1.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONPATH=.
 PY=${PY:-/venv/main/bin/python}
 RUN=${RUN:-pi2}
+SIZE=${SIZE:-pi}
 mkdir -p runs/$RUN
 while true; do
   res=""
   ls runs/$RUN/ckpt*.pt >/dev/null 2>&1 && res="--resume latest"
-  $PY -u -m ataraxos.pi.train --run runs/$RUN $res \
+  $PY -u -m ataraxos.pi.train --run runs/$RUN --size $SIZE $res \
     --threads 12 --torch_threads 4 --battles 8192 \
     --team_gamma 0.5 --team_gamma_floor 0.01 --team_gamma_tau 0.0 --team_gamma_decay 0.5 --team_eta 1e-05 \
     --buffer numpy --take_gather 1 --actor graphs --actor_compile 1 --pingpong 1 --overlap 1 \

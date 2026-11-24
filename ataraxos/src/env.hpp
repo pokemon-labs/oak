@@ -29,7 +29,10 @@
 // trainer's `at_cap` decides what it counts as (ataraxos/rl/buffer.py).
 //
 // With `state` (off by default), each decision also carries its player's
-// bookkeeping state (state_tokens.hpp), STATE_FIELDS int16s.
+// bookkeeping state (state_tokens.hpp), STATE_FIELDS int16s. `set_light`
+// (2026-11-24, pi4's training, which reads src/pi4.hpp's input through the
+// binding's pi4_obs) leaves out each decision's tokens and state; the
+// Bookkeepings still track.
 //
 // The battles are split into fixed shards, each with its own RNG and run on
 // any thread, so the output depends on the seed and the shard count, not on
@@ -261,7 +264,12 @@ class SelfPlay {
   const std::vector<Shard>& shards() const { return shards_; }
   size_t size() const { return size_; }
   int threads() const { return threads_; }
-  bool state() const { return state_; }
+  // Whether each decision carries its state (state_tokens.hpp).
+  bool state() const { return state_ && !light_; }
+  bool light() const { return light_; }
+  // Whether the battles' Bookkeepings track (`state`, light or not).
+  bool tracking() const { return state_; }
+  void set_light(bool on) { light_ = on; }
   const BattleData& battle(size_t b) const { return battles_[b]; }
   // Keep each player's Bookkeeping after every update (with `state`), for
   // searching (rollouts.hpp). Takes effect as games start.
@@ -279,6 +287,7 @@ class SelfPlay {
   std::vector<Team> teams_;
   uint16_t max_turns_;
   bool state_;
+  bool light_ = false;
   std::array<std::vector<double>, 2> prob_, cdf_; // per role
   bool alternate_ = false;
   bool idle_when_empty_ = false;
@@ -396,13 +405,17 @@ class SelfPlay {
             again = true;
             break;
           }
-          sh.tokens.insert(sh.tokens.end(), d.chunk[p].begin(), d.chunk[p].end());
-          sh.lengths.push_back(uint32_t(d.chunk[p].size()));
+          if (light_) {
+            sh.lengths.push_back(0);
+          } else {
+            sh.tokens.insert(sh.tokens.end(), d.chunk[p].begin(), d.chunk[p].end());
+            sh.lengths.push_back(uint32_t(d.chunk[p].size()));
+          }
           d.chunk[p].clear();
           const size_t at = sh.requests.size();
           sh.requests.resize(at + REQUEST_FIELDS);
           encode(d.request[p], &sh.requests[at]);
-          if (state_) {
+          if (state()) {
             const size_t st = sh.states.size();
             sh.states.resize(st + STATE_FIELDS);
             encode_state(d.bk[p], &sh.states[st]);

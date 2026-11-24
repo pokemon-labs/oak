@@ -127,7 +127,10 @@ class LeafEval:
                     self._fwd(x["mon"], x["hp"], x["active"])
             torch.cuda.current_stream().wait_stream(s)
             g = torch.cuda.CUDAGraph()
-            with torch.cuda.graph(g), torch.no_grad():
+            # captured lazily mid-run while the learner and async evals use the GPU
+            # from other threads: "global" mode let their calls invalidate the
+            # capture (pi3 crashed at it 5, 2026-11-23)
+            with torch.cuda.graph(g, capture_error_mode="thread_local"), torch.no_grad():
                 self.dout[:bucket].copy_(self._fwd(x["mon"], x["hp"], x["active"]))
             self.graphs[bucket] = g
         return g

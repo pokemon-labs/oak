@@ -93,6 +93,10 @@ struct BattleData {
     }
     asked[0] = asked[1] = false;
     binds = Binds{};
+    // libpkmn keeps the chance durations across updates; without this a new
+    // game started on the last game's (only `pi_obs` reads them, 2026-11-23).
+    chance_ = {};
+    first_ = true;
     advance(0, 0);
   }
 

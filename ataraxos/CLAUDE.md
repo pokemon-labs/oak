@@ -602,6 +602,32 @@ uniformly from all 1500: per battle it trailed rby1 vs maxdamage (0.79 vs
 with rby's team flags (`--team_gamma 0.5 --team_gamma_tau 0 --team_eta 1e-5`).
 Before a new trainer's run, diff its config.json against rby1's.
 
+pi2 vs rby4 ckpt1750 (`box/run_pi_h2h.sh`, `ataraxos/eval/pi_h2h.py`, policy
+only, pi2 seeing everything): ckpt2575 0.157 [0.146, 0.169] over 4096 games,
+though pi2 had trained on more games than rby4 (21.3M vs 14.4M). The user: the net's too small. pi2 stopped at
+ckpt2675 (2026-11-23). `runs/pi3` (tmux `pi3`, `RUN=pi3 SIZE=pi3
+box/run_pi1.sh`): pi2's flags with `--size pi3` (d128, 3 blocks, wide heads,
+1.42M params, ~15x pi's trunk compute per leaf: the user picked the
+cheapest per CPU leaf of the 1-2M shapes, for pkmn.ai's M6). ~19 s an
+iteration early on (search_p 0.05). CUDA graph captures (the actor's and the search
+leaves') sometimes fail with "capture invalidated" while other threads use
+the GPU; `capture_error_mode="thread_local"` didn't stop it. The restart
+loop resumes from the last checkpoint.
+
+pi3 h2h (2026-11-24, the user's: pi3's newest vs rby4 and pi2's newest;
+`RUN=pi3 SIZE=pi3 VS=runs/pi2/ckpt2675.pt box/run_pi_h2h.sh`, which now
+stops the trainer just after a checkpoint and restarts it, since a SIGSTOPped
+trainer keeps its GPU memory, 11.7 of 12.3 GB; `pi_ladder.py --old` takes
+checkpoint paths). ckpt1925 (~16M games): vs maxdamage 0.889 (the training
+eval's), vs rby4 ckpt1750 0.247 [0.234, 0.261] over 4096 games (pi2 0.157),
+vs pi2 ckpt2675 0.646 [0.631, 0.661] over 4096. ~2.5 min of games.
+`hf_sync.sh` can upload a checkpoint before its teams file is written and
+never retries it (3 such, uploaded by hand 2026-11-24).
+
+pi3 stopped at ckpt1950 (2026-11-24) for pi4: a ~14M perfect-info teacher
+on rby4's inputs, to be distilled into a Showdown-view student. Plan, the
+user's calls, Counter's mechanics and `maybe_desync`: `docs/pi4.md`.
+
 ## applemagpie on pkmn.bot (2026-11-20)
 
 Box: `ssh -p 7799 root@142.127.68.223` (Vast, RTX 3060 12 GB, driver 550 so

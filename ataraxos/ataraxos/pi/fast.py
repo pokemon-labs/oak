@@ -12,6 +12,8 @@ defaults there keep the original code path.
   - Envs (`--pingpong`): the battles split over two env objects, so
     `collect` on one overlaps the other's step; it looks like one env to the
     trainer's Exp3 and stats code.
+The buffer and the actor take the model's row columns and inputs (pi's or
+pi4's, ataraxos/pi/train.py's `Model`, 2026-11-24).
 """
 
 import numpy as np
@@ -31,12 +33,14 @@ class NumpyBuffer:
     counts done trajectories / 2: the same but for a game where one player
     never chose)."""
 
-    def __init__(self, at_cap="draw", gather=False):
+    def __init__(self, at_cap="draw", gather=False, columns=ROW_COLUMNS):
         """`gather` (the trainer's --take_gather): `take` concatenates only
         the index columns and gathers each other column's needed rows from
-        the stored parts, not every row of every column first."""
+        the stored parts, not every row of every column first. `columns`:
+        the row columns kept (the model's)."""
         if at_cap not in ("draw", "drop"):
             raise ValueError(at_cap)
+        self.columns = tuple(columns)
         self.at_cap = at_cap
         self.gather = gather
         self.parts = []
@@ -54,11 +58,12 @@ class NumpyBuffer:
 
     def add(self, obs, picks, logp, value, extra=None):
         """`extra`: per-row columns kept alongside (search in training's
-        searched, post, swdl: pass them on every add or none)."""
+        searched, post, swdl; the actor's q_exp, q_pick: pass them on every
+        add or none)."""
         R = len(obs["n"])
         if R == 0:
             return
-        part = {k: obs[k] for k in ROW_COLUMNS}
+        part = {k: obs[k] for k in self.columns}
         part.update(pick=picks, logp=logp, value=value, battle=obs["battle"], game=obs["game"])
         if extra:
             part.update(extra)
@@ -115,7 +120,10 @@ class NumpyBuffer:
         data = Data(row=inv, player=player, side=side, n=n[rows, side], choices=cat["choices"][rows, side],
                     logp=cat["logp"][rows, side], pick=cat["pick"][rows, side], value=np.ascontiguousarray(value),
                     start=start.astype(np.int64), length=length, reward=reward.astype(np.int64),
-                    rows={k: cat[k][used] for k in ROW_COLUMNS}, truncated=np.zeros(len(length), bool))
+                    rows={k: cat[k][used] for k in self.columns}, truncated=np.zeros(len(length), bool))
+        if "q_exp" in cat:  # the deciding player's Q (its own W/D/L) under the data policy and at its pick
+            data.q_exp = np.ascontiguousarray(cat["q_exp"][rows, side])
+            data.q_pick = np.ascontiguousarray(cat["q_pick"][rows, side])
         if "searched" in cat:  # the deciding player's: its posterior, the W/D/L from its side
             data.searched = cat["searched"][rows].astype(bool)
             data.post = cat["post"][rows, side]
@@ -167,7 +175,10 @@ class NumpyBuffer:
         data = Data(row=inv, player=player, side=side, n=n[rows, side], choices=U["choices"][inv, side],
                     logp=U["logp"][inv, side], pick=U["pick"][inv, side], value=np.ascontiguousarray(value),
                     start=start.astype(np.int64), length=length, reward=reward.astype(np.int64),
-                    rows={k: U[k] for k in ROW_COLUMNS}, truncated=np.zeros(len(length), bool))
+                    rows={k: U[k] for k in self.columns}, truncated=np.zeros(len(length), bool))
+        if "q_exp" in U:
+            data.q_exp = np.ascontiguousarray(U["q_exp"][inv, side])
+            data.q_pick = np.ascontiguousarray(U["q_pick"][inv, side])
         if "searched" in U:  # the deciding player's: its posterior, the W/D/L from its side
             data.searched = U["searched"][inv].astype(bool)
             data.post = U["post"][inv, side]
@@ -227,11 +238,30 @@ class Envs:
         return out
 
 
+def pi_logits(net, x):
+    """pi's (ataraxos/pi/net.py) forward on the actor's inputs: (logits [R,
+    2, CHOICES] over the legal choices, value logits [R, 3], no Q)."""
+    value, policy = net(x["mon"].long(), x["hp"], x["active"])
+    logits, _ = legal_logits(policy, x["policy"], x["n"])
+    return logits, value, None
+
+
+def sample_q(logp, pick, q):
+    """The actor's Q columns: Q's W/D/L (softmax of q [R, 2, C, 3]) summed
+    over the data policy and at the pick, each [R, 2, 3]."""
+    P = torch.softmax(q.float(), -1)
+    q_exp = (logp.exp()[..., None] * P).sum(-2)
+    q_pick = P.gather(2, pick.long()[..., None, None].expand(-1, -1, 1, 3))[:, :, 0]
+    return q_exp, q_pick
+
+
 class AsyncActor:
     """The trainer's Actor as `launch(obs, slot)` (copies in, the forward,
     copies out, all queued on the current stream) and `collect(handle)`
     (waits for that launch only): picks u8 [R, 2], log-probs f32 [R, 2,
-    CHOICES], value logits f32 [R, 3], as Actor.act. One slot per obs in
+    CHOICES], value logits f32 [R, 3], and with `q` the Q columns (q_exp,
+    q_pick [R, 2, 3]) else None, as Actor.act. `inputs` and `logits` are
+    the model's (pi's by default). One slot per obs in
     flight (two with --pingpong). `graphs`: the forward and the sampling
     replayed as one CUDA graph of `capacity` rows (the env's battles);
     sampling is Gumbel-max then (exact; torch.multinomial isn't used in a
@@ -240,8 +270,10 @@ class AsyncActor:
     legal logits and log-softmax through torch.compile (inside the graph with
     `graphs`); the sampling stays eager, so the graph's RNG is torch's own."""
 
-    def __init__(self, net, device, amp, capacity, slots=1, graphs=False, gumbel=False, compile=False):
+    def __init__(self, net, device, amp, capacity, slots=1, graphs=False, gumbel=False, compile=False,
+                 inputs=INPUTS, logits=pi_logits, q=False):
         self.net, self.dev, self.amp = net, torch.device(device), amp
+        self.inputs, self.logits_fn, self.q = tuple(inputs), logits, q
         self.cap, self.graphs = capacity, graphs
         self.gumbel = gumbel or graphs
         self._logp = self._logp_eager if not compile else torch.compile(
@@ -258,29 +290,36 @@ class AsyncActor:
 
     def _alloc_out(self, device, pin=False):
         C = self.cap
-        return dict(pick=torch.empty((C, 2), dtype=torch.uint8, device=device, pin_memory=pin),
-                    logp=torch.empty((C, 2, CHOICES), dtype=torch.float32, device=device, pin_memory=pin),
-                    value=torch.empty((C, 3), dtype=torch.float32, device=device, pin_memory=pin))
+        out = dict(pick=torch.empty((C, 2), dtype=torch.uint8, device=device, pin_memory=pin),
+                   logp=torch.empty((C, 2, CHOICES), dtype=torch.float32, device=device, pin_memory=pin),
+                   value=torch.empty((C, 3), dtype=torch.float32, device=device, pin_memory=pin))
+        if self.q:
+            for k in ("q_exp", "q_pick"):
+                out[k] = torch.empty((C, 2, 3), dtype=torch.float32, device=device, pin_memory=pin)
+        return out
 
     def _alloc_in(self, obs, device, pin=False):
         return {k: torch.empty((self.cap,) + obs[k].shape[1:], dtype=torch.from_numpy(obs[k][:0]).dtype,
-                               device=device, pin_memory=pin) for k in INPUTS}
+                               device=device, pin_memory=pin) for k in self.inputs}
 
-    def _logp_eager(self, mon, hp, active, index, n):
+    def _logp_eager(self, *xs):
         with torch.autocast(self.dev.type, torch.bfloat16, enabled=self.amp and self.dev.type == "cuda",
                             cache_enabled=False):
-            value, policy = self.net(mon.long(), hp, active)
-        logits, _ = legal_logits(policy, index, n)
-        return torch.log_softmax(logits, -1), value.float()
+            logits, value, q = self.logits_fn(self.net, dict(zip(self.inputs, xs)))
+        logp = torch.log_softmax(logits.float(), -1)
+        return logp, value.float(), (q.float() if q is not None else None)
 
     def _forward(self, x):
-        logp, value = self._logp(x["mon"], x["hp"], x["active"], x["policy"], x["n"])
+        logp, value, q = self._logp(*(x[k] for k in self.inputs))
         if self.gumbel:
             u = torch.rand_like(logp).clamp_(1e-10, 1 - 1e-7)
             pick = (logp - torch.log(-torch.log(u))).argmax(-1)
         else:
             pick = torch.multinomial(logp.exp().view(-1, CHOICES), 1).view(-1, 2)
-        return pick.to(torch.uint8), logp, value
+        out = dict(pick=pick.to(torch.uint8), logp=logp, value=value)
+        if self.q:
+            out["q_exp"], out["q_pick"] = sample_q(logp, pick, q)
+        return out
 
     def _capture(self):
         x = self.din
@@ -291,11 +330,9 @@ class AsyncActor:
                 self._forward(x)
         torch.cuda.current_stream().wait_stream(s)
         self.graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(self.graph), torch.no_grad():
-            pick, logp, value = self._forward(x)
-            self.dout["pick"].copy_(pick)
-            self.dout["logp"].copy_(logp)
-            self.dout["value"].copy_(value)
+        with torch.cuda.graph(self.graph, capture_error_mode="thread_local"), torch.no_grad():
+            for k, v in self._forward(x).items():
+                self.dout[k].copy_(v)
 
     @torch.no_grad()
     def launch(self, obs, slot=0):
@@ -309,12 +346,12 @@ class AsyncActor:
             self.din = self._alloc_in(obs, self.dev)
         pin = self.pin_in[slot]
         # the previous launch in this slot was collected, so its copies are done
-        for k in INPUTS:
+        for k in self.inputs:
             pin[k][:R].copy_(torch.from_numpy(obs[k]))
             if self.graphs and R < self.cap:
                 pin[k][R:] = pin[k][:1]
         rows = self.cap if self.graphs else R
-        for k in INPUTS:
+        for k in self.inputs:
             self.din[k][:rows].copy_(pin[k][:rows], non_blocking=True)
         out = self.pin_out[slot]
         if self.graphs:
@@ -323,9 +360,8 @@ class AsyncActor:
             self.graph.replay()
             src = self.dout
         else:
-            pick, logp, value = self._forward({k: v[:R] for k, v in self.din.items()})
-            src = dict(pick=pick, logp=logp, value=value)
-        for k in ("pick", "logp", "value"):
+            src = self._forward({k: v[:R] for k, v in self.din.items()})
+        for k in out:
             out[k][:R].copy_(src[k][:R], non_blocking=True)
         if self.events[slot] is not None:
             self.events[slot].record()
@@ -336,7 +372,8 @@ class AsyncActor:
         if self.events[slot] is not None:
             self.events[slot].synchronize()
         out = self.pin_out[slot]
-        return out["pick"][:R].numpy().copy(), out["logp"][:R].numpy().copy(), out["value"][:R].numpy().copy()
+        extra = {k: out[k][:R].numpy().copy() for k in ("q_exp", "q_pick")} if self.q else None
+        return out["pick"][:R].numpy().copy(), out["logp"][:R].numpy().copy(), out["value"][:R].numpy().copy(), extra
 
     def act(self, obs):
         return self.collect(self.launch(obs))

@@ -117,4 +117,27 @@ inline void encode_state(const Bookkeeping& bk, int16_t* out) {
   encode_features(bk, o);
 }
 
+// The last-move state (2026-11-24, docs/pi4.md), LAST_FIELDS int16s after
+// the state for pi4's input (src/pi4.hpp): the battle's last_damage
+// (clamped to INT16_MAX), then for ours and the foe's (LAST_SIDE_FIELDS
+// each) last_selected_move, last_used_move, libpkmn's counterable flag
+// (last_moves[s].counterable: its last executed move was counterable), and
+// `unshown && counterable` (Bookkeeping::unshown: whether Counter may
+// desync on a click the log never showed).
+inline constexpr size_t LAST_SIDE_FIELDS = 4;
+inline constexpr size_t LAST_FIELDS = 1 + 2 * LAST_SIDE_FIELDS;
+
+inline void encode_last(const Bookkeeping& bk, int16_t* out) {
+  const PKMN::Battle& b = bk.battle;
+  *out++ = int16_t(std::min<uint16_t>(b.last_damage, INT16_MAX));
+  for (const uint8_t s : {bk.player, uint8_t(1 - bk.player)}) {
+    const PKMN::Side& side = b.sides[s];
+    const bool counterable = b.last_moves[s].counterable != 0;
+    *out++ = int16_t(side.last_selected_move);
+    *out++ = int16_t(side.last_used_move);
+    *out++ = counterable;
+    *out++ = bk.unshown[s] && counterable;
+  }
+}
+
 } // namespace ataraxos
