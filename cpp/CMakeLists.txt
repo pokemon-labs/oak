@@ -53,9 +53,15 @@ target_compile_definitions(libpkmn_chance INTERFACE CHANCE CALC)
 
 # Targets
 
+# The only TU that includes lrsnash (header-only, slow to instantiate).
+add_library(nash_lib STATIC src/nash.cc)
+target_include_directories(nash_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(nash_lib PRIVATE lrsnash)
+set_target_properties(nash_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 add_library(search_lib STATIC src/search.cc)
 target_include_directories(search_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(search_lib PUBLIC libpkmn_chance lrslibgmp eigen)
+target_link_libraries(search_lib PUBLIC libpkmn_chance nash_lib eigen)
 set_target_properties(search_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_executable(benchmark src/benchmark.cc)
@@ -75,13 +81,13 @@ target_link_libraries(sprt PRIVATE search_lib argparse)
 
 add_library(pyoak SHARED src/pyoak.cc)
 target_include_directories(pyoak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(pyoak PRIVATE libpkmn_chance pybind11::module eigen lrslibgmp)
+target_link_libraries(pyoak PRIVATE libpkmn_chance pybind11::module eigen nash_lib)
 set_target_properties(pyoak PROPERTIES PREFIX "" SUFFIX ".so")
 set_target_properties(pyoak PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(pyoaktrain SHARED src/pyoaktrain.cc)
 target_include_directories(pyoaktrain PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(pyoaktrain PRIVATE libpkmn_chance pybind11::module eigen)
+target_link_libraries(pyoaktrain PRIVATE libpkmn_chance pybind11::module eigen nash_lib)
 set_target_properties(pyoaktrain PROPERTIES PREFIX "" SUFFIX ".so")
 set_target_properties(pyoaktrain PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
@@ -99,7 +105,7 @@ set_target_properties(pyoaklog PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # add_executable(dur src/dur.cc)
 # target_include_directories(dur PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-# target_link_libraries(dur PRIVATE libpkmn_client lrslibgmp)
+# target_link_libraries(dur PRIVATE libpkmn_client nash_lib)
 
 # add_executable(randbat src/randbat.cc)
 # target_link_libraries(randbat PRIVATE libpkmn_chance)

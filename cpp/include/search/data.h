@@ -294,11 +294,14 @@ struct MatrixUCB : public Bandit {
   uint32_t grow;
   int discretize_factor;
   float old_weight;
+  Nash::MatrixUCBSolver solver;
   MatrixUCB(const Bandit &params, float c, uint32_t interval = 1,
             uint32_t grow = 0, int discretize_factor = 256,
-            float old_weight = 0)
+            float old_weight = 0,
+            Nash::MatrixUCBSolver solver = Nash::MatrixUCBSolver::Legacy)
       : c{c}, interval{interval}, grow{grow},
-        discretize_factor{discretize_factor}, old_weight{old_weight} {
+        discretize_factor{discretize_factor}, old_weight{old_weight},
+        solver{solver} {
     this->data = params.data;
   }
 };
@@ -421,7 +424,8 @@ inline MatrixUCB matrix_ucb(const Bandit &params, const std::string &s) {
   const auto split = ::Parse::split(s, '-');
   if (split.size() < 3) {
     throw std::runtime_error{
-        "matrix-ucb: C-INTERVAL-GROW(-OLD_WEIGHT(-DISCRETIZE_FACTOR))"};
+        "matrix-ucb: "
+        "C-INTERVAL-GROW(-OLD_WEIGHT(-DISCRETIZE_FACTOR(-SOLVER)))"};
   }
   float c = std::stof(split[0]);
   uint32_t interval = std::stoull(split[1]);
@@ -437,7 +441,12 @@ inline MatrixUCB matrix_ucb(const Bandit &params, const std::string &s) {
   if (split.size() > 4) {
     discretize_factor = std::stoi(split[4]);
   }
-  return MatrixUCB{params, c, interval, grow, discretize_factor, old_weight};
+  auto solver = Nash::MatrixUCBSolver::Legacy;
+  if (split.size() > 5) {
+    solver = Nash::parse_matrix_ucb_solver(split[5]);
+  }
+  return MatrixUCB{params,          c,          interval, grow,
+                   discretize_factor, old_weight, solver};
 }
 
 inline Heap heap(const Bandit &bandit) {

@@ -5,6 +5,7 @@
 #include <nn/battle/network.h>
 #include <search/durations.h>
 #include <search/hash.h>
+#include <search/nash.h>
 #include <search/poke-engine-evaluate.h>
 #include <search/util/softmax.h>
 #include <util/random.h>
@@ -18,7 +19,6 @@
 #include <unordered_map>
 #include <variant>
 
-#include "../extern/lrsnash/src/lib.h"
 
 namespace MCTS {
 template <typename T> void debug_print(const T &x) {
@@ -206,13 +206,38 @@ template <typename strategy_type = float> struct MatrixUCBStats {
         p2_ucb_matrix[i * p2.k + j] = p2_entry * params.discretize_factor;
       }
     }
-    std::array<float, 9 + 2> p1_nash;
-    std::array<float, 9 + 2> p2_nash;
-    LRSNash::Input solve_input{static_cast<int>(p1.k), static_cast<int>(p2.k),
-                               static_cast<int>(params.discretize_factor),
-                               p1_ucb_matrix.data(), p2_ucb_matrix.data()};
-    LRSNash::FloatOneSumOutput solve_output{p1_nash.data(), p2_nash.data(), 0};
-    LRSNash::solve_full(&solve_input, &solve_output);
+    std::array<float, 9> p1_nash;
+    std::array<float, 9> p2_nash;
+    const int m = p1.k;
+    const int n = p2.k;
+    const int den = params.discretize_factor;
+    switch (params.solver) {
+    case Nash::MatrixUCBSolver::Legacy: {
+      Nash::solve_general_sum(m, n, p1_ucb_matrix.data(), p2_ucb_matrix.data(),
+                              den, p1_nash.data(), p2_nash.data(),
+                              Nash::Mode::Last);
+      break;
+    }
+    case Nash::MatrixUCBSolver::LH: {
+      Nash::solve_general_sum(m, n, p1_ucb_matrix.data(), p2_ucb_matrix.data(),
+                              den, p1_nash.data(), p2_nash.data(),
+                              Nash::Mode::Any, device.random_int(m + n));
+      break;
+    }
+    case Nash::MatrixUCBSolver::TwoLP: {
+      // each player plays max-min on its own optimistic matrix
+      std::array<float, 9> unused;
+      Nash::solve_constant_sum(m, n, p1_ucb_matrix.data(), den, p1_nash.data(),
+                               unused.data(), Nash::Mode::Any);
+      // P1's payoff den - U2 makes P2's payoff U2
+      for (auto k = 0; k < m * n; ++k) {
+        p2_ucb_matrix[k] = den - p2_ucb_matrix[k];
+      }
+      Nash::solve_constant_sum(m, n, p2_ucb_matrix.data(), den, unused.data(),
+                               p2_nash.data(), Nash::Mode::Any);
+      break;
+    }
+    }
 
     // policy = w * old + (1 - w) * nash; w = 0 is a plain overwrite
     const float w = params.old_weight;
@@ -273,6 +298,7 @@ template <typename Bandit> struct MatrixUCBParams {
   uint32_t grow;
   int discretize_factor = 256;
   float old_weight = 0;
+  Nash::MatrixUCBSolver solver = Nash::MatrixUCBSolver::Legacy;
 };
 
 struct SearchOptions {
@@ -661,12 +687,10 @@ template <SearchOptions Options = default_search> struct Search {
     }
 
     output.empirical_value = total_value / output.iterations;
-    LRSNash::FastInput solve_input{static_cast<int>(output.p1.k),
-                                   static_cast<int>(output.p2.k),
-                                   solve_matrix.data(), discretize_factor};
-    std::array<float, 9 + 2> nash1{}, nash2{};
-    LRSNash::FloatOneSumOutput solve_output{nash1.data(), nash2.data(), 0};
-    LRSNash::solve_fast(&solve_input, &solve_output);
+    std::array<float, 9> nash1{}, nash2{};
+    const float nash_value = Nash::solve_constant_sum(
+        output.p1.k, output.p2.k, solve_matrix.data(), discretize_factor,
+        nash1.data(), nash2.data(), Nash::Mode::Last);
 
     for (auto i = 0; i < output.p1.k; ++i) {
       output.p1.empirical[i] /= (double)output.iterations;
@@ -676,7 +700,7 @@ template <SearchOptions Options = default_search> struct Search {
       output.p2.empirical[j] /= (double)output.iterations;
       output.p2.nash[j] = nash2[j];
     }
-    output.nash_value = solve_output.value;
+    output.nash_value = nash_value;
   }
 
   float init_stats_and_rollout(auto &stats, auto &device,
