@@ -1,5 +1,7 @@
 #pragma once
 
+#include <search/nash.h>
+
 namespace MCTS {
 template <typename strategy_type = uint16_t> struct MatrixUCBStats {
   struct Side {
@@ -58,8 +60,8 @@ template <typename strategy_type = uint16_t> struct MatrixUCBStats {
   void solve_ucb_matrix(auto &device, auto &params) noexcept {
     std::array<int, 9 * 9> p1_ucb_matrix;
     std::array<int, 9 * 9> p2_ucb_matrix;
-    std::array<float, 9 + 2> p1_nash;
-    std::array<float, 9 + 2> p2_nash;
+    std::array<float, 9> p1_nash;
+    std::array<float, 9> p2_nash;
     const float log_T = std::log(total_visits + 1);
     const float exp = params.c * std::sqrt(2 * (2 * log_T + ucb_weight));
     for (auto i = 0; i < p1.k; ++i) {
@@ -82,11 +84,9 @@ template <typename strategy_type = uint16_t> struct MatrixUCBStats {
       }
     }
 
-    LRSNash::Input solve_input{static_cast<int>(p1.k), static_cast<int>(p2.k),
-                               static_cast<int>(params.discretize_factor),
-                               p1_ucb_matrix.data(), p2_ucb_matrix.data()};
-    LRSNash::FloatOneSumOutput solve_output{p1_nash.data(), p2_nash.data(), 0};
-    LRSNash::solve_full(&solve_input, &solve_output);
+    Nash::solve_general_sum(p1.k, p2.k, p1_ucb_matrix.data(),
+                            p2_ucb_matrix.data(), params.discretize_factor,
+                            p1_nash.data(), p2_nash.data(), Nash::Mode::Last);
 
     if constexpr (std::is_integral_v<strategy_type>) {
       for (auto i = 0; i < p1.k; ++i) {

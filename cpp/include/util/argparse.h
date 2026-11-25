@@ -34,7 +34,8 @@ struct TeamBuildingArgs : public argparse::Args {
                                                                                \
     std::optional<std::string> &A##matrix_ucb = kwarg(                         \
         B "matrix-ucb",                                                        \
-        "MatrixUCB C-INTERVAL-GROW(-OLD_WEIGHT(-DISCRETIZE)). The UCB Matrix " \
+        "MatrixUCB C-INTERVAL-GROW(-OLD_WEIGHT(-DISCRETIZE(-SOLVER))). The "   \
+        "UCB Matrix "                                                        \
         "is solved "                                                           \
         "iff "                                                                 \
         "(total_visits + 1) \% INTERVAL == 0, otherwise the network "          \
@@ -47,7 +48,10 @@ struct TeamBuildingArgs : public argparse::Args {
         "with the previous strategy: w * old + (1 - w) * Nash. Default 0 "     \
         "overwrites (old behaviour). DISCRETIZE is the quantization factor "   \
         "when coverting float matrices to int for LRSNash. Error "             \
-        "(exploitability) is bounded by 2/DISCRETIZE.");                       \
+        "(exploitability) is bounded by 2/DISCRETIZE. SOLVER is legacy "       \
+        "(one general-sum solve, lrsnash's last equilibrium; default), lh "    \
+        "(general-sum by Lemke-Howson, random missing label) or two_lp "       \
+        "(each player's max-min on its own UCB matrix, as in the paper).");    \
                                                                                \
     std::optional<std::string> &A##options = kwarg(                            \
         B "options",                                                           \

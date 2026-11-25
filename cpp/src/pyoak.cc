@@ -38,7 +38,8 @@ using namespace ::PKMN;
 using namespace ::PKMN::Data;
 
 const auto solve_matrix(py::array_t<float> p1_payoffs,
-                        const int discretize_factor = 256) {
+                        const int discretize_factor = 256,
+                        const std::string &mode = "last") {
   if (p1_payoffs.ndim() != 2) {
     throw std::runtime_error{"Expecting 2d array"};
   }
@@ -52,14 +53,11 @@ const auto solve_matrix(py::array_t<float> p1_payoffs,
       disc[i * n + j] = static_cast<int>(r(i, j) * discretize_factor);
     }
   }
-  LRSNash::FastInput solve_input{static_cast<int>(m), static_cast<int>(n),
-                                 disc.data(), discretize_factor};
-  std::vector<float> nash1;
-  std::vector<float> nash2;
-  nash1.resize(m + 2);
-  nash2.resize(n + 2);
-  LRSNash::FloatOneSumOutput solve_output{nash1.data(), nash2.data(), 0};
-  LRSNash::solve_fast(&solve_input, &solve_output);
+  std::vector<float> nash1(m);
+  std::vector<float> nash2(n);
+  const float value = Nash::solve_constant_sum(
+      m, n, disc.data(), discretize_factor, nash1.data(), nash2.data(),
+      Nash::parse_mode(mode));
   auto p1 = py::array_t<float>(std::vector<ssize_t>{m});
   auto p2 = py::array_t<float>(std::vector<ssize_t>{n});
   for (int i = 0; i < m; ++i) {
@@ -68,12 +66,13 @@ const auto solve_matrix(py::array_t<float> p1_payoffs,
   for (int j = 0; j < n; ++j) {
     p2.mutable_unchecked<1>()(j) = nash2[j];
   }
-  return py::make_tuple(p1, p2, solve_output.value);
+  return py::make_tuple(p1, p2, value);
 }
 
 const auto solve_bimatrix(py::array_t<float> p1_payoffs,
                           py::array_t<float> p2_payoffs,
-                          const int discretize_factor = 256) {
+                          const int discretize_factor = 256,
+                          const std::string &mode = "last") {
   if (p1_payoffs.ndim() != 2 || p2_payoffs.ndim() != 2) {
     throw std::runtime_error{"Expecting 2d array"};
   }
@@ -95,14 +94,11 @@ const auto solve_bimatrix(py::array_t<float> p1_payoffs,
       p2[i * n + j] = static_cast<int>(s(i, j) * discretize_factor);
     }
   }
-  LRSNash::Input solve_input{static_cast<int>(m), static_cast<int>(n),
-                             discretize_factor, p1.data(), p2.data()};
-  std::vector<float> nash1;
-  std::vector<float> nash2;
-  nash1.resize(m + 2);
-  nash2.resize(n + 2);
-  LRSNash::FloatOneSumOutput solve_output{nash1.data(), nash2.data(), 0};
-  LRSNash::solve_full(&solve_input, &solve_output);
+  std::vector<float> nash1(m);
+  std::vector<float> nash2(n);
+  const float value = Nash::solve_general_sum(
+      m, n, p1.data(), p2.data(), discretize_factor, nash1.data(),
+      nash2.data(), Nash::parse_mode(mode));
   auto s1 = py::array_t<float>(std::vector<ssize_t>{m});
   auto s2 = py::array_t<float>(std::vector<ssize_t>{n});
   for (int i = 0; i < m; ++i) {
@@ -111,7 +107,7 @@ const auto solve_bimatrix(py::array_t<float> p1_payoffs,
   for (int j = 0; j < n; ++j) {
     s2.mutable_unchecked<1>()(j) = nash2[j];
   }
-  return py::make_tuple(s1, s2, solve_output.value, 0);
+  return py::make_tuple(s1, s2, value, 0);
   // return 0;
 }
 
@@ -861,10 +857,11 @@ PYBIND11_MODULE(pyoak, m) {
         [](int result) -> int { return pkmn_result_type(result); });
 
   m.def("solve_matrix", &solve_matrix, py::arg("row_payoff"),
-        py::arg("discretize_factor"));
+        py::arg("discretize_factor"), py::arg("mode") = "last");
 
   m.def("solve_bimatrix", &solve_bimatrix, py::arg("row_payoff"),
-        py::arg("col_payoff"), py::arg("discretize_factor"));
+        py::arg("col_payoff"), py::arg("discretize_factor"),
+        py::arg("mode") = "last");
 
   m.def(
       "switch_in",
