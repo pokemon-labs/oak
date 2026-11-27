@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -21,6 +22,9 @@
 #include <vector>
 
 #include <libpkmn/data.h>
+#include <cassert>
+#include <limits>
+#include <train/battle/compressed-frames.h>
 
 #include "bookkeeping.hpp"
 #include "obs.hpp"
@@ -63,6 +67,24 @@ struct BattleData {
   // `after`).
   bool keep_after = false;
   std::vector<Bookkeeping> after[2];
+  // With `oak` (off by default; 2026-11-26, the user's: distill rby4 into
+  // an oak battle net), the game as oak's CompressedFrames (oak's
+  // train/battle/compressed-frames.h, its .battle.data): the battle after
+  // the leads come in, then one update per libpkmn update with both sides'
+  // choices, each side's policy over libpkmn's legal choices (its order,
+  // pkmn_gen1_battle_choices', as oak's replay reads them) and P1's value.
+  // `oak_target[p]`, set before p chooses, is p's net's policy over
+  // option[p] and its value for P1; a side without one (forced, Wait) gets
+  // its choice one-hot. `iterations` counts the targets (0-2): oak's
+  // --min-iterations 1 drops the updates no net looked at.
+  struct OakTarget {
+    bool set = false;
+    std::array<float, MAX_CHOICES> p{};
+    float v = 0.5f;
+  };
+  bool oak = false;
+  OakTarget oak_target[2];
+  Train::Battle::CompressedFrames oak_frames;
 
   BattleData() = default;
   // `options` points at `buffer`.
@@ -98,6 +120,11 @@ struct BattleData {
     chance_ = {};
     first_ = true;
     advance(0, 0);
+    if (oak) {
+      oak_frames.battle = battle;
+      oak_frames.updates.clear();
+      oak_target[0] = oak_target[1] = OakTarget{};
+    }
   }
 
   // Starts from world `b` mid-game (a history sample's), each player's
@@ -145,11 +172,50 @@ struct BattleData {
       chosen[q] = true;
     }
     if (!chosen[q]) return Held;
+    if (oak) record_oak();
     advance(pending[0], pending[1]);
     return over() ? Ended : Advanced;
   }
 
  private:
+  void record_oak() {
+    using Update = Train::Battle::CompressedFrames::Update;
+    using P = decltype(Update::Side::empirical)::value_type;
+    Update u{};
+    float v[2]{0.5f, 0.5f};
+    int set = 0;
+    for (uint8_t p = 0; p < 2; p++) {
+      Update::Side& s = p ? u.p2 : u.p1;
+      s.k = n_legal[p];
+      s.choice = pending[p];
+      std::array<float, MAX_CHOICES> pol{};
+      const OakTarget& t = oak_target[p];
+      const std::span<const pkmn_choice> legal_p{legal[p].data(), n_legal[p]};
+      if (t.set) {
+        for (size_t k = 0; k < n_option[p]; k++) {
+          const pkmn_choice c = engine_choice(option[p][k], legal_p);
+          for (size_t j = 0; j < n_legal[p]; j++) {
+            if (legal[p][j] == c) pol[j] += t.p[k];
+          }
+        }
+        v[set++] = t.v;
+      } else {
+        for (size_t j = 0; j < n_legal[p]; j++) pol[j] = legal[p][j] == pending[p] ? 1.0f : 0.0f;
+      }
+      for (size_t j = 0; j < s.k; j++) {
+        const float x = std::clamp(pol[j], 0.0f, 1.0f);
+        s.empirical[j] = s.nash[j] = Train::Battle::compress_probs<double, P>(x);
+      }
+    }
+    using V = decltype(u.empirical_value);
+    const float e = set ? v[0] : 0.5f, m = set == 2 ? 0.5f * (v[0] + v[1]) : e;
+    u.iterations = uint32_t(set);
+    u.empirical_value = Train::Battle::compress_probs<double, V>(std::clamp(e, 0.0f, 1.0f));
+    u.nash_value = Train::Battle::compress_probs<double, V>(std::clamp(m, 0.0f, 1.0f));
+    oak_frames.updates.push_back(u);
+    oak_target[0] = oak_target[1] = OakTarget{};
+  }
+
   void advance(pkmn_choice c1, pkmn_choice c2) {
     pkmn_gen1_log_options log{buffer.data(), buffer.size()};
     pkmn_gen1_battle_options_set(&options, &log, first_ ? &chance_ : nullptr, nullptr);

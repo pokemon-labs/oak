@@ -351,6 +351,31 @@ PYBIND11_MODULE(ataraxos_env, m) {
       .def_property_readonly("decisions", &SelfPlay::decisions)
       .def("set_keep_after", &SelfPlay::set_keep_after, py::arg("on"))
       .def("set_light", &SelfPlay::set_light, py::arg("on"))
+      // oak's .battle.data (battle_data.hpp's `oak`; 2026-11-26, the rby4 ->
+      // oak distill): set_oak(on); set_oak_targets(p f32 [D, 9] over each
+      // decision's options, v f32 [D] P1's value) before each step;
+      // take_oak() -> (bytes, games) finished since the last call.
+      .def("set_oak", &SelfPlay::set_oak, py::arg("on"))
+      .def("set_oak_targets",
+           [](Env& env, py::array_t<float, py::array::c_style | py::array::forcecast> p,
+              py::array_t<float, py::array::c_style | py::array::forcecast> v) {
+             const auto D = py::ssize_t(env.decisions());
+             if (p.ndim() != 2 || p.shape(0) != D || p.shape(1) != py::ssize_t(ataraxos::MAX_CHOICES) ||
+                 v.ndim() != 1 || v.shape(0) != D)
+               throw std::invalid_argument("set_oak_targets: p [D, 9], v [D]");
+             env.set_oak_targets(p.data(), v.data());
+           })
+      // battle b's libpkmn bytes now (tests/py/check_oak_frames.py).
+      .def("battle_bytes",
+           [](const Env& env, size_t b) {
+             const auto& x = env.battle(b).battle;
+             return py::bytes(reinterpret_cast<const char*>(x.bytes), sizeof(x.bytes));
+           })
+      .def("take_oak",
+           [](Env& env) {
+             auto [bytes, n] = env.take_oak();
+             return py::make_tuple(py::bytes(bytes.data(), bytes.size()), n);
+           })
       .def_property_readonly("stats",
                              [](const Env& env) {
                                uint64_t forced = 0, games = 0, capped = 0;

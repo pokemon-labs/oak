@@ -50,6 +50,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "battle_data.hpp"
@@ -104,6 +105,8 @@ struct Shard {
   std::vector<uint64_t> team_counts; // draws per pool team, both sides
   std::deque<Queued> queue;          // scheduled games, taken before drawing
   uint64_t forced = 0, games = 0, capped = 0;
+  std::vector<char> oak_bytes; // with set_oak: finished games, oak's .battle.data
+  uint64_t oak_games = 0;
 };
 
 class SelfPlay {
@@ -276,6 +279,37 @@ class SelfPlay {
   void set_keep_after(bool on) {
     for (size_t b = 0; b < size_; b++) battles_[b].keep_after = on;
   }
+  // Record each game as oak's CompressedFrames (battle_data.hpp's `oak`);
+  // takes effect as games start. A game ended by max_turns isn't kept.
+  void set_oak(bool on) {
+    for (size_t b = 0; b < size_; b++) battles_[b].oak = on;
+  }
+  // Decision i's (the last gather's, shard order) net policy over its
+  // options (`p` [D, MAX_CHOICES]) and value for P1 (`v` [D]).
+  void set_oak_targets(const float* p, const float* v) {
+    size_t i = 0;
+    for (Shard& sh : shards_) {
+      for (const Decision& x : sh.decisions) {
+        BattleData::OakTarget& t = battles_[x.battle].oak_target[x.player];
+        t.set = true;
+        std::copy_n(p + i * MAX_CHOICES, MAX_CHOICES, t.p.begin());
+        t.v = v[i];
+        i++;
+      }
+    }
+  }
+  // The games finished since the last call, concatenated, and their count.
+  std::pair<std::vector<char>, uint64_t> take_oak() {
+    std::vector<char> out;
+    uint64_t n = 0;
+    for (Shard& sh : shards_) {
+      out.insert(out.end(), sh.oak_bytes.begin(), sh.oak_bytes.end());
+      n += sh.oak_games;
+      sh.oak_bytes.clear();
+      sh.oak_games = 0;
+    }
+    return {std::move(out), n};
+  }
 
  private:
   std::unique_ptr<BattleData[]> battles_;
@@ -348,6 +382,14 @@ class SelfPlay {
   }
 
   void end(Shard& sh, size_t b, Outcome outcome, bool capped = false) {
+    BattleData& d = battles_[b];
+    if (d.oak && !capped && d.over() && !d.oak_frames.updates.empty()) {
+      d.oak_frames.result = d.result;
+      const size_t at = sh.oak_bytes.size();
+      sh.oak_bytes.resize(at + d.oak_frames.n_bytes());
+      d.oak_frames.write(sh.oak_bytes.data() + at);
+      sh.oak_games++;
+    }
     sh.ends.push_back({uint32_t(b), games_[b], outcome, teams_of_[b], capped});
     sh.games++;
     games_[b]++;
