@@ -16,9 +16,14 @@
 // tokens (Accelerate's on Apple, so the AMX units run it; Eigen's
 // elsewhere), attention and the per-row embedding work are split over
 // threads (GCD on Apple, OpenMP elsewhere when built with it).
+//
+// With ATARAXOS_METAL (ataraxos_net on macOS, 2026-11-28) `set_gpu(true)`
+// runs the same forward on the GPU instead (src/net_metal.mm and
+// src/net_metal.metal); off by default, the CPU path below unchanged.
 
 #pragma once
 
+#include <chrono>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -31,6 +36,7 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -263,6 +269,8 @@ class Weights {
 
 // ---- the net ----------------------------------------------------------------
 
+struct MetalForward;  // src/net_metal.mm
+
 // One batch: D decisions (rows), their update's lines (tokens [T, COLUMNS] by
 // offsets [D + 1]), request [D, REQUEST_FIELDS], state [D, STATE_FIELDS]
 // (null without `state`), choices [D, CHOICES], n [D]; each row's cache key
@@ -316,18 +324,51 @@ class Net {
       if (b.keys[i] < 0 || b.keys[i] >= S) throw std::out_of_range("net: cache key");
       if (b.t[i] < 0) throw std::out_of_range("net: t");
     }
+    const auto tic = std::chrono::steady_clock::now();
+    calls_++;
+    rows_ += D;
     bad_ = false;
+#ifdef ATARAXOS_METAL
+    if (gpu_ && metal_act(b, K, V, S, logits, value)) {
+      seconds_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - tic).count();
+      if (bad_) throw std::out_of_range("net: an index past its table (tokens, request or state)");
+      return;
+    }
+#endif
     std::vector<float> h(size_t(D) * d);
     summarize(b, h.data());
     causal(b, h.data(), K, V, S);
     if (logits) decide(b, h.data(), logits, value);
+    seconds_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - tic).count();
     if (bad_) throw std::out_of_range("net: an index past its table (tokens, request or state)");
   }
 
+  // act's totals since construction: calls, rows, wall seconds, and the
+  // GPU's own seconds (its command buffers' GPU time)
+  int64_t calls() const { return calls_; }
+  int64_t rows() const { return rows_; }
+  double seconds() const { return seconds_; }
+  double gpu_seconds() const { return gpu_seconds_; }
+
+#ifdef ATARAXOS_METAL
+  // The GPU forward on (the Metal device, the kernels compiled, the
+  // parameters uploaded) or off: "" when done, else why not (then off).
+  std::string set_gpu(bool on);
+  bool gpu() const { return bool(gpu_); }
+#endif
+
  private:
+  friend struct MetalForward;
   Weights w_;
   Config c_;
   std::atomic<bool> bad_{false};
+  int64_t calls_ = 0, rows_ = 0;
+  double seconds_ = 0, gpu_seconds_ = 0;
+#ifdef ATARAXOS_METAL
+  std::shared_ptr<MetalForward> gpu_;
+  // the batch on the GPU; false (nothing written) when it must go to the CPU
+  bool metal_act(const Batch& b, float* K, float* V, int64_t S, float* logits, float* value);
+#endif
 
   // tables
   const float *kind_, *sub_, *ident_, *other_, *move_, *species_, *num_, *status_;

@@ -14,11 +14,20 @@ The protocol, as the arbiter runs it:
   each `|request|<JSON>` as its own line after its chunk, and after each
   request that wants a choice, `|inactive|Time left: X sec this turn | ...`;
 - we answer such a request with one line, a bare choice (`move 1`,
-  `switch 3`, `default`), flushed; nothing else goes to stdout (logs go to
-  stderr, whose last 4 KiB the account page shows on a failed smoke test);
+  `switch 3`, `default`), flushed, after one optional `/info <JSON>` line
+  (2026-11-27, pkmn.ai's search telemetry: see info_line); nothing else
+  goes to stdout (logs go to stderr, 16 KiB head + 48 KiB tail of which the
+  account page keeps for a diagnostic game);
 - an `|error|` right after our choice means it was refused, and the
-  arbiter sends the request again; the game ends with `|win|` or `|tie`
-  and stdin closes.
+  arbiter sends the request again (3 `[Invalid choice]`s on one request
+  lose the game, so a refused choice isn't sent again for that rqid); the
+  game ends with `|win|` or `|tie` and stdin closes.
+
+`/info` per decision: `win` P(W) + P(D)/2, from the search's root value
+(1 + sum_a pi(a) q(a)) / 2 when it ran, else the net's value head;
+`policy` the top 8 of the policy the choice was sampled from (the search's
+refined one, else the net's); `nodes` and `nps` the search's rollouts and
+rollouts per second. No `depth`: the rollouts' depth isn't a tree depth.
 
 Lines are buffered and fed to the Client (src/client.hpp, as
 play/showdown.py does a room message) as one chunk when a request comes,
@@ -33,6 +42,7 @@ the battle, the rest of it is played with `default`."""
 
 import argparse
 import json
+import math
 import os
 import re
 import select
@@ -43,13 +53,15 @@ import traceback
 import numpy as np
 
 from ataraxos._ext import ataraxos_client
-from ataraxos.arena.actor import Actor, load
+from ataraxos.arena.actor import Actor, check_gpu, load
 from ataraxos.arena import stats as usage_stats
 from ataraxos.arena.search import Search, SearchConfig
 
 SETTLE = 0.5  # seconds a request waits for its |inactive| line
 MIN_LEFT = 10.0  # seconds left this turn under which the net plays alone
 HERE = os.path.dirname(os.path.abspath(__file__))
+INFO_CHARS = 2048  # pkmn.ai's MAX_INFO_LINE_CHARS (server/protocol.ts)
+INFO_POLICY = 8  # its MAX_INFO_POLICY_ENTRIES
 
 
 def log(*a):
@@ -97,6 +109,31 @@ def bare(cmd):
     return cmd.split("|", 1)[0]
 
 
+def info_line(win=None, policy=None, nodes=None, nps=None):
+    """The `/info <JSON>` line, or None. pkmn.ai's parseAgentInfoPayload
+    drops the whole line on one bad field, so: `win` a finite number in
+    [0, 1], `nodes`/`nps` non-negative ints, `policy` 1-8 bare choices to
+    numbers in [0, 1] (`policy`: {choice: probability})."""
+    out = {}
+    if win is not None and math.isfinite(float(win)):
+        out["win"] = round(min(1.0, max(0.0, float(win))), 4)
+    for key, v in (("nodes", nodes), ("nps", nps)):
+        if v is not None and math.isfinite(float(v)) and v >= 0:
+            out[key] = int(v)
+    top = sorted(((float(p), c) for c, p in (policy or {}).items() if math.isfinite(float(p)) and p > 0),
+                 reverse=True)[:INFO_POLICY]
+    if top:
+        out["policy"] = {c: round(min(1.0, p), 4) for p, c in top}
+    for _ in range(2):
+        if not out:
+            return None
+        line = "/info " + json.dumps(out, separators=(",", ":"))
+        if len(line) <= INFO_CHARS:
+            return line
+        out.pop("policy", None)
+    return None
+
+
 class Game:
     def __init__(self, args, net, search):
         self.args, self.search = args, search
@@ -104,6 +141,9 @@ class Game:
         self.actor = Actor(net, 1, np.random.default_rng(args.seed))
         self.broken = False
         self.chosen = None  # the choice sent, heard by the bookkeeping once the next line isn't an |error|
+        self.sent = None  # the bare choice last sent
+        self.rqid = None  # the last request's rqid
+        self.refused = set()  # bare choices refused ([Invalid choice]) for request rqid
         self.buffer = []  # the chunk so far
         self.request = None  # the request waiting for its |inactive| line
         self.left = None  # seconds left this turn, from |inactive|
@@ -134,6 +174,8 @@ class Game:
             i, self.chosen = self.chosen, None
             if line.startswith("|error|"):
                 log("refused:", line)
+                if "[Invalid choice]" in line and self.sent is not None:
+                    self.refused.add(self.sent)
             elif not self.broken:
                 try:
                     self.client.choose(i)
@@ -145,9 +187,13 @@ class Game:
             self.flush()
             self.request = line[len("|request|"):]
             try:
-                wait = json.loads(self.request).get("wait") if self.request not in ("", "null") else True
+                j = json.loads(self.request) if self.request not in ("", "null") else None
             except ValueError:
-                wait = False
+                j = {}
+            wait = True if j is None else (j.get("wait") if isinstance(j, dict) else False)
+            rqid = j.get("rqid") if isinstance(j, dict) else None
+            if rqid is None or rqid != self.rqid:
+                self.rqid, self.refused = rqid, set()
             if wait:  # the bookkeeping still reads it
                 self.answer(self.request)
                 self.request = None
@@ -179,6 +225,9 @@ class Game:
                 if not self.client.request(text):
                     return
                 if self.client.n == 1:
+                    if bare(self.client.choice(0)) in self.refused:
+                        log("the one choice was refused for this request: default")
+                        return self.send_default()
                     return self.choose(0, self.client.choice(0))
                 return self.decide()
             except Exception as e:  # noqa: BLE001
@@ -188,6 +237,12 @@ class Game:
                 return
         except (ValueError, AttributeError):
             pass
+        self.send_default()
+
+    def send_default(self):
+        self.chosen = None
+        self.sent = "default"
+        self.left = None
         send("default")
 
     def decide(self):
@@ -196,27 +251,64 @@ class Game:
         obs = dict(d, battle=np.zeros(1, np.uint32), game=np.zeros(1, np.uint32), player=np.zeros(1, np.uint8))
         picks, logp, value = self.actor.act(obs)
         pick, how = int(picks[0]), "net"
+        lp, q, nodes, nps = logp[0], None, None, None
         left = self.left
         if self.search is not None and (left is None or left >= max(MIN_LEFT, 3 * self.last_search)):
             tic = time.monotonic()
+            before = self.search.stats["rollouts"]
+            times0, net0 = dict(self.search.times), self.search.net.timing
             try:
-                sp, _, _ = self.search.run_client(c, self.actor, 0, obs, logp)
+                sp, qs, lps = self.search.run_client(c, self.actor, 0, obs, logp)
                 pick, how = int(sp[0]), "search"
+                lp, q = lps[0], qs[0]
             except Exception as e:  # noqa: BLE001
                 log("search failed, playing the net's pick:", repr(e))
                 traceback.print_exc(file=sys.stderr)
             self.last_search = time.monotonic() - tic
+            net1 = self.search.net.timing
+            split = " ".join(f"{k} {v - times0.get(k, 0.0):.2f}" for k, v in self.search.times.items())
+            log(f"search split: {split}; net {net1['seconds'] - net0['seconds']:.2f} s "
+                f"(gpu {net1['gpu_seconds'] - net0['gpu_seconds']:.2f}) over {net1['calls'] - net0['calls']} calls, "
+                f"{net1['rows'] - net0['rows']} rows")
+            if how == "search":
+                nodes = self.search.stats["rollouts"] - before
+                nps = nodes / self.last_search if self.last_search > 0 else None
         p = np.exp(value[0] - value[0].max())
         p /= p.sum()
         self.decisions += 1
+        n = int(obs["n"][0])
+        pol = np.exp(lp[:n] - lp[:n].max())
+        pol /= pol.sum()
         cmd = bare(c.choice(pick))
-        log(f"turn {self.turn}: {cmd} ({how}, {self.last_search:.2f} s, P(win) {p[2]:.2f}, left {left})")
-        self.choose(pick, None, cmd)
+        if cmd in self.refused:
+            alt = [int(i) for i in np.argsort(-pol, kind="stable") if bare(c.choice(int(i))) not in self.refused]
+            log(f"{cmd} was refused for this request:", f"playing {bare(c.choice(alt[0]))}" if alt else "default")
+            if not alt:
+                return self.send_default()
+            pick, cmd, how = alt[0], bare(c.choice(alt[0])), how + ", refused before"
+        info, win = None, float(p[2] + 0.5 * p[1])
+        try:
+            if q is not None:
+                v = float(np.dot(pol, np.asarray(q, np.float64)[:n]))
+                if math.isfinite(v):
+                    win = (1.0 + v) / 2.0
+            policy = {}
+            for i in range(n):
+                k = bare(c.choice(i))
+                policy[k] = policy.get(k, 0.0) + float(pol[i])
+            info = info_line(win, policy, nodes, nps)
+        except Exception as e:  # noqa: BLE001 (telemetry only)
+            log("no /info:", repr(e))
+        log(f"turn {self.turn}: {cmd} ({how}, {self.last_search:.2f} s, P(win) {p[2]:.2f}, win {win:.2f}, left {left})")
+        self.choose(pick, None, cmd, info)
 
-    def choose(self, i, text=None, cmd=None):
+    def choose(self, i, text=None, cmd=None, info=None):
         self.chosen = i
         self.left = None
-        send(cmd if cmd is not None else bare(text))
+        self.sent = cmd if cmd is not None else bare(text)
+        if info:
+            send(info)
+        send(self.sent)
 
 
 def warm_up(net):
@@ -244,9 +336,16 @@ def main(argv=None):
     ap.add_argument("--types", type=int, default=3)
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--gpu", action=argparse.BooleanOptionalAction, default=False,
+                    help="the net on the GPU (Metal; checked against the CPU at startup, the CPU if it fails)")
     a = ap.parse_args(argv)
     tic = time.monotonic()
     net = load(a.net, a.threads)
+    if a.gpu:
+        t_gpu = time.monotonic()
+        ok, how = check_gpu(net)
+        log(f"gpu {'on' if ok else 'off'}: " + (f"max difference from the CPU {how:.1e}" if isinstance(how, float) else how)
+            + f" ({time.monotonic() - t_gpu:.1f} s)")
     search = None
     if not a.no_search:
         cfg = SearchConfig(budget=a.budget, reps=a.reps, depth=a.depth, joint=bool(a.joint),
@@ -260,7 +359,8 @@ def main(argv=None):
         log("usage stats:", usage_stats.summary(st) if st else f"none ({usage_stats.path() or 'no PKMN_STATS_DIR'})")
     except Exception as e:  # noqa: BLE001 (informational only)
         log("usage stats unreadable:", repr(e))
-    log(f"loaded in {time.monotonic() - tic:.1f} s ({a.threads} threads, search {'off' if search is None else a.joint or 'vanilla'})")
+    log(f"loaded in {time.monotonic() - tic:.1f} s ({a.threads} threads, net on the {'GPU' if net.gpu else 'CPU'}, "
+        f"search {'off' if search is None else a.joint or 'vanilla'})")
     send("/ready")
     game = Game(a, net, search)
     lines = Lines()

@@ -74,3 +74,65 @@ def load(path, threads=None):
     if threads:
         ataraxos_net.set_threads(int(threads))
     return ataraxos_net.Net(path)
+
+
+def probe_obs(rng, D=24, lines=40):
+    """A random batch with every index in range (check_gpu's): line counts
+    past max_lines, masked lines (KIND 0), all choice kinds."""
+    lens = rng.integers(0, lines, D)
+    T = int(lens.sum())
+    hi = [43, 256, 17, 17, 166, 166, 152, 300, 400, 400, 256]
+    tokens = np.stack([rng.integers(0, h, T) for h in hi], 1).astype(np.int16)
+    request = rng.integers(0, 17, (D, ataraxos_net.REQUEST_FIELDS)).astype(np.int16)
+    request[:, 0] = rng.integers(0, 3, D)
+    state = rng.integers(0, 17, (D, ataraxos_net.STATE_FIELDS)).astype(np.int16)
+    n = rng.integers(1, ataraxos_net.CHOICES + 1, D).astype(np.uint8)
+    moves = [(s << 2) | 1 for s in range(5)]
+    switches = [(s << 2) | 2 for s in range(1, 7)]
+    choices = rng.choice(moves + switches, (D, ataraxos_net.CHOICES)).astype(np.uint8)
+    return {"tokens": tokens, "offsets": np.r_[0, np.cumsum(lens)].astype(np.int64), "request": request,
+            "state": state, "choices": choices, "n": n}
+
+
+def check_gpu(net, seed=0, tol=2e-3):
+    """The GPU forward against the CPU's on random batches (random caches,
+    positions before and past the window, a prefill): (ok, the max
+    difference over each output's scale, or why the GPU is off).
+    Leaves the net on the GPU only when ok."""
+    rng = np.random.default_rng(seed)
+    c = net.config
+    R, L, d = c["window"] - 1, c["causal_depth"], c["d"]
+    worst = 0.0
+    for step in range(3):
+        obs = probe_obs(rng)
+        D = len(obs["n"])
+        S = 2 * D + 4
+        k = rng.standard_normal((L, S, R, d)).astype(np.float32)
+        v = rng.standard_normal((L, S, R, d)).astype(np.float32)
+        keys = rng.permutation(S)[:D].astype(np.int64)
+        t = rng.integers(0, 3 * R + 2, D).astype(np.int64)
+        st = obs["state"] if c["state"] else None
+        out = {}
+        for gpu in (False, True):
+            why = net.set_gpu(gpu)
+            if why:
+                return False, why
+            kk, vv = k.copy(), v.copy()
+            res = net.act(obs["tokens"], obs["offsets"], obs["request"], st, obs["choices"], obs["n"], keys, t,
+                          kk, vv, step != 2)
+            out[gpu] = (res, kk, vv)
+        (r0, k0, v0), (r1, k1, v1) = out[False], out[True]
+        def rel(a, b):  # max |a - b| over a's scale
+            return float(np.abs(a - b).max() / max(1.0, float(np.abs(a).max())))
+
+        diffs = [rel(k0, k1), rel(v0, v1)]
+        if r0 is not None:
+            fin = np.isfinite(r0[0])
+            if not (fin == np.isfinite(r1[0])).all():
+                net.set_gpu(False)
+                return False, "legal sets differ"
+            diffs += [rel(np.where(fin, r0[0], 0), np.where(fin, r1[0], 0)), rel(r0[1], r1[1])]
+        worst = max(worst, max(float(x) for x in diffs))
+    ok = worst <= tol
+    net.set_gpu(ok)
+    return ok, worst

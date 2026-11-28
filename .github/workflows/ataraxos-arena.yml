@@ -69,6 +69,17 @@ jobs:
           cmake --build build --target ataraxos_client ataraxos_env ataraxos_net -j 3
           ls ataraxos/ataraxos/_ext/
 
+      - name: Metal kernels compile (offline, the same source the extension compiles at load)
+        run: |
+          if ! xcrun -sdk macosx -f metal > /dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain > /dev/null 2>&1 || true
+          fi
+          if xcrun -sdk macosx -f metal > /dev/null 2>&1; then
+            xcrun -sdk macosx metal -Werror -c ataraxos/src/net_metal.metal -o "$RUNNER_TEMP/net_metal.air"
+          else
+            echo "::warning::no offline Metal compiler; the kernels are checked when the extension loads them"
+          fi
+
       - name: Weights (private checkpoint -> net.bin)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -76,6 +87,16 @@ jobs:
           uvx --from huggingface_hub hf download "$HF_REPO" "$CKPT" --local-dir "$RUNNER_TEMP/ckpt" > /dev/null
           cd ataraxos && ../dist/python/bin/python3 -m ataraxos.arena.export "$RUNNER_TEMP/ckpt/$CKPT" ../dist/net.bin
           rm -rf "$RUNNER_TEMP/ckpt"
+
+      - name: GPU forward vs the CPU's (skipped without a Metal device)
+        run: |
+          cd ataraxos
+          set +e
+          ../dist/python/bin/python3 tests/py/check_net_gpu.py ../dist/net.bin --threads 3
+          rc=$?
+          set -e
+          if [ $rc -eq 2 ]; then echo "::warning::no Metal device on this runner: the GPU path is unchecked"; exit 0; fi
+          exit $rc
 
       - name: Bundle
         run: ataraxos/ataraxos/arena/bundle.sh dist
@@ -102,6 +123,7 @@ jobs:
             "${{ github.event.inputs.games || '2' }}" "$GITHUB_RUN_NUMBER" \
             "$GITHUB_WORKSPACE/ataraxos/teams/selfplay/oak150.txt" "$RUNNER_TEMP/agent.sh" random | tee games.txt
           for f in arena-*-p1.err; do echo "== $f"; tail -c 4096 "$f"; done
+          echo "== the net's device and search times"; grep -h -E "gpu (on|off)|loaded in|search split" arena-*-p1.err | head -60 || true
           ! grep -E 'forfeit|exit [1-9]|invalid [1-9]' games.txt
 
       - name: Upload to the private repo

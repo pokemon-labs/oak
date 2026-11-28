@@ -12,6 +12,9 @@
 //     window - 1, d] (written in place), decide=True; the state only with decide) -> (logits f32 [D,
 //     CHOICES], -inf past n; value logits f32 [D, 3]), or None with
 //     decide=False (a prefill: the summaries and the cache writes only).
+//   set_gpu(on) -> "" or why not (2026-11-28): act on the GPU (Metal, macOS
+//     builds; src/net_metal.mm) or the CPU (the default). gpu -> bool.
+//   timing -> dict: act's calls, rows, seconds and the GPU's own seconds.
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -82,6 +85,35 @@ PYBIND11_MODULE(ataraxos_net, m) {
                                d["state"] = c.state;
                                d["features"] = c.features;
                                d["q_head"] = c.q_head;
+                               return d;
+                             })
+      .def(
+          "set_gpu",
+          [](Net& net, bool on) -> std::string {
+#ifdef ATARAXOS_METAL
+            return net.set_gpu(on);
+#else
+            (void)net;
+            return on ? "not built with Metal (macOS only)" : "";
+#endif
+          },
+          py::arg("on"))
+      .def_property_readonly("gpu",
+                             [](const Net& net) {
+#ifdef ATARAXOS_METAL
+                               return net.gpu();
+#else
+                               (void)net;
+                               return false;
+#endif
+                             })
+      .def_property_readonly("timing",
+                             [](const Net& net) {
+                               py::dict d;
+                               d["calls"] = net.calls();
+                               d["rows"] = net.rows();
+                               d["seconds"] = net.seconds();
+                               d["gpu_seconds"] = net.gpu_seconds();
                                return d;
                              })
       .def(

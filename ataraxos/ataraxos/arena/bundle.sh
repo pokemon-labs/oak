@@ -53,7 +53,7 @@ cat > "$dist/run" <<'EOF'
 # pkmn.ai's entry point: the ataraxos bot (ataraxos/arena/main.py).
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 PYTHONPATH="$DIR/app"
-exec "$DIR/python/bin/python3" -s -u -m ataraxos.arena.main --net "$DIR/net.bin" --pool "$DIR/oak1500.txt" "$@"
+exec "$DIR/python/bin/python3" -s -u -m ataraxos.arena.main --net "$DIR/net.bin" --pool "$DIR/oak1500.txt" --gpu "$@"
 EOF
 chmod +x "$dist/run"
 

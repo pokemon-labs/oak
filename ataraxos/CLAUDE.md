@@ -675,3 +675,19 @@ search reads the value head only), built and tested on GitHub Actions
   `arena/bundles/ataraxos-VERSION.tar.zst` to opencover/ataraxos-runs and
   prints its sha256. Never workflow artifacts (the repo is public).
 - Laptop: torch is in `~/oak/.venv` (Python 3.14); ckpt1750 from HF.
+
+- GPU forward (2026-11-28, the user's: "leave nothing on the table"):
+  `src/net_metal.mm` + `src/net_metal.metal` (embedded by CMake, compiled
+  at load, fast math off), `Net.set_gpu(True)`, float32. Every layer runs
+  on Metal (tiled simdgroup-matrix GEMMs with fused bias / GELU /
+  residual, layer norm, both attentions, the heads); the embeddings are
+  per-token term lists into one parameter buffer with folded tables
+  (moveset gelu per (move, pp 0-64), active_extra per status, the key of
+  every choice byte); the CPU only builds indices and terms and copies
+  the cache rows in and out (unified memory). `--gpu` (main.py, off by
+  default; the bundle's `run` passes it) checks GPU vs CPU on random
+  batches at startup (`actor.check_gpu`) and stays on the CPU if they
+  differ; a GPU error switches to the CPU for good. Each search logs its
+  split (`search split: ...; net X s (gpu Y)`). `tests/py/check_net_gpu.py
+  NET.BIN` (no torch) runs in macOS CI when the runner has a Metal device.
+  Not run anywhere yet when written (no Mac; CI needs main2 pushed).
