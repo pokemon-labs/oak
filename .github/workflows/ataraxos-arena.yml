@@ -2,9 +2,10 @@
 # darwin/arm64 bundle on Apple silicon, plays it against a random player
 # the arena's way (sandbox.sb from pkmn/ai, a read-only bundle, a scrubbed
 # environment, scratch-only writes, SIGSTOP time-slicing; @pkmn/sim 0.11.0),
-# and with a `version` (manual runs only) uploads it to the PRIVATE Hugging
-# Face repo. This repo is public: the weights and the bundle never become
-# workflow artifacts, and the logs carry only sizes, timings and moves.
+# and with a `version` (manual runs only) publishes it as the GitHub release
+# ataraxos-VERSION of this PUBLIC repo (the user's call, 2026-11-28: the
+# arena fetches it; the weights inside are public with it), and a copy to the
+# private Hugging Face repo. Never workflow artifacts.
 name: ataraxos arena bundle (macOS)
 
 on:
@@ -21,7 +22,7 @@ on:
         default: "2"
 
 permissions:
-  contents: read
+  contents: write  # the release
 
 env:
   HF_REPO: opencover/ataraxos-runs
@@ -152,10 +153,11 @@ jobs:
           ! grep -E 'forfeit|exit [1-9]|invalid [1-9]' games.txt
           ! grep -l 'client failed' arena-*-p1.err  # a bot that can't read the battle plays default all game
 
-      - name: Upload to the private repo
+      - name: Release (GitHub, public) and a copy to the private HF repo
         if: github.event.inputs.version != ''
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
@@ -164,5 +166,10 @@ jobs:
           tar -C dist -cf - . | zstd -19 -T0 -o "$out"
           ls -l "$out"
           echo "sha256: $(shasum -a 256 "$out" | cut -d' ' -f1)"
+          gh release create "ataraxos-$VERSION" "$out" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --title "ataraxos arena $VERSION" \
+            --notes "pkmn.ai gen1ou bundle: rby4 ckpt1750 EMA, joint per_type 3x3, 4 rounds, budget 1024, depth 4, the net on the GPU (--gpu, CPU fallback)."
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/ataraxos-$VERSION" \
+            --jq '.assets[] | "asset: \(.name) \(.size) bytes \(.browser_download_url) api \(.url)"'
           uvx --from huggingface_hub hf upload "$HF_REPO" "$out" "arena/bundles/ataraxos-$VERSION.tar.zst" > /dev/null
-          echo "uploaded to $HF_REPO arena/bundles/ataraxos-$VERSION.tar.zst"
+          echo "copied to $HF_REPO arena/bundles/ataraxos-$VERSION.tar.zst"
