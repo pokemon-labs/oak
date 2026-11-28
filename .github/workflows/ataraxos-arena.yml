@@ -107,11 +107,12 @@ jobs:
           curl -fsSL "https://raw.githubusercontent.com/pkmn/ai/$PKMN_AI_COMMIT/arena/config/sandbox.sb" -o "$RUNNER_TEMP/sandbox.sb"
           system_profiler SPDisplaysDataType | grep -E "Chipset|Metal|Vendor" || true
           sbx="$RUNNER_TEMP/sbx" && mkdir -p "$sbx"
-          probe="from ataraxos._ext import ataraxos_net as m; n = m.Net('$PWD/dist/net.bin'); print(n.set_gpu(True) or 'on')"
+          probe="from ataraxos._ext import ataraxos_net as m; n = m.Net('$PWD/dist/net.bin'); print(n.set_gpu(True) or 'on')"  # $PWD: the workspace here
           start=$(date "+%Y-%m-%d %H:%M:%S")
-          echo "== outside: $(env -i HOME="$sbx" TMPDIR="$sbx" PYTHONPATH="$PWD/dist/app" "$PWD/dist/python/bin/python3" -c "$probe" 2>&1)"
-          echo "== sandboxed: $(env -i HOME="$sbx" TMPDIR="$sbx" PYTHONPATH="$PWD/dist/app" /usr/bin/sandbox-exec -f "$RUNNER_TEMP/sandbox.sb" \
-            -D AGENT_RO_DIR="$PWD/dist" -D AGENT_SCRATCH_DIR="$sbx" "$PWD/dist/python/bin/python3" -c "$probe" 2>&1)"
+          ws="$PWD" && cd "$sbx"  # as the games: the scratch is the working directory
+          echo "== outside: $(env -i HOME="$sbx" TMPDIR="$sbx" PYTHONPATH="$ws/dist/app" "$ws/dist/python/bin/python3" -c "$probe" 2>&1)"
+          echo "== sandboxed: $(env -i HOME="$sbx" TMPDIR="$sbx" PYTHONPATH="$ws/dist/app" /usr/bin/sandbox-exec -f "$RUNNER_TEMP/sandbox.sb" \
+            -D AGENT_RO_DIR="$ws/dist" -D AGENT_SCRATCH_DIR="$sbx" "$ws/dist/python/bin/python3" -c "$probe" 2>&1)"
           sleep 3
           log show --start "$start" --style compact --predicate 'eventMessage CONTAINS[c] "deny"' 2>/dev/null \
             | grep -i "deny" | grep -v "log run" | sed -E 's/^[^ ]+ [^ ]+ +[A-Za-z]+ +[^ ]+ //; s/\([0-9]+\)/(N)/g' \
