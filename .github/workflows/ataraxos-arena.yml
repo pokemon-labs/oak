@@ -98,6 +98,23 @@ jobs:
           if [ $rc -eq 2 ]; then echo "::warning::no Metal device on this runner: the GPU path is unchecked"; exit 0; fi
           exit $rc
 
+      - name: Metal under the arena's sandbox (diagnostic; what it denies)
+        continue-on-error: true
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/pkmn/ai/$PKMN_AI_COMMIT/arena/config/sandbox.sb" -o "$RUNNER_TEMP/sandbox.sb"
+          system_profiler SPDisplaysDataType | grep -E "Chipset|Metal|Vendor" || true
+          mkdir -p "$RUNNER_TEMP/sbx"
+          start=$(date "+%Y-%m-%d %H:%M:%S")
+          cd ataraxos
+          for sb in none sandbox; do
+            pre=(); [ $sb = sandbox ] && pre=(/usr/bin/sandbox-exec -f "$RUNNER_TEMP/sandbox.sb" -D AGENT_RO_DIR="$PWD" -D AGENT_SCRATCH_DIR="$RUNNER_TEMP/sbx")
+            echo "== $sb: $(env -i HOME="$RUNNER_TEMP/sbx" TMPDIR="$RUNNER_TEMP/sbx" PYTHONPATH="$PWD" "${pre[@]}" "$GITHUB_WORKSPACE/dist/python/bin/python3" -c \
+              "from ataraxos._ext import ataraxos_net as m; n = m.Net('$GITHUB_WORKSPACE/dist/net.bin'); print(n.set_gpu(True) or 'on')" 2>&1)"
+          done
+          sleep 2
+          log show --start "$start" --style compact --predicate 'sender == "Sandbox" OR eventMessage CONTAINS[c] "deny"' 2>/dev/null \
+            | grep -i -E "deny|python" | sed -E 's/^[^ ]+ [^ ]+ //' | sort | uniq -c | sort -rn | head -40 || true
+
       - name: Bundle
         run: ataraxos/ataraxos/arena/bundle.sh dist
 

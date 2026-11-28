@@ -8,7 +8,7 @@
 // Per game, as the arbiter: start the players and wait for `/ready` (60 s);
 // send `|utm|<packed team>`; forward each player-stream chunk plus "\n";
 // after a request that wants a choice, `|inactive|Time left: ...`, then
-// read one stdout line as the choice; on `[Invalid choice]` resend the last
+// read one stdout line as the choice (`/info` lines are telemetry, skipped); on `[Invalid choice]` resend the last
 // request (3 strikes lose); SIGSTOP a subprocess after its choice and
 // SIGCONT it at its next request (the ladder's time-slicing); close stdin
 // at the end. Teams are drawn from TEAM_FILE (Showdown export, "=== name
@@ -57,6 +57,8 @@ class Proc {
     this.waiters = [];
     this.exited = false;
     this.stdoutLines = 0;
+    this.infoLines = 0;
+    this.badInfo = 0;
     let buf = '';
     this.p.stdout.on('data', d => {
       buf += d.toString();
@@ -65,6 +67,13 @@ class Proc {
         const line = buf.slice(0, i);
         buf = buf.slice(i + 1);
         this.stdoutLines++;
+        const body = line.trim();
+        if (body.toLowerCase() === '/info' || body.toLowerCase().startsWith('/info ')) {
+          // pkmn.ai's telemetry line (server/protocol.ts): not a choice
+          this.infoLines++;
+          try { JSON.parse(body.slice(6)); } catch { this.badInfo++; }
+          continue;
+        }
         if (this.waiters.length) this.waiters.shift()(line); else this.lines.push(line);
       }
     });
@@ -166,7 +175,7 @@ async function game(g) {
   await new Promise(r => setTimeout(r, 1000));
   const codes = procs.map(p => p ? (p.exited ? p.code : 'running') : '-');
   for (const p of procs) if (p && !p.exited) p.p.kill('SIGKILL');
-  const s = stats.map((x, i) => procs[i] ? `p${i + 1} ${x.decisions} decisions, mean ${(x.totalMs / Math.max(1, x.decisions)).toFixed(0)} ms, max ${x.maxMs} ms, invalid ${x.invalid}, stdout lines ${procs[i].stdoutLines}` : `p${i + 1} random`).join('; ');
+  const s = stats.map((x, i) => procs[i] ? `p${i + 1} ${x.decisions} decisions, mean ${(x.totalMs / Math.max(1, x.decisions)).toFixed(0)} ms, max ${x.maxMs} ms, invalid ${x.invalid}, stdout lines ${procs[i].stdoutLines}, /info ${procs[i].infoLines} (bad ${procs[i].badInfo})` : `p${i + 1} random`).join('; ');
   console.log(`game ${g}: ${ended} (ready ${readyMs} ms; exit ${codes.join(' ')}; ${s})`);
 }
 
