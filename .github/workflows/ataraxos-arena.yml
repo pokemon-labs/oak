@@ -105,6 +105,10 @@ jobs:
         continue-on-error: true
         run: |
           curl -fsSL "https://raw.githubusercontent.com/pkmn/ai/$PKMN_AI_COMMIT/arena/config/sandbox.sb" -o "$RUNNER_TEMP/sandbox.sb"
+          # CI only: GitHub's macOS VMs expose the GPU as a paravirtual device, whose user client the
+          # arena's profile (written for the real AGX GPU) doesn't list; one rule more, nothing else changed.
+          printf '\n;; CI only (GitHub macOS VM): the paravirtual GPU, the VM'"'"'s stand-in for the AGX classes above\n(allow iokit-open (iokit-user-client-class "AppleParavirtDeviceUserClient"))\n' >> "$RUNNER_TEMP/sandbox.sb"
+          echo "sandbox.sb: pkmn/ai $PKMN_AI_COMMIT plus:"; tail -n 2 "$RUNNER_TEMP/sandbox.sb"
           system_profiler SPDisplaysDataType | grep -E "Chipset|Metal|Vendor" || true
           sbx="$RUNNER_TEMP/sbx" && mkdir -p "$sbx"
           probe="from ataraxos._ext import ataraxos_net as m; n = m.Net('$PWD/dist/net.bin'); print(n.set_gpu(True) or 'on')"  # $PWD: the workspace here
@@ -123,6 +127,10 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sim" && (cd "$RUNNER_TEMP/sim" && npm init -y > /dev/null && npm i @pkmn/sim@0.11.0 > /dev/null)
           curl -fsSL "https://raw.githubusercontent.com/pkmn/ai/$PKMN_AI_COMMIT/arena/config/sandbox.sb" -o "$RUNNER_TEMP/sandbox.sb"
+          # CI only: GitHub's macOS VMs expose the GPU as a paravirtual device, whose user client the
+          # arena's profile (written for the real AGX GPU) doesn't list; one rule more, nothing else changed.
+          printf '\n;; CI only (GitHub macOS VM): the paravirtual GPU, the VM'"'"'s stand-in for the AGX classes above\n(allow iokit-open (iokit-user-client-class "AppleParavirtDeviceUserClient"))\n' >> "$RUNNER_TEMP/sandbox.sb"
+          echo "sandbox.sb: pkmn/ai $PKMN_AI_COMMIT plus:"; tail -n 2 "$RUNNER_TEMP/sandbox.sb"
           chmod -R a-w dist
           scratch="$RUNNER_TEMP/scratch"
           cat > "$RUNNER_TEMP/agent.sh" <<EOF
@@ -142,6 +150,7 @@ jobs:
           for f in arena-*-p1.err; do echo "== $f"; tail -c 4096 "$f"; done
           echo "== the net's device and search times"; grep -h -E "gpu (on|off)|loaded in|search split" arena-*-p1.err | head -60 || true
           ! grep -E 'forfeit|exit [1-9]|invalid [1-9]' games.txt
+          ! grep -l 'client failed' arena-*-p1.err  # a bot that can't read the battle plays default all game
 
       - name: Upload to the private repo
         if: github.event.inputs.version != ''
